@@ -1,0 +1,400 @@
+import React, { useState, useContext, useCallback, createContext } from 'react';
+import type { FunctionComponent, ReactElement } from 'react';
+import { RuntimeContext } from './context';
+
+// ---- Types ----
+
+/**
+ * Determines how the router transitions between messages.
+ * - `replace` — edit the current message in-place
+ * - `push` — keep old message, send a new one below
+ * - `stack` — strip buttons from old message, send new one below
+ * - `dismiss` — strip buttons from old message, do NOT send a new one
+ */
+export type NavigateMode = 'replace' | 'push' | 'stack' | 'dismiss';
+
+export interface NavigateOptions {
+  /** How to handle the previous message (default: 'replace').
+   *  - replace: edit the current message in-place
+   *  - push:    keep old message, send a new one below
+   *  - stack:   strip buttons from old message, send new one below
+   *  - dismiss: strip buttons from old message, do NOT send a new one */
+  mode?: NavigateMode;
+}
+
+/** Button definition used in guard replies and redirects. */
+export interface GuardButton {
+  text: string;
+  route?: string;
+  url?: string;
+}
+
+/** Options for the `reply` helper inside `beforeLoad`. */
+export interface GuardReplyOptions {
+  buttons?: GuardButton[][];
+}
+
+const GUARD_REPLY_SYMBOL = Symbol.for('teact.guardReply');
+
+/** Sentinel object returned by the `reply()` helper inside `beforeLoad`. */
+export interface GuardReply {
+  readonly __type: typeof GUARD_REPLY_SYMBOL;
+  text: string;
+  buttons?: GuardButton[][];
+}
+
+function createGuardReply(text: string, options?: GuardReplyOptions): GuardReply {
+  return { __type: GUARD_REPLY_SYMBOL, text, buttons: options?.buttons };
+}
+
+/** Context passed to route guards in `beforeLoad`. */
+export interface BeforeLoadContext {
+  path: string;
+  params: Record<string, string>;
+  session: Record<string, any>;
+  /** Send a message (with optional buttons) instead of loading the route. */
+  reply: (text: string, options?: GuardReplyOptions) => GuardReply;
+}
+
+/** Object returned from a route guard to trigger a redirect with an optional message. */
+export interface GuardRedirect {
+  redirect: string;
+  message?: string;
+  buttons?: GuardButton[][];
+}
+
+/** Object returned from a guard to render a component instead of the target route. */
+export interface GuardComponent {
+  component: FunctionComponent<any>;
+}
+
+/**
+ * A route guard function that runs before the route loads.
+ *
+ * @example
+ * // Redirect to home
+ * beforeLoad: ({ session }) => {
+ *   if (!session.auth) return redirect('/');
+ * }
+ *
+ * // Return JSX directly
+ * beforeLoad: ({ session }) => {
+ *   if (!session.auth) return <LoginPage />;
+ * }
+ *
+ * // Reply with a message and buttons (same API as command handlers)
+ * beforeLoad: ({ session, reply }) => {
+ *   if (!session.auth) return reply('Please log in.', {
+ *     buttons: [[{ text: 'Login', route: '/login' }, { text: 'Menu', route: '/' }]],
+ *   });
+ * }
+ */
+export type RouteGuard = (
+  ctx: BeforeLoadContext,
+) => void | string | GuardRedirect | GuardComponent | GuardReply | ReactElement;
+
+/**
+ * A route value: either a plain component or an object with `component` and optional `beforeLoad` guard.
+ *
+ * @example
+ * const routes = {
+ *   '/': Home,
+ *   '/admin': { component: Admin, beforeLoad: ({ session }) => session.admin ? undefined : '/' },
+ * };
+ */
+export type RouteValue =
+  | FunctionComponent<any>
+  | { component: FunctionComponent<any>; beforeLoad?: RouteGuard };
+
+export interface RouteDefinition {
+  path: string;
+  component: FunctionComponent<any>;
+  pattern: RegExp;
+  paramNames: string[];
+  beforeLoad?: RouteGuard;
+}
+
+export interface RouterConfig {
+  routes: RouteDefinition[];
+  defaultRoute: string;
+  notFound: FunctionComponent<any>;
+}
+
+interface RouterContextValue {
+  path: string;
+  params: Record<string, string>;
+  navigate: (path: string, opts?: NavigateOptions) => void;
+}
+
+/** Mutable ref shared between the router and the commit callback. */
+export interface CommitModeRef {
+  current: NavigateMode;
+}
+
+export const RouterCtx = createContext<RouterContextValue | null>(null);
+
+export const CommitModeCtx = createContext<CommitModeRef>({ current: 'replace' });
+
+/** Redirect helper for use inside `beforeLoad` guards. */
+export function redirect(path: string): string {
+  return path;
+}
+
+function DefaultNotFound(): React.ReactElement {
+  return React.createElement(
+    'tg-message',
+    { text: '🔍 Page not found\n\nThe page you\'re looking for doesn\'t exist.\nUse /start to go back to the menu.' },
+  );
+}
+
+// ---- Route parsing ----
+
+function parseRoute(path: string, component: FunctionComponent<any>, beforeLoad?: RouteGuard): RouteDefinition {
+  if (path === '/') {
+    return { path, component, pattern: /^\/$/, paramNames: [], beforeLoad };
+  }
+
+  const paramNames: string[] = [];
+  const patternParts = path
+    .split('/')
+    .filter(Boolean)
+    .map(seg => {
+      if (seg.startsWith(':')) {
+        paramNames.push(seg.slice(1));
+        return '([^/]+)';
+      }
+      return seg.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    });
+
+  return {
+    path,
+    component,
+    pattern: new RegExp(`^/${patternParts.join('/')}$`),
+    paramNames,
+    beforeLoad,
+  };
+}
+
+function matchRoute(
+  routes: RouteDefinition[],
+  path: string,
+): { route: RouteDefinition; params: Record<string, string> } | null {
+  for (const r of routes) {
+    const m = path.match(r.pattern);
+    if (m) {
+      const params: Record<string, string> = {};
+      r.paramNames.forEach((name, i) => {
+        params[name] = m[i + 1];
+      });
+      return { route: r, params };
+    }
+  }
+  return null;
+}
+
+interface ResolvedRoute {
+  route: RouteDefinition;
+  params: Record<string, string>;
+  path: string;
+}
+
+type GuardOverride =
+  | { guardComponent: FunctionComponent<any> }
+  | { guardElement: ReactElement }
+  | { guardReply: GuardReply };
+
+function isReactElement(value: unknown): value is ReactElement {
+  return value != null && typeof value === 'object' && '$$typeof' in (value as any);
+}
+
+function isGuardReply(value: unknown): value is GuardReply {
+  return value != null && typeof value === 'object' && (value as any).__type === GUARD_REPLY_SYMBOL;
+}
+
+function resolveRoute(
+  config: RouterConfig,
+  path: string,
+  session: Record<string, any>,
+): ResolvedRoute | GuardOverride | null {
+  let currentPath = path;
+  for (let i = 0; i < 5; i++) {
+    const match = matchRoute(config.routes, currentPath);
+    if (!match) return null;
+
+    if (match.route.beforeLoad) {
+      const result = match.route.beforeLoad({
+        path: currentPath,
+        params: match.params,
+        session,
+        reply: createGuardReply,
+      });
+      if (typeof result === 'string' && result !== currentPath) {
+        currentPath = result;
+        continue;
+      }
+      if (isGuardReply(result)) {
+        return { guardReply: result };
+      }
+      if (isReactElement(result)) {
+        return { guardElement: result };
+      }
+      if (result && typeof result === 'object') {
+        if ('redirect' in result) {
+          currentPath = (result as GuardRedirect).redirect;
+          continue;
+        }
+        if ('component' in result) {
+          return { guardComponent: (result as GuardComponent).component };
+        }
+      }
+    }
+    return { route: match.route, params: match.params, path: currentPath };
+  }
+  return null;
+}
+
+// ---- Public API ----
+
+/** Options for `createRouter`. */
+export interface CreateRouterOptions {
+  /** Component to render when no route matches (custom 404 page). */
+  notFound?: FunctionComponent<any>;
+}
+
+/**
+ * Create a router from a route map.
+ *
+ * Routes can be plain components or objects with `beforeLoad` guards.
+ * Pass a `notFound` component as the second argument for custom 404 pages:
+ *
+ * ```tsx
+ * createRouter(
+ *   {
+ *     '/': Home,
+ *     '/admin': { component: AdminPanel, beforeLoad: ({ session }) => {
+ *       if (!session.loggedIn) return redirect('/');
+ *     }},
+ *   },
+ *   { notFound: NotFoundPage },
+ * );
+ * ```
+ */
+export function createRouter(
+  routes: Record<string, RouteValue>,
+  options?: CreateRouterOptions,
+): RouterConfig {
+  const defs: RouteDefinition[] = [];
+
+  for (const [path, value] of Object.entries(routes)) {
+    const component = typeof value === 'function' ? value : value.component;
+    const guard = typeof value === 'function' ? undefined : value.beforeLoad;
+    defs.push(parseRoute(path, component, guard));
+  }
+  const defaultPath = defs.find(d => d.path === '/')?.path ?? defs[0]?.path ?? '/';
+  defs.sort((a, b) => b.path.split('/').length - a.path.split('/').length);
+  return { routes: defs, defaultRoute: defaultPath, notFound: options?.notFound ?? DefaultNotFound };
+}
+
+// ---- Internal provider ----
+
+export function RouterProvider({
+  config,
+  initialPath,
+}: {
+  config: RouterConfig;
+  initialPath: string;
+}): React.ReactElement | null {
+  const commitMode = useContext(CommitModeCtx);
+  const runtime = useContext(RuntimeContext);
+  const [nav, setNav] = useState({ path: initialPath, tick: 0 });
+
+  const navigate = useCallback(
+    (path: string, opts?: NavigateOptions) => {
+      commitMode.current = opts?.mode ?? 'replace';
+      setNav(prev => ({ path, tick: prev.tick + 1 }));
+    },
+    [commitMode],
+  );
+
+  const resolved = resolveRoute(config, nav.path, runtime?.session ?? {});
+  const providerValue = { path: nav.path, params: {} as Record<string, string>, navigate };
+
+  if (!resolved) {
+    return React.createElement(RouterCtx.Provider, { value: providerValue }, React.createElement(config.notFound));
+  }
+
+  if ('guardComponent' in resolved) {
+    return React.createElement(RouterCtx.Provider, { value: providerValue }, React.createElement(resolved.guardComponent));
+  }
+
+  if ('guardElement' in resolved) {
+    return React.createElement(RouterCtx.Provider, { value: providerValue }, resolved.guardElement);
+  }
+
+  if ('guardReply' in resolved) {
+    const { text, buttons } = resolved.guardReply;
+    const children: React.ReactElement[] = [];
+    if (buttons?.length) {
+      const rows = buttons.map((row, ri) =>
+        React.createElement('tg-button-row', { key: ri },
+          ...row.map((btn, bi) =>
+            React.createElement('tg-button', {
+              key: bi,
+              text: btn.text,
+              url: btn.url,
+              callbackData: btn.route ? `__route:${btn.route}` : undefined,
+            }),
+          ),
+        ),
+      );
+      children.push(React.createElement('tg-keyboard', { key: 'kbd' }, ...rows));
+    }
+    const msg = React.createElement('tg-message', { text }, ...children);
+    return React.createElement(RouterCtx.Provider, { value: providerValue }, msg);
+  }
+
+  return React.createElement(
+    RouterCtx.Provider,
+    { value: { path: resolved.path, params: resolved.params, navigate } },
+    React.createElement(resolved.route.component),
+  );
+}
+
+// ---- Hooks ----
+
+/** Navigate to a different route.
+ *  @example
+ *  navigate('/pokemon/25')                       // replace current message
+ *  navigate('/pokemon/25', { mode: 'push' })     // keep old message, send new below
+ *  navigate('/pokemon/25', { mode: 'stack' })    // strip buttons from old, send new below
+ *  navigate('/pokemon/25', { mode: 'dismiss' })  // strip buttons only, no new message
+ */
+export function useNavigate(): (path: string, opts?: NavigateOptions) => void {
+  const ctx = useContext(RouterCtx);
+  if (!ctx) throw new Error('useNavigate must be used inside a Router');
+  return ctx.navigate;
+}
+
+/**
+ * Read the current route's dynamic parameters.
+ *
+ * @example
+ * // Route: '/pokemon/:id'
+ * const { id } = useParams<{ id: string }>();
+ */
+export function useParams<T extends Record<string, string> = Record<string, string>>(): T {
+  const ctx = useContext(RouterCtx);
+  if (!ctx) throw new Error('useParams must be used inside a Router');
+  return ctx.params as T;
+}
+
+/**
+ * Returns the current matched path and params.
+ *
+ * @returns An object with `path` and `params`.
+ */
+export function useRoute(): { path: string; params: Record<string, string> } {
+  const ctx = useContext(RouterCtx);
+  if (!ctx) throw new Error('useRoute must be used inside a Router');
+  return { path: ctx.path, params: ctx.params };
+}

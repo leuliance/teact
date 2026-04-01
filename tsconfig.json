@@ -1,0 +1,41 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022"],
+    "jsx": "react-jsx",
+    "jsxImportSource": "react",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "outDir": "dist",
+    "baseUrl": ".",
+    "paths": {
+      "@teact/core": ["packages/core/src"],
+      "@teact/core/*": ["packages/core/src/*"],
+      "@teact/react": ["packages/react/src"],
+      "@teact/react/*": ["packages/react/src/*"],
+      "@teact/runtime": ["packages/runtime/src"],
+      "@teact/runtime/*": ["packages/runtime/src/*"],
+      "@teact/renderer": ["packages/renderer/src"],
+      "@teact/renderer/*": ["packages/renderer/src/*"],
+      "@teact/telegram": ["packages/telegram/src"],
+      "@teact/telegram/*": ["packages/telegram/src/*"],
+      "@teact/ui": ["packages/ui/src"],
+      "@teact/ui/*": ["packages/ui/src/*"],
+      "@teact/storage": ["packages/storage/src"],
+      "@teact/storage/*": ["packages/storage/src/*"],
+      "@teact/testing": ["packages/testing/src"],
+      "@teact/testing/*": ["packages/testing/src/*"],
+      "@teact/cli": ["packages/cli/src"],
+      "@teact/cli/*": ["packages/cli/src/*"]
+    }
+  },
+  "exclude": ["node_modules", "dist", "examples"]
+}

@@ -1,0 +1,21 @@
+{
+  "home": {
+    "title": "🤖 ወደ PokedexBot እንኳን ደህና መጡ!",
+    "subtitle": "ከታች ምረጡ:"
+  },
+  "pokemon": {
+    "types": "ዓይነት: {{types}}",
+    "stats": "HP {{hp}} / ATK {{atk}} / DEF {{def}}",
+    "notFound": "ፖኬሞን አልተገኘም"
+  },
+  "lang": {
+    "title": "ቋንቋ",
+    "current": "አሁን: አማርኛ 🇪🇹",
+    "hint": "ቋንቋዎን ከታች ይምረጡ።",
+    "switched": "ቋንቋ ወደ አማርኛ ተቀይሯል"
+  },
+  "notFound": {
+    "title": "ገጽ አልተገኘም",
+    "message": "የፈለጉት ገጽ የለም።"
+  }
+}

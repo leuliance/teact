@@ -1,0 +1,34 @@
+{
+  "name": "teact-monorepo",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "examples/*"
+  ],
+  "scripts": {
+    "teact": "bun run packages/cli/src/bin.ts",
+    "create-teact": "bun run packages/create-teact/index.ts",
+    "build": "bun run --filter './packages/*' build",
+    "dev": "bun run --filter './packages/*' dev",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf packages/*/dist examples/*/dist",
+    "changeset": "changeset",
+    "version": "changeset version",
+    "release": "bun run build && changeset publish"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.30.0",
+    "@teact/cli": "workspace:*",
+    "@types/bun": "latest",
+    "@types/react": "^19.0.0",
+    "typescript": "^5.7.0"
+  },
+  "dependencies": {
+    "grammy": "^1.35.0",
+    "i18next": "^26.0.3",
+    "react": "^19.0.0",
+    "react-i18next": "^17.0.2",
+    "react-reconciler": "^0.31.0"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "home": {
+    "title": "🤖 Welcome to PokedexBot!",
+    "subtitle": "Pick an option below:"
+  },
+  "pokemon": {
+    "types": "Type: {{types}}",
+    "stats": "HP {{hp}} / ATK {{atk}} / DEF {{def}}",
+    "notFound": "Pokemon not found"
+  },
+  "lang": {
+    "title": "Language",
+    "current": "Current: English 🇺🇸",
+    "hint": "Choose your language below.",
+    "switched": "Language switched to English"
+  },
+  "notFound": {
+    "title": "Page Not Found",
+    "message": "The page you're looking for doesn't exist."
+  }
+}
