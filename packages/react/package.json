@@ -1,6 +1,6 @@
 {
   "name": "@teactjs/react",
-  "version": "0.1.0-alpha.3",
+  "version": "0.1.0-alpha.4",
   "description": "React components and hooks for Teact bot framework",
   "type": "module",
   "main": "dist/index.js",
@@ -13,10 +13,10 @@
   },
   "files": ["dist", "README.md"],
   "scripts": {
-    "build": "bun build ./src/index.ts --outdir ./dist --format esm --target bun && tsc --emitDeclarationOnly --outDir dist --declaration --project tsconfig.build.json"
+    "build": "bun build ./src/index.ts --outdir ./dist --format esm --target bun --external @teactjs/renderer --external @teactjs/react --external @teactjs/runtime --external @teactjs/telegram --external @teactjs/storage && tsc --emitDeclarationOnly --outDir dist --declaration --project tsconfig.build.json"
   },
   "dependencies": {
-    "@teactjs/renderer": "^0.1.0-alpha.3"
+    "@teactjs/renderer": "^0.1.0-alpha.4"
   },
   "peerDependencies": {
     "react": "^18.0.0 || ^19.0.0"
