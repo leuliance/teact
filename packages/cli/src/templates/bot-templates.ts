@@ -1,5 +1,5 @@
 const SHARED_FILES: Record<string, string> = {
-  '.env': `TELEGRAM_BOT_TOKEN=your_token_here
+  '.env': `TELEGRAM_BOT_TOKEN=
 `,
   '.gitignore': `node_modules/
 dist/

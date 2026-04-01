@@ -1,6 +1,6 @@
 {
   "name": "@teactjs/core",
-  "version": "0.1.0-alpha.6",
+  "version": "0.1.0-alpha.7",
   "description": "Teact framework core — createBot, hooks, router, and more",
   "type": "module",
   "main": "dist/index.js",
@@ -13,11 +13,11 @@
   },
   "files": ["dist", "README.md"],
   "scripts": {
-    "build": "bun build ./src/index.ts --outdir ./dist --format esm --target bun --external @teactjs/renderer --external @teactjs/react --external @teactjs/runtime --external @teactjs/telegram --external @teactjs/storage && tsc --emitDeclarationOnly --outDir dist --declaration --project tsconfig.build.json"
+    "build": "bun build ./src/index.ts --outdir ./dist --format esm --target bun --external react --external react/jsx-runtime --external react/jsx-dev-runtime --external @teactjs/renderer --external @teactjs/react --external @teactjs/runtime --external @teactjs/telegram --external @teactjs/storage && tsc --emitDeclarationOnly --outDir dist --declaration --project tsconfig.build.json"
   },
   "dependencies": {
-    "@teactjs/renderer": "^0.1.0-alpha.6",
-    "@teactjs/runtime": "^0.1.0-alpha.6"
+    "@teactjs/renderer": "^0.1.0-alpha.7",
+    "@teactjs/runtime": "^0.1.0-alpha.7"
   },
   "peerDependencies": {
     "react": "^18.0.0 || ^19.0.0"

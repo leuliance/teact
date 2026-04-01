@@ -87,12 +87,12 @@ export async function createCommand(name: string, opts: CreateOptions): Promise<
       start: 'bun run dist/index.js',
     },
     dependencies: {
-      '@teactjs/core': '^0.1.0-alpha.6',
-      '@teactjs/ui': '^0.1.0-alpha.6',
-      '@teactjs/telegram': '^0.1.0-alpha.6',
-      '@teactjs/cli': '^0.1.0-alpha.6',
+      '@teactjs/core': '^0.1.0-alpha.7',
+      '@teactjs/ui': '^0.1.0-alpha.7',
+      '@teactjs/telegram': '^0.1.0-alpha.7',
+      '@teactjs/cli': '^0.1.0-alpha.7',
       react: '^19.0.0',
-      ...(features.includes('storage') ? { '@teactjs/storage': '^0.1.0-alpha.6' } : {}),
+      ...(features.includes('storage') ? { '@teactjs/storage': '^0.1.0-alpha.7' } : {}),
       ...(features.includes('i18n') ? { 'i18next': '^23.0.0', 'react-i18next': '^15.0.0' } : {}),
     },
     devDependencies: {
@@ -123,7 +123,7 @@ export async function createCommand(name: string, opts: CreateOptions): Promise<
   };
 
   writeFileSync(join(dir, 'tsconfig.json'), JSON.stringify(tsconfig, null, 2));
-  writeFileSync(join(dir, '.env'), 'TELEGRAM_BOT_TOKEN=\n');
+  writeFileSync(join(dir, '.env'), 'TELEGRAM_BOT_TOKEN=\nPAYMENT_PROVIDER_TOKEN=\n');
   writeFileSync(join(dir, '.gitignore'), 'node_modules/\ndist/\n.env\n.teact/\n*.log\n');
 
   const files = getTemplate(template, features);
