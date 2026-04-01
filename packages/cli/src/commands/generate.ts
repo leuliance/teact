@@ -32,8 +32,8 @@ function generateComponent(name: string, root: string): void {
 
   writeFileSync(
     filePath,
-    `import { useNavigate } from '@teact/core';
-import { Message, Button, InlineKeyboard, ButtonRow } from '@teact/ui';
+    `import { useNavigate } from '@teactjs/core';
+import { Message, Button, InlineKeyboard, ButtonRow } from '@teactjs/ui';
 
 export function ${name}() {
   const navigate = useNavigate();
@@ -68,7 +68,7 @@ function generateHook(name: string, root: string): void {
 
   writeFileSync(
     filePath,
-    `import { useState, useCallback } from '@teact/core';
+    `import { useState, useCallback } from '@teactjs/core';
 
 export function ${hookName}() {
   const [state, setState] = useState(null);
@@ -92,7 +92,7 @@ function generatePlugin(name: string, root: string): void {
 
   writeFileSync(
     filePath,
-    `import type { TeactPlugin } from '@teact/core';
+    `import type { TeactPlugin } from '@teactjs/core';
 
 export function ${name}Plugin(): TeactPlugin {
   return {

@@ -1,8 +1,8 @@
 import React, { Suspense } from 'react';
 import type { FunctionComponent, ReactNode } from 'react';
-import { createRoot, type TeactRoot, type OutputNode, type BotContext, type SessionStore, type Middleware } from '@teact/renderer';
-import { TelegramAdapter, serializeOutput } from '@teact/telegram';
-import { CallbackRegistryCtx, ErrorBoundary, SuspenseFallback, type CallbackMap } from '@teact/react';
+import { createRoot, type TeactRoot, type OutputNode, type BotContext, type SessionStore, type Middleware } from '@teactjs/renderer';
+import { TelegramAdapter, serializeOutput } from '@teactjs/telegram';
+import { CallbackRegistryCtx, ErrorBoundary, SuspenseFallback, type CallbackMap } from '@teactjs/react';
 import { RuntimeContext, type RuntimeContextValue } from './context';
 import { MemorySessionStore } from './session';
 import { compose } from './middleware';

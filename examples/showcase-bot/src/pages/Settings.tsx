@@ -1,6 +1,6 @@
-import { useNavigate } from '@teact/core';
-import { Message, Button, InlineKeyboard, ButtonRow } from '@teact/ui';
-import { useStorage } from '@teact/storage';
+import { useNavigate } from '@teactjs/core';
+import { Message, Button, InlineKeyboard, ButtonRow } from '@teactjs/ui';
+import { useStorage } from '@teactjs/storage';
 
 export function Settings() {
   const navigate = useNavigate();

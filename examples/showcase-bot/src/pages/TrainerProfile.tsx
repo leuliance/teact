@@ -1,5 +1,5 @@
-import { useForm, Form, useNavigate } from '@teact/core';
-import { Message, Button, InlineKeyboard, ButtonRow } from '@teact/ui';
+import { useForm, Form, useNavigate } from '@teactjs/core';
+import { Message, Button, InlineKeyboard, ButtonRow } from '@teactjs/ui';
 import { z } from 'zod';
 
 export function TrainerProfile() {

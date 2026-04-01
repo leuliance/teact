@@ -1,5 +1,5 @@
 {
-  "name": "@teact/ui",
+  "name": "@teactjs/ui",
   "version": "0.1.0-alpha.1",
   "description": "Telegram UI components for Teact — Message, Button, InlineKeyboard, Photo, and more",
   "type": "module",
@@ -23,7 +23,7 @@
     "build": "bun build ./src/index.ts --outdir ./dist --format esm --target bun && tsc --emitDeclarationOnly --outDir dist --declaration --project tsconfig.build.json"
   },
   "dependencies": {
-    "@teact/react": "workspace:*"
+    "@teactjs/react": "workspace:*"
   },
   "peerDependencies": {
     "react": "^18.0.0 || ^19.0.0"

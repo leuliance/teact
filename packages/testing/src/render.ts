@@ -1,7 +1,7 @@
 import React from 'react';
 import type { FunctionComponent } from 'react';
-import { createRoot, type OutputNode, type BotContext } from '@teact/renderer';
-import { RuntimeContext, type RuntimeContextValue } from '@teact/runtime';
+import { createRoot, type OutputNode, type BotContext } from '@teactjs/renderer';
+import { RuntimeContext, type RuntimeContextValue } from '@teactjs/runtime';
 
 export interface RenderResult {
   output: OutputNode | null;

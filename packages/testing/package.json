@@ -1,5 +1,5 @@
 {
-  "name": "@teact/testing",
+  "name": "@teactjs/testing",
   "version": "0.1.0-alpha.1",
   "description": "Testing utilities for Teact bots — mock adapter, render helpers",
   "type": "module",
@@ -23,9 +23,9 @@
     "build": "bun build ./src/index.ts --outdir ./dist --format esm --target bun && tsc --emitDeclarationOnly --outDir dist --declaration --project tsconfig.build.json"
   },
   "dependencies": {
-    "@teact/renderer": "workspace:*",
-    "@teact/react": "workspace:*",
-    "@teact/runtime": "workspace:*"
+    "@teactjs/renderer": "workspace:*",
+    "@teactjs/react": "workspace:*",
+    "@teactjs/runtime": "workspace:*"
   },
   "peerDependencies": {
     "react": "^18.0.0 || ^19.0.0"

@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useContext, createContext } from 'react';
-import type { TeactPlugin } from '@teact/runtime';
-import { useChatId, usePlatform } from '@teact/runtime';
+import type { TeactPlugin } from '@teactjs/runtime';
+import { useChatId, usePlatform } from '@teactjs/runtime';
 import type { StorageDriver, StoragePluginOptions } from './types';
 import { MemoryDriver } from './drivers/memory';
 import { FileDriver } from './drivers/file';
@@ -55,7 +55,7 @@ export function useGlobalStorage(): StorageDriver {
  * Create the storage plugin.
  *
  * @example
- * import { storagePlugin } from '@teact/storage';
+ * import { storagePlugin } from '@teactjs/storage';
  *
  * createBot({
  *   plugins: [storagePlugin({ driver: 'file', path: './data/storage.json' })],

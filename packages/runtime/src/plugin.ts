@@ -1,6 +1,6 @@
 import type { FunctionComponent, ReactNode } from 'react';
-import type { BotContext, Middleware } from '@teact/renderer';
-import type { TelegramAdapter } from '@teact/telegram';
+import type { BotContext, Middleware } from '@teactjs/renderer';
+import type { TelegramAdapter } from '@teactjs/telegram';
 
 /**
  * Teact plugin interface.

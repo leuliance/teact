@@ -20,7 +20,7 @@ export interface StoragePluginOptions {
    * storagePlugin({ driver: 'file', path: './data/store.json' })
    *
    * // Custom driver (community or your own)
-   * import { RedisDriver } from '@teact/storage-redis';
+   * import { RedisDriver } from '@teactjs/storage-redis';
    * storagePlugin({ driver: new RedisDriver({ url: 'redis://localhost:6379' }) })
    */
   driver?: 'memory' | 'file' | StorageDriver;

@@ -1,8 +1,8 @@
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createBot, createRouter, createI18n, redirect } from '@teact/core';
-import type { Middleware } from '@teact/core';
-import { TelegramAdapter } from '@teact/telegram';
+import { createBot, createRouter, createI18n, redirect } from '@teactjs/core';
+import type { Middleware } from '@teactjs/core';
+import { TelegramAdapter } from '@teactjs/telegram';
 import { commands } from './commands';
 
 // Pages

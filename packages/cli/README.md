@@ -1,13 +1,13 @@
-# @teact/cli
+# @teactjs/cli
 
 Command-line tool for Teact projects. Scaffold, develop, build, generate code, and diagnose issues.
 
 ## Install
 
-Installed automatically with `@teact/core`. You can also install it directly:
+Installed automatically with `@teactjs/core`. You can also install it directly:
 
 ```bash
-bun add -d @teact/cli
+bun add -d @teactjs/cli
 ```
 
 ## Commands

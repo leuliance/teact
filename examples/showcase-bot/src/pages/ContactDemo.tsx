@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { useNavigate, useOn, useEventData } from '@teact/core';
+import { useNavigate, useOn, useEventData } from '@teactjs/core';
 import {
   Message, InlineKeyboard, ButtonRow, Button,
   ReplyKeyboard, ReplyRow, RequestContactButton,
   ReplyKeyboardRemove,
-} from '@teact/ui';
+} from '@teactjs/ui';
 
 export function ContactDemo() {
   const navigate = useNavigate();

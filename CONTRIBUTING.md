@@ -23,21 +23,21 @@ This installs all dependencies across the monorepo.
 ```
 teact/
   packages/
-    core/          # @teact/core -- barrel re-exports
-    react/         # @teact/react -- Telegram UI components
-    runtime/       # @teact/runtime -- bot engine, hooks, routing
-    renderer/      # @teact/renderer -- React reconciler (private)
-    ui/            # @teact/ui -- convenience re-exports
-    telegram/      # @teact/telegram -- grammY adapter
-    storage/       # @teact/storage -- persistent storage plugin
-    testing/       # @teact/testing -- test utilities
-    cli/           # @teact/cli -- CLI tool
+    core/          # @teactjs/core -- barrel re-exports
+    react/         # @teactjs/react -- Telegram UI components
+    runtime/       # @teactjs/runtime -- bot engine, hooks, routing
+    renderer/      # @teactjs/renderer -- React reconciler (private)
+    ui/            # @teactjs/ui -- convenience re-exports
+    telegram/      # @teactjs/telegram -- grammY adapter
+    storage/       # @teactjs/storage -- persistent storage plugin
+    testing/       # @teactjs/testing -- test utilities
+    cli/           # @teactjs/cli -- CLI tool
     create-teact/  # create-teact -- project scaffolder
   examples/
     showcase-bot/  # Full-featured example
 ```
 
-Packages use Bun workspaces. Cross-package imports use `@teact/*` aliases resolved via the root `tsconfig.json` path mappings.
+Packages use Bun workspaces. Cross-package imports use `@teactjs/*` aliases resolved via the root `tsconfig.json` path mappings.
 
 ## Common Scripts
 
@@ -55,7 +55,7 @@ Packages use Bun workspaces. Cross-package imports use `@teact/*` aliases resolv
 bun test
 ```
 
-Tests use Vitest. The `@teact/testing` package provides `MockAdapter` and `renderBot` for unit testing components without a live Telegram connection.
+Tests use Vitest. The `@teactjs/testing` package provides `MockAdapter` and `renderBot` for unit testing components without a live Telegram connection.
 
 To run tests for a specific package:
 
@@ -65,10 +65,10 @@ bun test packages/runtime
 
 ## Adding a New Feature
 
-1. Identify which package the feature belongs to. Most features go in `@teact/runtime` (hooks, middleware) or `@teact/react` (components).
+1. Identify which package the feature belongs to. Most features go in `@teactjs/runtime` (hooks, middleware) or `@teactjs/react` (components).
 2. Implement the feature in the appropriate `src/` directory.
 3. Export it from the package's `src/index.ts`.
-4. If it should be part of the public API, also export it from `@teact/core`'s `src/index.ts`.
+4. If it should be part of the public API, also export it from `@teactjs/core`'s `src/index.ts`.
 5. Add tests.
 6. Update type exports if new interfaces or types are introduced.
 
@@ -78,14 +78,14 @@ Create the component in `packages/react/src/components.ts` following existing pa
 
 ### Adding a New Hook
 
-Create the hook in the relevant file under `packages/runtime/src/`. Export it from the package index and from `@teact/core`.
+Create the hook in the relevant file under `packages/runtime/src/`. Export it from the package index and from `@teactjs/core`.
 
 ## Creating a Plugin
 
 Plugins implement the `TeactPlugin` interface:
 
 ```ts
-import type { TeactPlugin } from "@teact/core";
+import type { TeactPlugin } from "@teactjs/core";
 
 export function myPlugin(options?: MyOptions): TeactPlugin {
   return {

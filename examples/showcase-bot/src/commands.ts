@@ -1,4 +1,4 @@
-import type { CommandDef } from '@teact/core';
+import type { CommandDef } from '@teactjs/core';
 
 export const commands: Record<string, CommandDef> = {
   start: {

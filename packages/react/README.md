@@ -1,11 +1,11 @@
-# @teact/react
+# @teactjs/react
 
 Telegram UI components for Teact. Each component maps to a Telegram message type and renders through the Teact reconciler.
 
 ## Install
 
 ```bash
-bun add @teact/react
+bun add @teactjs/react
 ```
 
 ## Components
@@ -204,5 +204,5 @@ const { mutate, isLoading, error, reset } = useMutation({
 
 ## See Also
 
-- [`@teact/core`](../core) for the barrel import
-- [`@teact/runtime`](../runtime) for runtime hooks
+- [`@teactjs/core`](../core) for the barrel import
+- [`@teactjs/runtime`](../runtime) for runtime hooks

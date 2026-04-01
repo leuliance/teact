@@ -1,9 +1,9 @@
 import React from 'react';
-import { useNavigate, useOn, useBot } from '@teact/core';
+import { useNavigate, useOn, useBot } from '@teactjs/core';
 import {
   Message, InlineKeyboard, Button, Alert, List, Divider,
-} from '@teact/ui';
-import { defineConversation } from '@teact/telegram';
+} from '@teactjs/ui';
+import { defineConversation } from '@teactjs/telegram';
 
 const PIKACHU_ART = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/25.png';
 const CHARIZARD_ART = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/6.png';

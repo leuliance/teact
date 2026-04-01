@@ -1,5 +1,5 @@
-import { useNavigate, useInvoice } from '@teact/core';
-import { Message, Button, InlineKeyboard, ButtonRow, Alert } from '@teact/ui';
+import { useNavigate, useInvoice } from '@teactjs/core';
+import { Message, Button, InlineKeyboard, ButtonRow, Alert } from '@teactjs/ui';
 
 export function StorePage() {
   const navigate = useNavigate();

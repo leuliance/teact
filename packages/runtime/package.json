@@ -1,5 +1,5 @@
 {
-  "name": "@teact/runtime",
+  "name": "@teactjs/runtime",
   "version": "0.1.0-alpha.1",
   "description": "Bot runtime engine for Teact — router, sessions, middleware, hooks",
   "type": "module",
@@ -23,8 +23,8 @@
     "build": "bun build ./src/index.ts --outdir ./dist --format esm --target bun && tsc --emitDeclarationOnly --outDir dist --declaration --project tsconfig.build.json"
   },
   "dependencies": {
-    "@teact/renderer": "workspace:*",
-    "@teact/react": "workspace:*"
+    "@teactjs/renderer": "workspace:*",
+    "@teactjs/react": "workspace:*"
   },
   "peerDependencies": {
     "react": "^18.0.0 || ^19.0.0"

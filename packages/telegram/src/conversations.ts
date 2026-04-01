@@ -1,6 +1,6 @@
 import { session } from 'grammy';
 import { conversations, createConversation } from '@grammyjs/conversations';
-import type { TeactPlugin } from '@teact/runtime';
+import type { TeactPlugin } from '@teactjs/runtime';
 
 const CONVO_PREFIX = '__convo:';
 

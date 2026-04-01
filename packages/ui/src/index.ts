@@ -36,7 +36,7 @@ export {
   Notification,
   WebAppButton,
   Poll,
-} from '@teact/react';
+} from '@teactjs/react';
 
 export type {
   MessageProps,
@@ -77,12 +77,12 @@ export type {
   NotificationProps,
   WebAppButtonProps,
   PollProps,
-} from '@teact/react';
+} from '@teactjs/react';
 
-export { useQuery, useMutation } from '@teact/react';
+export { useQuery, useMutation } from '@teactjs/react';
 export type {
   UseQueryOptions,
   UseQueryResult,
   UseMutationOptions,
   UseMutationResult,
-} from '@teact/react';
+} from '@teactjs/react';

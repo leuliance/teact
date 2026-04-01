@@ -3,14 +3,14 @@ import { existsSync } from 'fs';
 import type { InlineConfig } from 'vite';
 
 const TEACT_PACKAGES = [
-  '@teact/core',
-  '@teact/ui',
-  '@teact/runtime',
-  '@teact/renderer',
-  '@teact/react',
-  '@teact/telegram',
-  '@teact/storage',
-  '@teact/testing',
+  '@teactjs/core',
+  '@teactjs/ui',
+  '@teactjs/runtime',
+  '@teactjs/renderer',
+  '@teactjs/react',
+  '@teactjs/telegram',
+  '@teactjs/storage',
+  '@teactjs/testing',
 ];
 
 const EXTERNAL_DEPS = [

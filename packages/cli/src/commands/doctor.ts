@@ -38,7 +38,7 @@ export async function doctorCommand(): Promise<void> {
     const checks: Array<{ path: string; label: string; fix: string }> = [
       { path: 'package.json', label: 'package.json', fix: 'Run: bun init' },
       { path: 'tsconfig.json', label: 'tsconfig.json', fix: 'Run: teact create <name> or add tsconfig.json manually' },
-      { path: 'teact.config.ts', label: 'teact.config.ts', fix: 'Optional — create one with defineConfig() from @teact/core' },
+      { path: 'teact.config.ts', label: 'teact.config.ts', fix: 'Optional — create one with defineConfig() from @teactjs/core' },
       { path: 'src/index.tsx', label: 'Entry file (src/index.tsx)', fix: 'Create src/index.tsx as your bot entry point' },
       { path: '.env', label: '.env file', fix: 'Create .env with: echo "TELEGRAM_BOT_TOKEN=" > .env' },
       { path: 'node_modules', label: 'node_modules (dependencies installed)', fix: 'Run: bun install' },
@@ -88,12 +88,12 @@ export async function doctorCommand(): Promise<void> {
     try {
       const pkgContent = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf-8'));
       const deps = { ...pkgContent.dependencies, ...pkgContent.devDependencies };
-      const teactPkgs = Object.keys(deps).filter(d => d.startsWith('@teact/'));
+      const teactPkgs = Object.keys(deps).filter(d => d.startsWith('@teactjs/'));
       if (teactPkgs.length > 0) {
         success(`Teact packages: ${teactPkgs.join(', ')}`);
       } else {
-        warn('No @teact/* packages found in dependencies');
-        log('  → Run: bun add @teact/core @teact/ui @teact/telegram');
+        warn('No @teactjs/* packages found in dependencies');
+        log('  → Run: bun add @teactjs/core @teactjs/ui @teactjs/telegram');
         issues++;
       }
     } catch {}

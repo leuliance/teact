@@ -108,4 +108,4 @@ export type {
 export { CallbackRegistryCtx } from './callback-registry';
 export type { CallbackHandler, CallbackMap } from './callback-registry';
 
-export type { OutputNode, BotContext, User, SessionData } from '@teact/renderer';
+export type { OutputNode, BotContext, User, SessionData } from '@teactjs/renderer';

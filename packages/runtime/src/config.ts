@@ -1,6 +1,6 @@
 import type { TeactPlugin } from './plugin';
 import type { WebhookConfig } from './bot';
-import type { Middleware, SessionStore } from '@teact/renderer';
+import type { Middleware, SessionStore } from '@teactjs/renderer';
 
 /**
  * Infrastructure configuration for `teact.config.ts`.
@@ -25,8 +25,8 @@ export interface TeactConfig {
  *
  * @example
  * // teact.config.ts
- * import { defineConfig } from '@teact/core';
- * import { storagePlugin } from '@teact/storage';
+ * import { defineConfig } from '@teactjs/core';
+ * import { storagePlugin } from '@teactjs/storage';
  *
  * export default defineConfig({
  *   mode: 'polling',

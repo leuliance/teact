@@ -1,6 +1,6 @@
-import { defineConfig, authPlugin } from '@teact/core';
-import { conversationsPlugin, streamPlugin } from '@teact/telegram';
-import { storagePlugin } from '@teact/storage';
+import { defineConfig, authPlugin } from '@teactjs/core';
+import { conversationsPlugin, streamPlugin } from '@teactjs/telegram';
+import { storagePlugin } from '@teactjs/storage';
 
 export default defineConfig({
   mode: 'polling',

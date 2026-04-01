@@ -1,5 +1,5 @@
-import { useConversation, Conversation, useNavigate } from '@teact/core';
-import { Message, InlineKeyboard, ButtonRow, Button, Poll } from '@teact/ui';
+import { useConversation, Conversation, useNavigate } from '@teactjs/core';
+import { Message, InlineKeyboard, ButtonRow, Button, Poll } from '@teactjs/ui';
 
 export function FeedbackWithHook() {
   const navigate = useNavigate();

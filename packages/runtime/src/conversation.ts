@@ -1,6 +1,6 @@
 import React, { useState, useContext, useId, useMemo, useCallback } from 'react';
 import { useBot } from './context';
-import { CallbackRegistryCtx } from '@teact/react';
+import { CallbackRegistryCtx } from '@teactjs/react';
 
 // ---- Validation ----
 

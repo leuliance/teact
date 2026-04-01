@@ -15,7 +15,7 @@ Teact lets you write Telegram bots using the same mental model as React web apps
 - **Payments** via `useInvoice` for Telegram's native invoice API
 - **Streaming** for real-time text updates with `useStream`
 - **Auth and roles** via `authPlugin`, `useAuth`, and `useAuthSession` (token-based)
-- **Persistent storage** with file or memory drivers through `@teact/storage`
+- **Persistent storage** with file or memory drivers through `@teactjs/storage`
 - **Events** -- subscribe to any Telegram event with `useOn` and `useEventData`
 - **Testing utilities** with `MockAdapter` and `renderBot`
 - **CLI** for scaffolding, dev server with HMR, production builds, and code generation
@@ -44,8 +44,8 @@ bun dev
 ## Minimal Example
 
 ```tsx
-import { createBot, Message, Button, InlineKeyboard } from "@teact/core";
-import { TelegramAdapter } from "@teact/telegram";
+import { createBot, Message, Button, InlineKeyboard } from "@teactjs/core";
+import { TelegramAdapter } from "@teactjs/telegram";
 
 function Counter() {
   const [count, setCount] = useState(0);
@@ -73,15 +73,15 @@ bot.start();
 
 | Package | Description |
 |---------|-------------|
-| [`@teact/core`](./packages/core) | Main entry point -- re-exports React primitives, runtime, and renderer APIs |
-| [`@teact/react`](./packages/react) | Telegram UI components (`Message`, `Button`, `Photo`, `Poll`, ...) and data hooks |
-| [`@teact/runtime`](./packages/runtime) | Bot engine -- `createBot`, routing, sessions, hooks, middleware, i18n, payments |
-| [`@teact/renderer`](./packages/renderer) | Internal React reconciler (private, not published) |
-| [`@teact/ui`](./packages/ui) | Convenience re-exports of `@teact/react` components |
-| [`@teact/telegram`](./packages/telegram) | Telegram adapter powered by grammY -- polling and webhook support |
-| [`@teact/storage`](./packages/storage) | Persistent storage plugin with file and memory drivers |
-| [`@teact/testing`](./packages/testing) | Test utilities -- `MockAdapter`, `renderBot` |
-| [`@teact/cli`](./packages/cli) | CLI tool -- `create`, `dev`, `build`, `generate`, `doctor` |
+| [`@teactjs/core`](./packages/core) | Main entry point -- re-exports React primitives, runtime, and renderer APIs |
+| [`@teactjs/react`](./packages/react) | Telegram UI components (`Message`, `Button`, `Photo`, `Poll`, ...) and data hooks |
+| [`@teactjs/runtime`](./packages/runtime) | Bot engine -- `createBot`, routing, sessions, hooks, middleware, i18n, payments |
+| [`@teactjs/renderer`](./packages/renderer) | Internal React reconciler (private, not published) |
+| [`@teactjs/ui`](./packages/ui) | Convenience re-exports of `@teactjs/react` components |
+| [`@teactjs/telegram`](./packages/telegram) | Telegram adapter powered by grammY -- polling and webhook support |
+| [`@teactjs/storage`](./packages/storage) | Persistent storage plugin with file and memory drivers |
+| [`@teactjs/testing`](./packages/testing) | Test utilities -- `MockAdapter`, `renderBot` |
+| [`@teactjs/cli`](./packages/cli) | CLI tool -- `create`, `dev`, `build`, `generate`, `doctor` |
 | [`create-teact`](./packages/create-teact) | Interactive project scaffolder (`bun create teact`) |
 
 ## Examples
@@ -95,8 +95,8 @@ bot.start();
 Create a `teact.config.ts` in your project root:
 
 ```ts
-import { defineConfig } from "@teact/core";
-import { storagePlugin } from "@teact/storage";
+import { defineConfig } from "@teactjs/core";
+import { storagePlugin } from "@teactjs/storage";
 
 export default defineConfig({
   plugins: [storagePlugin({ driver: "file", path: "./data" })],

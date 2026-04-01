@@ -1,18 +1,18 @@
-# @teact/runtime
+# @teactjs/runtime
 
 The bot engine powering Teact. Provides `createBot`, routing, sessions, hooks, middleware, conversations, forms, streaming, authentication, events, i18n, and payments.
 
 ## Install
 
 ```bash
-bun add @teact/runtime
+bun add @teactjs/runtime
 ```
 
 ## createBot
 
 ```ts
-import { createBot } from "@teact/runtime";
-import { TelegramAdapter } from "@teact/telegram";
+import { createBot } from "@teactjs/runtime";
+import { TelegramAdapter } from "@teactjs/telegram";
 
 const bot = createBot({
   component: App,            // root component (or use `router`)
@@ -35,7 +35,7 @@ await bot.start();
 ## Routing
 
 ```ts
-import { createRouter } from "@teact/runtime";
+import { createRouter } from "@teactjs/runtime";
 
 const router = createRouter(
   {
@@ -187,7 +187,7 @@ return <Message text={isStreaming ? text : "Done: " + text} />;
 ## Authentication
 
 ```ts
-import { authPlugin, useAuth } from "@teact/runtime";
+import { authPlugin, useAuth } from "@teactjs/runtime";
 
 // Register the plugin
 const bot = createBot({
@@ -208,7 +208,7 @@ function Admin() {
 Token-based auth backed by the session store:
 
 ```tsx
-import { useAuthSession } from "@teact/runtime";
+import { useAuthSession } from "@teactjs/runtime";
 
 function LoginPage() {
   const auth = useAuthSession();
@@ -240,7 +240,7 @@ function LoginPage() {
 ## i18n
 
 ```ts
-import { createI18n, useLocale } from "@teact/runtime";
+import { createI18n, useLocale } from "@teactjs/runtime";
 
 const i18n = createI18n({
   defaultLocale: "en",
@@ -322,7 +322,7 @@ const myPlugin: TeactPlugin = {
 ## Configuration
 
 ```ts
-import { defineConfig } from "@teact/runtime";
+import { defineConfig } from "@teactjs/runtime";
 
 export default defineConfig({
   plugins: [storagePlugin(), authPlugin()],
@@ -331,6 +331,6 @@ export default defineConfig({
 
 ## See Also
 
-- [`@teact/core`](../core) for the barrel import
-- [`@teact/react`](../react) for UI components
-- [`@teact/telegram`](../telegram) for the Telegram adapter
+- [`@teactjs/core`](../core) for the barrel import
+- [`@teactjs/react`](../react) for UI components
+- [`@teactjs/telegram`](../telegram) for the Telegram adapter

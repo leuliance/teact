@@ -1,5 +1,5 @@
-import { useNavigate, useRoute } from '@teact/core';
-import { Message, InlineKeyboard, ButtonRow, Button, Alert } from '@teact/ui';
+import { useNavigate, useRoute } from '@teactjs/core';
+import { Message, InlineKeyboard, ButtonRow, Button, Alert } from '@teactjs/ui';
 
 export function NotFoundPage() {
   const navigate = useNavigate();

@@ -1,11 +1,11 @@
-# @teact/testing
+# @teactjs/testing
 
 Test utilities for Teact bots. Provides a mock adapter and a render helper for unit testing components without a live Telegram connection.
 
 ## Install
 
 ```bash
-bun add -d @teact/testing
+bun add -d @teactjs/testing
 ```
 
 ## MockAdapter
@@ -13,7 +13,7 @@ bun add -d @teact/testing
 A fake adapter that records all sent and edited messages.
 
 ```ts
-import { MockAdapter } from "@teact/testing";
+import { MockAdapter } from "@teactjs/testing";
 
 const adapter = new MockAdapter();
 
@@ -60,7 +60,7 @@ interface EditedMessage {
 Render a component in isolation and inspect the output tree.
 
 ```tsx
-import { renderBot } from "@teact/testing";
+import { renderBot } from "@teactjs/testing";
 
 function Counter({ ctx }: { ctx: BotContext }) {
   const [count, setCount] = useState(0);
@@ -105,8 +105,8 @@ result.unmount();
 
 ```ts
 import { describe, it, expect } from "vitest";
-import { MockAdapter } from "@teact/testing";
-import { createBot } from "@teact/core";
+import { MockAdapter } from "@teactjs/testing";
+import { createBot } from "@teactjs/core";
 import App from "./App";
 
 describe("Bot", () => {
@@ -125,5 +125,5 @@ describe("Bot", () => {
 
 ## See Also
 
-- [`@teact/core`](../core) for the barrel import
-- [`@teact/runtime`](../runtime) for `createBot`
+- [`@teactjs/core`](../core) for the barrel import
+- [`@teactjs/runtime`](../runtime) for `createBot`

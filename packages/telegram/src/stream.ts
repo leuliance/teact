@@ -1,6 +1,6 @@
 import { stream } from '@grammyjs/stream';
 import { autoRetry } from '@grammyjs/auto-retry';
-import type { TeactPlugin } from '@teact/runtime';
+import type { TeactPlugin } from '@teactjs/runtime';
 
 /**
  * Grammy stream plugin for Teact.

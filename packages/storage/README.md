@@ -1,11 +1,11 @@
-# @teact/storage
+# @teactjs/storage
 
 Persistent storage plugin for Teact. Store and retrieve data across bot restarts with file-based or in-memory drivers.
 
 ## Install
 
 ```bash
-bun add @teact/storage
+bun add @teactjs/storage
 ```
 
 ## Setup
@@ -13,8 +13,8 @@ bun add @teact/storage
 Register the plugin with `createBot`:
 
 ```ts
-import { createBot } from "@teact/core";
-import { storagePlugin } from "@teact/storage";
+import { createBot } from "@teactjs/core";
+import { storagePlugin } from "@teactjs/storage";
 
 const bot = createBot({
   plugins: [
@@ -32,7 +32,7 @@ const bot = createBot({
 Per-key reactive storage hook:
 
 ```tsx
-import { useStorage } from "@teact/storage";
+import { useStorage } from "@teactjs/storage";
 
 function Favorites() {
   const [favorites, setFavorites] = useStorage<string[]>("favorites", []);
@@ -77,7 +77,7 @@ await storage.clear();
 Implement the `StorageDriver` interface:
 
 ```ts
-import type { StorageDriver } from "@teact/storage";
+import type { StorageDriver } from "@teactjs/storage";
 
 const redisDriver: StorageDriver = {
   get: async (key) => { /* ... */ },
@@ -93,5 +93,5 @@ storagePlugin({ driver: redisDriver });
 
 ## See Also
 
-- [`@teact/core`](../core) for the barrel import
-- [`@teact/runtime`](../runtime) for the plugin system
+- [`@teactjs/core`](../core) for the barrel import
+- [`@teactjs/runtime`](../runtime) for the plugin system

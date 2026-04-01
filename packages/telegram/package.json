@@ -1,5 +1,5 @@
 {
-  "name": "@teact/telegram",
+  "name": "@teactjs/telegram",
   "version": "0.1.0-alpha.1",
   "description": "Telegram platform adapter for Teact, powered by grammY",
   "type": "module",
@@ -26,9 +26,9 @@
     "@grammyjs/auto-retry": "^2.0.2",
     "@grammyjs/conversations": "^2.1.1",
     "@grammyjs/stream": "^1.0.1",
-    "@teact/renderer": "workspace:*",
-    "@teact/react": "workspace:*",
-    "@teact/runtime": "workspace:*",
+    "@teactjs/renderer": "workspace:*",
+    "@teactjs/react": "workspace:*",
+    "@teactjs/runtime": "workspace:*",
     "grammy": "^1.35.0"
   },
   "peerDependencies": {

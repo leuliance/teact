@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { useNavigate, useAuthSession } from '@teact/core';
-import { Message, InlineKeyboard, ButtonRow, Button } from '@teact/ui';
+import { useNavigate, useAuthSession } from '@teactjs/core';
+import { Message, InlineKeyboard, ButtonRow, Button } from '@teactjs/ui';
 
 export function LoginPage() {
   const navigate = useNavigate();

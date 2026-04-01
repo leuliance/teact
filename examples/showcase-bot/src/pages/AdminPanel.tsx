@@ -1,5 +1,5 @@
-import { useNavigate, useAuth, useChatId } from '@teact/core';
-import { Message, Button, InlineKeyboard, ButtonRow } from '@teact/ui';
+import { useNavigate, useAuth, useChatId } from '@teactjs/core';
+import { Message, Button, InlineKeyboard, ButtonRow } from '@teactjs/ui';
 
 export function AdminPanel() {
   const navigate = useNavigate();

@@ -1,6 +1,6 @@
-import { useNavigate } from '@teact/core';
-import { Message, Button, InlineKeyboard, ButtonRow } from '@teact/ui';
-import { defineConversation } from '@teact/telegram';
+import { useNavigate } from '@teactjs/core';
+import { Message, Button, InlineKeyboard, ButtonRow } from '@teactjs/ui';
+import { defineConversation } from '@teactjs/telegram';
 
 const feedback = defineConversation('feedback', {
   command: 'feedback',

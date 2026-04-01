@@ -1,5 +1,5 @@
-import { useNavigate, useAuthSession, useSession } from '@teact/core';
-import { Message, InlineKeyboard, ButtonRow, Button } from '@teact/ui';
+import { useNavigate, useAuthSession, useSession } from '@teactjs/core';
+import { Message, InlineKeyboard, ButtonRow, Button } from '@teactjs/ui';
 
 export function SessionDemo() {
   const navigate = useNavigate();

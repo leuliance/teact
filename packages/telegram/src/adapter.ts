@@ -1,6 +1,6 @@
 import { Bot, type Context as GrammyContext, GrammyError, HttpError } from 'grammy';
 import { autoRetry } from '@grammyjs/auto-retry';
-import type { BotContext, OutputNode } from '@teact/renderer';
+import type { BotContext, OutputNode } from '@teactjs/renderer';
 import { serializeOutput } from './serialize';
 import { createServer, type Server } from 'node:http';
 

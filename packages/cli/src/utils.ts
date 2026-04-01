@@ -37,8 +37,8 @@ export function findProjectRoot(from = process.cwd()): string | null {
     if (existsSync(pkgPath)) {
       try {
         const pkg = require(pkgPath);
-        if (pkg.dependencies?.['@teact/core'] || pkg.devDependencies?.['@teact/core']
-          || pkg.dependencies?.['@teact/react'] || pkg.devDependencies?.['@teact/react']) {
+        if (pkg.dependencies?.['@teactjs/core'] || pkg.devDependencies?.['@teactjs/core']
+          || pkg.dependencies?.['@teactjs/react'] || pkg.devDependencies?.['@teactjs/react']) {
           return dir;
         }
       } catch {}

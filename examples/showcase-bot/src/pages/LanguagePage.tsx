@@ -1,5 +1,5 @@
-import { useNavigate, useLocale } from '@teact/core';
-import { Message, Button, InlineKeyboard, ButtonRow } from '@teact/ui';
+import { useNavigate, useLocale } from '@teactjs/core';
+import { Message, Button, InlineKeyboard, ButtonRow } from '@teactjs/ui';
 
 export function LanguagePage() {
   const navigate = useNavigate();

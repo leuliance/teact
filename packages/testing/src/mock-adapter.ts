@@ -1,4 +1,4 @@
-import type { BotContext, OutputNode } from '@teact/renderer';
+import type { BotContext, OutputNode } from '@teactjs/renderer';
 
 type EventHandler = (ctx: BotContext) => void;
 

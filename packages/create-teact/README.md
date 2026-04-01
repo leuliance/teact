@@ -80,5 +80,5 @@ bun dev
 
 ## See Also
 
-- [`@teact/cli`](../cli) for the full CLI tool
+- [`@teactjs/cli`](../cli) for the full CLI tool
 - [Root README](../../README.md) for getting started

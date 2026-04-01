@@ -1,5 +1,5 @@
 {
-  "name": "@teact/renderer",
+  "name": "@teactjs/renderer",
   "version": "0.1.0-alpha.1",
   "private": true,
   "description": "Internal React reconciler for Teact",

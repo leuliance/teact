@@ -47,9 +47,9 @@ export function getTemplate(
 function counterTemplate(features: string[]): Record<string, string> {
   return {
     'src/index.tsx': `import { useState } from 'react';
-import { createBot } from '@teact/core';
-import { Message, Button, InlineKeyboard, ButtonRow } from '@teact/ui';
-import { TelegramAdapter } from '@teact/telegram';
+import { createBot } from '@teactjs/core';
+import { Message, Button, InlineKeyboard, ButtonRow } from '@teactjs/ui';
+import { TelegramAdapter } from '@teactjs/telegram';
 
 function App() {
   const [count, setCount] = useState(0);
@@ -83,9 +83,9 @@ bot.start();
 
 function emptyTemplate(): Record<string, string> {
   return {
-    'src/index.tsx': `import { createBot } from '@teact/core';
-import { Message } from '@teact/ui';
-import { TelegramAdapter } from '@teact/telegram';
+    'src/index.tsx': `import { createBot } from '@teactjs/core';
+import { Message } from '@teactjs/ui';
+import { TelegramAdapter } from '@teactjs/telegram';
 
 function App() {
   return <Message text="Hello from Teact!" />;
@@ -130,12 +130,12 @@ function routerTemplate(features: string[]): Record<string, string> {
   }
 
   if (configPlugins.length > 0) {
-    let configSrc = `import { ${configImportsCore.join(', ')} } from '@teact/core';\n`;
+    let configSrc = `import { ${configImportsCore.join(', ')} } from '@teactjs/core';\n`;
     if (configImportsTelegram.length > 0) {
-      configSrc += `import { ${configImportsTelegram.join(', ')} } from '@teact/telegram';\n`;
+      configSrc += `import { ${configImportsTelegram.join(', ')} } from '@teactjs/telegram';\n`;
     }
     if (configImportsStorage.length > 0) {
-      configSrc += `import { ${configImportsStorage.join(', ')} } from '@teact/storage';\n`;
+      configSrc += `import { ${configImportsStorage.join(', ')} } from '@teactjs/storage';\n`;
     }
     configSrc += `\nexport default defineConfig({\n  mode: 'polling',\n\n  plugins: [\n    ${configPlugins.join(',\n    ')},\n  ],\n});\n`;
     files['teact.config.ts'] = configSrc;
@@ -171,8 +171,8 @@ function routerTemplate(features: string[]): Record<string, string> {
   // ---- src/index.tsx ----
   let indexSrc = '';
   if (has('i18n')) indexSrc += `import React from 'react';\n`;
-  indexSrc += `import { createBot, createRouter${has('i18n') ? ', createI18n' : ''} } from '@teact/core';\n`;
-  indexSrc += `import { TelegramAdapter } from '@teact/telegram';\n\n`;
+  indexSrc += `import { createBot, createRouter${has('i18n') ? ', createI18n' : ''} } from '@teactjs/core';\n`;
+  indexSrc += `import { TelegramAdapter } from '@teactjs/telegram';\n\n`;
 
   for (const r of routes) {
     indexSrc += `import { ${r.component} } from '${r.file}';\n`;
@@ -214,8 +214,8 @@ function routerTemplate(features: string[]): Record<string, string> {
     menuRows.push(`        <ButtonRow>\n${pair.join('\n')}\n        </ButtonRow>`);
   }
 
-  files['src/pages/MainMenu.tsx'] = `import { useNavigate } from '@teact/core';
-import { Message, Button, InlineKeyboard, ButtonRow } from '@teact/ui';
+  files['src/pages/MainMenu.tsx'] = `import { useNavigate } from '@teactjs/core';
+import { Message, Button, InlineKeyboard, ButtonRow } from '@teactjs/ui';
 
 export function MainMenu() {
   const navigate = useNavigate();
@@ -231,8 +231,8 @@ ${menuRows.join('\n')}
 `;
 
   // ---- About ----
-  files['src/pages/About.tsx'] = `import { useNavigate } from '@teact/core';
-import { Message, Button, InlineKeyboard, ButtonRow } from '@teact/ui';
+  files['src/pages/About.tsx'] = `import { useNavigate } from '@teactjs/core';
+import { Message, Button, InlineKeyboard, ButtonRow } from '@teactjs/ui';
 
 export function About() {
   const navigate = useNavigate();
@@ -251,9 +251,9 @@ export function About() {
 
   // ---- Settings (storage) ----
   if (has('storage')) {
-    files['src/pages/Settings.tsx'] = `import { useNavigate } from '@teact/core';
-import { useStorage } from '@teact/storage';
-import { Message, Button, InlineKeyboard, ButtonRow } from '@teact/ui';
+    files['src/pages/Settings.tsx'] = `import { useNavigate } from '@teactjs/core';
+import { useStorage } from '@teactjs/storage';
+import { Message, Button, InlineKeyboard, ButtonRow } from '@teactjs/ui';
 
 export function Settings() {
   const navigate = useNavigate();
@@ -279,8 +279,8 @@ export function Settings() {
 
   // ---- StreamDemo ----
   if (has('streaming')) {
-    files['src/pages/StreamDemo.tsx'] = `import { useNavigate, useStream } from '@teact/core';
-import { Message, Button, InlineKeyboard, ButtonRow } from '@teact/ui';
+    files['src/pages/StreamDemo.tsx'] = `import { useNavigate, useStream } from '@teactjs/core';
+import { Message, Button, InlineKeyboard, ButtonRow } from '@teactjs/ui';
 
 const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
 
@@ -335,8 +335,8 @@ export function StreamDemo() {
   "back": "ተመለስ"
 }
 `;
-    files['src/pages/LanguagePage.tsx'] = `import { useNavigate, useLocale } from '@teact/core';
-import { Message, Button, InlineKeyboard, ButtonRow } from '@teact/ui';
+    files['src/pages/LanguagePage.tsx'] = `import { useNavigate, useLocale } from '@teactjs/core';
+import { Message, Button, InlineKeyboard, ButtonRow } from '@teactjs/ui';
 
 export function LanguagePage() {
   const navigate = useNavigate();
@@ -361,8 +361,8 @@ export function LanguagePage() {
 
   // ---- StorePage (payments) ----
   if (has('payments')) {
-    files['src/pages/StorePage.tsx'] = `import { useNavigate, useInvoice } from '@teact/core';
-import { Message, Button, InlineKeyboard, ButtonRow, Alert } from '@teact/ui';
+    files['src/pages/StorePage.tsx'] = `import { useNavigate, useInvoice } from '@teactjs/core';
+import { Message, Button, InlineKeyboard, ButtonRow, Alert } from '@teactjs/ui';
 
 export function StorePage() {
   const navigate = useNavigate();

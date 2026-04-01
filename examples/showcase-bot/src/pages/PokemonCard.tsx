@@ -1,5 +1,5 @@
-import { useNavigate, useParams, useBot } from '@teact/core';
-import { Message, Button, InlineKeyboard, ButtonRow, Alert, Divider, List, ListItem } from '@teact/ui';
+import { useNavigate, useParams, useBot } from '@teactjs/core';
+import { Message, Button, InlineKeyboard, ButtonRow, Alert, Divider, List, ListItem } from '@teactjs/ui';
 import { usePokemon } from '../hooks/usePokemon';
 
 export function PokemonCard() {

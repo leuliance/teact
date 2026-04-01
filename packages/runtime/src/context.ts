@@ -1,5 +1,5 @@
 import React, { useContext } from 'react';
-import type { BotContext, SessionData } from '@teact/renderer';
+import type { BotContext, SessionData } from '@teactjs/renderer';
 
 /** Internal context value provided to all components during a render cycle. */
 export interface RuntimeContextValue {

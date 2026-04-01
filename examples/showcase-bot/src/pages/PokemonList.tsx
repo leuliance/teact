@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { useNavigate } from '@teact/core';
-import { Message, Button, InlineKeyboard, ButtonRow } from '@teact/ui';
+import { useNavigate } from '@teactjs/core';
+import { Message, Button, InlineKeyboard, ButtonRow } from '@teactjs/ui';
 import { usePokemonList } from '../hooks/usePokemon';
 
 export function PokemonList() {

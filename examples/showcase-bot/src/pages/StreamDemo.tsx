@@ -1,5 +1,5 @@
-import { useNavigate, useStream } from '@teact/core';
-import { Message, Button, InlineKeyboard, ButtonRow } from '@teact/ui';
+import { useNavigate, useStream } from '@teactjs/core';
+import { Message, Button, InlineKeyboard, ButtonRow } from '@teactjs/ui';
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 

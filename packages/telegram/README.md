@@ -1,18 +1,18 @@
-# @teact/telegram
+# @teactjs/telegram
 
 Telegram adapter for Teact, powered by [grammY](https://grammy.dev). Handles communication between the Teact runtime and the Telegram Bot API.
 
 ## Install
 
 ```bash
-bun add @teact/telegram
+bun add @teactjs/telegram
 ```
 
 ## Basic Setup
 
 ```ts
-import { createBot } from "@teact/core";
-import { TelegramAdapter } from "@teact/telegram";
+import { createBot } from "@teactjs/core";
+import { TelegramAdapter } from "@teactjs/telegram";
 
 const bot = createBot({
   component: App,
@@ -76,7 +76,7 @@ The adapter implements the Teact adapter interface:
 For imperative multi-step conversation flows:
 
 ```ts
-import { conversationsPlugin, defineConversation } from "@teact/telegram";
+import { conversationsPlugin, defineConversation } from "@teactjs/telegram";
 
 defineConversation("onboarding", async (convo) => {
   const name = await convo.prompt("What's your name?");
@@ -96,7 +96,7 @@ The `Conversation` object provides: `prompt`, `send`, `wait`, `ask`, `stream`, `
 Enables streaming text updates (used with `useStream` in the runtime):
 
 ```ts
-import { streamPlugin } from "@teact/telegram";
+import { streamPlugin } from "@teactjs/telegram";
 
 const bot = createBot({
   plugins: [streamPlugin()],
@@ -106,6 +106,6 @@ const bot = createBot({
 
 ## See Also
 
-- [`@teact/core`](../core) for the barrel import
-- [`@teact/runtime`](../runtime) for bot engine docs
+- [`@teactjs/core`](../core) for the barrel import
+- [`@teactjs/runtime`](../runtime) for bot engine docs
 - [grammY documentation](https://grammy.dev)
