@@ -1,6 +1,6 @@
 {
   "name": "@teactjs/bot-templates",
-  "version": "0.1.0-alpha.9",
+  "version": "0.1.0-alpha.10",
   "description": "Shared project scaffolds for create-teact and @teactjs/cli",
   "type": "module",
   "exports": {
