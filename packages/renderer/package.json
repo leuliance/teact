@@ -1,13 +1,16 @@
 {
   "name": "@teactjs/renderer",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0-alpha.2",
   "private": true,
   "description": "Internal React reconciler for Teact",
   "type": "module",
-  "main": "src/index.ts",
-  "types": "src/index.ts",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
   },
   "scripts": {
     "build": "bun build ./src/index.ts --outdir ./dist --format esm --target bun && tsc --emitDeclarationOnly --outDir dist --declaration --project tsconfig.build.json"
