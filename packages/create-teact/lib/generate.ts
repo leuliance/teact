@@ -9,7 +9,7 @@ function asset(name: string): string {
 }
 
 /** Published @teactjs/* version range for generated package.json */
-export const TEACT_PEER_VERSION = '^0.1.0-alpha.12';
+export const TEACT_PEER_VERSION = '^0.1.0-alpha.13';
 
 export type TemplateId = 'empty' | 'counter' | 'starter' | 'showcase';
 
@@ -33,16 +33,24 @@ export const FEATURE_SELECT_OPTIONS = [
   { value: 'conversations', label: 'Conversations', hint: 'multi-step flows with Grammy' },
   { value: 'streaming', label: 'Streaming', hint: 'live text updates with useStream' },
   { value: 'auth', label: 'Auth', hint: 'useAuthSession + route guards' },
-  { value: 'i18n', label: 'Internationalization', hint: 'i18next + useLocale' },
   { value: 'payments', label: 'Payments', hint: 'Telegram invoices with useInvoice' },
 ] as const;
+
+/** Always merged into scaffold features (not shown in the plugin picker). */
+const BUILTIN_FEATURES = ['i18n'] as const;
+
+/** Ensures built-in plugins (e.g. i18n + i18next deps) apply to every new project. */
+export function ensureBuiltinFeatures(features: string[]): string[] {
+  const set = new Set(features);
+  for (const f of BUILTIN_FEATURES) set.add(f);
+  return [...set];
+}
 
 export const SHOWCASE_DEFAULT_FEATURES = [
   'storage',
   'conversations',
   'streaming',
   'auth',
-  'i18n',
   'payments',
 ] as const;
 
@@ -97,6 +105,7 @@ export function buildDependencies(template: TemplateId, features: string[]): {
   dependencies: Record<string, string>;
   devDependencies: Record<string, string>;
 } {
+  features = ensureBuiltinFeatures(features);
   const deps: Record<string, string> = {
     '@teactjs/core': TEACT_PEER_VERSION,
     '@teactjs/ui': TEACT_PEER_VERSION,
@@ -630,6 +639,7 @@ export function getTemplate(template: string, features: string[]): Record<string
 
 /** Merge shared + template-specific files (includes `.env` from `buildEnvContent`) */
 export function getTemplateFiles(template: TemplateId, features: string[]): Record<string, string> {
+  features = ensureBuiltinFeatures(features);
   const files = { ...SHARED_FILES };
 
   let merged: Record<string, string>;

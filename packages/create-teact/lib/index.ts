@@ -6,6 +6,7 @@ export {
   buildDependencies,
   buildEnvContent,
   defaultFeaturesForTemplate,
+  ensureBuiltinFeatures,
   TEMPLATE_SELECT_OPTIONS,
   FEATURE_SELECT_OPTIONS,
   SHOWCASE_DEFAULT_FEATURES,

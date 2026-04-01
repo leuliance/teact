@@ -1,6 +1,6 @@
 {
   "name": "@teactjs/runtime",
-  "version": "0.1.0-alpha.12",
+  "version": "0.1.0-alpha.13",
   "description": "Bot runtime engine for Teact — router, sessions, middleware, hooks",
   "type": "module",
   "main": "dist/index.js",
@@ -16,8 +16,8 @@
     "build": "bun build ./src/index.ts --outdir ./dist --format esm --target bun --external react --external react/jsx-runtime --external react/jsx-dev-runtime --external @teactjs/renderer --external @teactjs/react --external @teactjs/runtime --external @teactjs/telegram --external @teactjs/storage --external i18next --external react-i18next && tsc --emitDeclarationOnly --outDir dist --declaration --project tsconfig.build.json"
   },
   "dependencies": {
-    "@teactjs/renderer": "^0.1.0-alpha.12",
-    "@teactjs/react": "^0.1.0-alpha.12"
+    "@teactjs/renderer": "^0.1.0-alpha.13",
+    "@teactjs/react": "^0.1.0-alpha.13"
   },
   "peerDependencies": {
     "react": "^18.0.0 || ^19.0.0"
