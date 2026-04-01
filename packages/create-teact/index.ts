@@ -77,13 +77,13 @@ async function main() {
   const has = (f: string) => template === 'full' || features.includes(f);
 
   const deps: Record<string, string> = {
-    '@teactjs/core': '^0.1.0-alpha.5',
-    '@teactjs/ui': '^0.1.0-alpha.5',
-    '@teactjs/telegram': '^0.1.0-alpha.5',
-    '@teactjs/cli': '^0.1.0-alpha.5',
+    '@teactjs/core': '^0.1.0-alpha.6',
+    '@teactjs/ui': '^0.1.0-alpha.6',
+    '@teactjs/telegram': '^0.1.0-alpha.6',
+    '@teactjs/cli': '^0.1.0-alpha.6',
     react: '^19.0.0',
   };
-  if (has('storage')) deps['@teactjs/storage'] = '^0.1.0-alpha.5';
+  if (has('storage')) deps['@teactjs/storage'] = '^0.1.0-alpha.6';
   if (has('i18n')) {
     deps['i18next'] = '^23.0.0';
     deps['react-i18next'] = '^15.0.0';

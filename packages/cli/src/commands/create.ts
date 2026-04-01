@@ -87,18 +87,18 @@ export async function createCommand(name: string, opts: CreateOptions): Promise<
       start: 'bun run dist/index.js',
     },
     dependencies: {
-      '@teactjs/core': '^0.1.0-alpha.1',
-      '@teactjs/ui': '^0.1.0-alpha.1',
-      '@teactjs/telegram': '^0.1.0-alpha.1',
-      '@teactjs/cli': '^0.1.0-alpha.1',
-      react: '^18.3.0',
-      ...(features.includes('storage') ? { '@teactjs/storage': '^0.1.0-alpha.1' } : {}),
+      '@teactjs/core': '^0.1.0-alpha.6',
+      '@teactjs/ui': '^0.1.0-alpha.6',
+      '@teactjs/telegram': '^0.1.0-alpha.6',
+      '@teactjs/cli': '^0.1.0-alpha.6',
+      react: '^19.0.0',
+      ...(features.includes('storage') ? { '@teactjs/storage': '^0.1.0-alpha.6' } : {}),
       ...(features.includes('i18n') ? { 'i18next': '^23.0.0', 'react-i18next': '^15.0.0' } : {}),
     },
     devDependencies: {
       typescript: '^5.7.0',
       '@types/bun': 'latest',
-      '@types/react': '^18.3.0',
+      '@types/react': '^19.0.0',
     },
   };
 
