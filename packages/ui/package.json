@@ -1,6 +1,6 @@
 {
   "name": "@teactjs/ui",
-  "version": "0.1.0-alpha.8",
+  "version": "0.1.0-alpha.9",
   "description": "Telegram UI components for Teact — Message, Button, InlineKeyboard, Photo, and more",
   "type": "module",
   "main": "dist/index.js",
@@ -16,7 +16,7 @@
     "build": "bun build ./src/index.ts --outdir ./dist --format esm --target bun --external react --external react/jsx-runtime --external react/jsx-dev-runtime --external @teactjs/renderer --external @teactjs/react --external @teactjs/runtime --external @teactjs/telegram --external @teactjs/storage && tsc --emitDeclarationOnly --outDir dist --declaration --project tsconfig.build.json"
   },
   "dependencies": {
-    "@teactjs/react": "^0.1.0-alpha.8"
+    "@teactjs/react": "^0.1.0-alpha.9"
   },
   "peerDependencies": {
     "react": "^18.0.0 || ^19.0.0"

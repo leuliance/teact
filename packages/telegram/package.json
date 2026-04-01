@@ -1,6 +1,6 @@
 {
   "name": "@teactjs/telegram",
-  "version": "0.1.0-alpha.8",
+  "version": "0.1.0-alpha.9",
   "description": "Telegram platform adapter for Teact, powered by grammY",
   "type": "module",
   "main": "dist/index.js",
@@ -19,9 +19,9 @@
     "@grammyjs/auto-retry": "^2.0.2",
     "@grammyjs/conversations": "^2.1.1",
     "@grammyjs/stream": "^1.0.1",
-    "@teactjs/renderer": "^0.1.0-alpha.8",
-    "@teactjs/react": "^0.1.0-alpha.8",
-    "@teactjs/runtime": "^0.1.0-alpha.8",
+    "@teactjs/renderer": "^0.1.0-alpha.9",
+    "@teactjs/react": "^0.1.0-alpha.9",
+    "@teactjs/runtime": "^0.1.0-alpha.9",
     "grammy": "^1.35.0"
   },
   "peerDependencies": {
