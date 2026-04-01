@@ -2,7 +2,7 @@
 
 Command-line tool for Teact projects. Scaffold, develop, build, generate code, and diagnose issues.
 
-Project files for `teact create` come from **`@teactjs/bot-templates`** (shared with `create-teact`).
+Project files for `teact create` come from **`src/lib`**, synced from **`create-teact/lib`** on `prebuild`.
 
 ## Install
 
@@ -104,6 +104,5 @@ Validates Bun/Node versions, dependencies, TypeScript config, and project struct
 
 ## See Also
 
-- [`@teactjs/bot-templates`](../bot-templates) — shared scaffold logic
 - [`create-teact`](../create-teact) for the interactive scaffolder (`bun create teact`)
 - [Root README](../../README.md) for getting started

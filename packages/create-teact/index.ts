@@ -12,7 +12,7 @@ import {
   TEMPLATE_SELECT_OPTIONS,
   FEATURE_SELECT_OPTIONS,
   type TemplateId,
-} from '@teactjs/bot-templates';
+} from './lib';
 
 const args = process.argv.slice(2);
 

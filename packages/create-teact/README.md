@@ -2,7 +2,7 @@
 
 Interactive project scaffolder for Teact. The fastest way to start a new Telegram bot.
 
-Uses **`@teactjs/bot-templates`** for generated files — the same templates as `teact create` from `@teactjs/cli`.
+Templates live in this package’s **`lib/`** directory — the same files the CLI uses (`teact create` copies them from **`create-teact/lib`** during build).
 
 ## Usage
 
@@ -78,6 +78,5 @@ bun dev
 
 ## See Also
 
-- [`@teactjs/bot-templates`](../bot-templates) — template implementation
 - [`@teactjs/cli`](../cli) for the full CLI tool
 - [Root README](../../README.md) for getting started
