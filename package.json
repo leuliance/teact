@@ -22,6 +22,7 @@
     "@teact/cli": "workspace:*",
     "@types/bun": "latest",
     "@types/react": "^19.0.0",
+    "@types/react-reconciler": "^0.33.0",
     "typescript": "^5.7.0"
   },
   "dependencies": {

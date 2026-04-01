@@ -41,6 +41,7 @@ export function renderBot(
       botCtx: ctx,
       session,
       updateSession(patch) { Object.assign(session, patch); },
+      command: null,
     };
 
     root.render(

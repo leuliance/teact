@@ -194,7 +194,7 @@ export function createRoot(onCommit: (tree: OutputNode) => void): TeactRoot {
     (err: Error) => console.error('[teact] uncaught error', err),   // onUncaughtError
     (err: Error) => console.error('[teact] caught error', err),     // onCaughtError
     (err: Error) => console.error('[teact] recoverable error', err), // onRecoverableError
-    null,  // transitionCallbacks
+    null as any,  // transitionCallbacks
   );
 
   return {
