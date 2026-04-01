@@ -1,14 +1,14 @@
 {
   "name": "@teactjs/testing",
-  "version": "0.1.0-alpha.2",
+  "version": "0.1.0-alpha.3",
   "description": "Testing utilities for Teact bots — mock adapter, render helpers",
   "type": "module",
   "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "types": "dist/testing/src/index.d.ts",
   "exports": {
     ".": {
       "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "types": "./dist/testing/src/index.d.ts"
     }
   },
   "files": ["dist", "README.md"],
@@ -16,9 +16,9 @@
     "build": "bun build ./src/index.ts --outdir ./dist --format esm --target bun && tsc --emitDeclarationOnly --outDir dist --declaration --project tsconfig.build.json"
   },
   "dependencies": {
-    "@teactjs/renderer": "workspace:*",
-    "@teactjs/react": "workspace:*",
-    "@teactjs/runtime": "workspace:*"
+    "@teactjs/renderer": "^0.1.0-alpha.3",
+    "@teactjs/react": "^0.1.0-alpha.3",
+    "@teactjs/runtime": "^0.1.0-alpha.3"
   },
   "peerDependencies": {
     "react": "^18.0.0 || ^19.0.0"
