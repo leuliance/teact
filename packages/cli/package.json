@@ -1,6 +1,6 @@
 {
   "name": "@teactjs/cli",
-  "version": "0.1.0-alpha.11",
+  "version": "0.1.0-alpha.12",
   "description": "CLI tool for the Teact bot framework — create, dev, build, generate",
   "type": "module",
   "main": "dist/index.js",
@@ -17,7 +17,8 @@
   "files": ["dist", "README.md"],
   "scripts": {
     "prebuild": "rm -rf src/lib && cp -R ../create-teact/lib src/lib",
-    "build": "bun build ./src/bin.ts ./src/index.ts --outdir ./dist --format esm --target bun --external vite --external vite-node --external esbuild --external commander --external @clack/prompts && tsc --emitDeclarationOnly --outDir dist --declaration --project tsconfig.build.json"
+    "build": "rm -rf dist && bun build ./src/bin.ts ./src/index.ts --outdir ./dist --format esm --target bun --external vite --external vite-node --external esbuild --external commander --external @clack/prompts && mkdir -p dist/assets && cp -R src/lib/assets/. dist/assets/ && tsc --emitDeclarationOnly --outDir dist --declaration --project tsconfig.build.json",
+    "prepack": "bun run build"
   },
   "dependencies": {
     "@clack/prompts": "^1.1.0",
