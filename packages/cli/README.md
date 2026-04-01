@@ -2,6 +2,8 @@
 
 Command-line tool for Teact projects. Scaffold, develop, build, generate code, and diagnose issues.
 
+Project files for `teact create` come from **`@teactjs/bot-templates`** (shared with `create-teact`).
+
 ## Install
 
 Installed automatically with `@teactjs/core`. You can also install it directly:
@@ -24,19 +26,19 @@ teact create my-bot
 
 | Flag | Description |
 |------|-------------|
-| `-t, --template <type>` | Template: `router`, `counter`, `full`, `empty` |
-| `-f, --features <list>` | Comma-separated features: `storage`, `conversations`, `streaming`, `auth` |
+| `-t, --template <type>` | Template: `starter`, `showcase`, `counter`, `empty` (aliases: `router` → `starter`, `full` → `showcase`) |
+| `-f, --features <list>` | Comma-separated features: `storage`, `conversations`, `streaming`, `auth`, `i18n`, `payments` |
 | `--pm <manager>` | Package manager: `bun`, `npm`, `pnpm` |
 | `--no-install` | Skip dependency installation |
 
-In interactive mode (TTY), the CLI prompts for template, features, and package manager if flags are omitted.
+In interactive mode (TTY), the CLI prompts for template, feature plugins, and package manager if flags are omitted. Dependency install streams output to your terminal.
 
 **Templates:**
 
-- **`counter`** -- minimal counter bot with inline keyboard
-- **`router`** -- multi-page bot with routing
-- **`full`** -- complete setup with storage, conversations, streaming, and auth
-- **`empty`** -- bare project with no components
+- **`starter`** (`router`) — Main menu + About; optional features add routes (Settings, Stream, Language, Store, etc.)
+- **`showcase`** (`full`) — Demo app similar to `examples/showcase-bot`: Pokedex (react-query), component showcase, `commands.ts` with deep links and `/help` handler, route guards, `notFound`, middleware — with plugins toggled by your feature selection
+- **`counter`** — Minimal counter bot with inline keyboard
+- **`empty`** — Bare `createBot` + one `Message`, no router
 
 ### `teact dev`
 
@@ -102,5 +104,6 @@ Validates Bun/Node versions, dependencies, TypeScript config, and project struct
 
 ## See Also
 
+- [`@teactjs/bot-templates`](../bot-templates) — shared scaffold logic
 - [`create-teact`](../create-teact) for the interactive scaffolder (`bun create teact`)
 - [Root README](../../README.md) for getting started

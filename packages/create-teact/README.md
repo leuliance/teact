@@ -2,6 +2,8 @@
 
 Interactive project scaffolder for Teact. The fastest way to start a new Telegram bot.
 
+Uses **`@teactjs/bot-templates`** for generated files — the same templates as `teact create` from `@teactjs/cli`.
+
 ## Usage
 
 ```bash
@@ -18,56 +20,52 @@ pnpm create teact my-bot
 ## What It Does
 
 1. Prompts for a project name (if not provided as an argument)
-2. Lets you pick a template: `router`, `counter`, `full`, or `empty`
-3. Lets you select features: storage, conversations, streaming, auth, i18n, payments
+2. Lets you pick a template: **Starter**, **Showcase**, **Counter**, or **Empty**
+3. Lets you select plugins: storage, conversations, streaming, auth, i18n, payments (Showcase pre-selects all; Starter starts with none)
 4. Asks which package manager to use (`bun`, `npm`, or `pnpm`)
-5. Asks whether to install dependencies
-6. Generates the project with `package.json`, `tsconfig.json`, `teact.config.ts`, `.env`, `.gitignore`, and `src/` files
-7. Feature pages are wired into the router and main menu automatically
+5. Asks whether to install dependencies (install output is shown in the terminal)
+6. Generates `package.json`, `tsconfig.json`, `teact.config.ts`, `.env`, `.gitignore`, and `src/` files
 
 ## Templates
 
-| Template | Description |
-|----------|-------------|
-| `router` | Multi-page bot with routing and pages directory (recommended) |
-| `counter` | Minimal counter bot with inline keyboard |
-| `full` | Router + all features pre-wired (storage, conversations, streaming, auth, i18n, payments) |
-| `empty` | Bare project with no pages |
+| Template | CLI flag | Description |
+|----------|-----------|-------------|
+| **Starter** | `starter` or `router` | Main menu + About; add routes by enabling features |
+| **Showcase** | `showcase` or `full` | Full demo (Pokedex, showcase pages, guards, commands with deep links) — features control which plugins are enabled |
+| **Counter** | `counter` | Single-screen counter |
+| **Empty** | `empty` | One message, no router |
 
 ## Features
 
-When you pick the `router` template, you can opt into features:
-
 | Feature | What it adds |
-|---------|-------------|
-| Storage | `teact.config.ts` with `storagePlugin`, Settings page with `useStorage` |
-| Conversations | `conversationsPlugin` in config |
-| Streaming | `streamPlugin` in config, StreamDemo page with `useStream` |
-| Auth | `authPlugin` in config |
-| i18n | Locale JSON files, LanguagePage with `useLocale`, `createI18n` in index |
-| Payments | StorePage with `useInvoice`, `PAYMENT_PROVIDER_TOKEN` in `.env` |
+|---------|----------------|
+| Storage | `storagePlugin`, Settings page with `useStorage` |
+| Conversations | `conversationsPlugin`; full component tour in Showcase when enabled |
+| Streaming | `streamPlugin`, StreamDemo with `useStream` |
+| Auth | `authPlugin`, guarded secret routes + login flow (Showcase) |
+| i18n | Locale JSON, `LanguagePage`, `createI18n` |
+| Payments | `StorePage` with `useInvoice`, `PAYMENT_PROVIDER_TOKEN` in `.env` |
 
-## Generated Structure
+## Showcase layout (when that template is selected)
+
+Includes `src/commands.ts` (`/start` deep links, `/help` with inline buttons), nested Pokémon routes, `NotFoundPage`, example middleware, and `experimental: {}` on `createBot` — aligned with `examples/showcase-bot`.
+
+## Generated structure (varies by template)
 
 ```
 my-bot/
-├── teact.config.ts       # Plugin configuration
+├── teact.config.ts
 ├── package.json
 ├── tsconfig.json
-├── .env                  # Bot token + provider token
+├── .env
 ├── .gitignore
 └── src/
-    ├── index.tsx          # Bot entry — router, commands, providers
+    ├── index.tsx
+    ├── commands.ts          # (Showcase)
+    ├── api/                 # (Showcase — PokeAPI)
+    ├── hooks/
     ├── pages/
-    │   ├── MainMenu.tsx   # Home page with feature buttons
-    │   ├── About.tsx
-    │   ├── Settings.tsx   # (storage)
-    │   ├── StreamDemo.tsx # (streaming)
-    │   ├── LanguagePage.tsx # (i18n)
-    │   └── StorePage.tsx  # (payments)
-    └── locales/           # (i18n)
-        ├── en.json
-        └── am.json
+    └── locales/             # (i18n)
 ```
 
 ## After Scaffolding
@@ -80,5 +78,6 @@ bun dev
 
 ## See Also
 
+- [`@teactjs/bot-templates`](../bot-templates) — template implementation
 - [`@teactjs/cli`](../cli) for the full CLI tool
 - [Root README](../../README.md) for getting started

@@ -6,7 +6,22 @@ import { useOn, useEventData, type TelegramEvent } from '../packages/runtime/src
 import { RouterCtx, CommitModeCtx, type CommitModeRef } from '../packages/runtime/src/router';
 import type { BotContext } from '../packages/renderer/src';
 
-const waitForCommit = (ms = 20) => new Promise<void>(r => setTimeout(r, ms));
+const waitForCommit = (ms = 20) => new Promise<void>((r) => setTimeout(r, ms));
+
+/** useOn handlers run in useEffect; a fixed delay is flaky under load. */
+async function waitForCondition(
+  predicate: () => boolean,
+  opts: { timeout?: number; interval?: number } = {},
+): Promise<void> {
+  const timeout = opts.timeout ?? 3000;
+  const interval = opts.interval ?? 15;
+  const start = Date.now();
+  while (Date.now() - start < timeout) {
+    if (predicate()) return;
+    await new Promise((r) => setTimeout(r, interval));
+  }
+  throw new Error(`Timeout after ${timeout}ms waiting for async hook effect`);
+}
 
 function makeBotCtx(overrides: Partial<BotContext> = {}): BotContext {
   return {
@@ -211,7 +226,7 @@ describe('useOn', () => {
     let output: OutputNode | null = null;
     const root = createRoot((tree) => { output = tree; });
     root.render(wrapWithProviders(React.createElement(TestComp), botCtx));
-    await waitForCommit();
+    await waitForCondition(() => captured !== null);
     expect(captured).toEqual(rawUpdate);
   });
 
@@ -228,7 +243,7 @@ describe('useOn', () => {
     let output: OutputNode | null = null;
     const root = createRoot((tree) => { output = tree; });
     root.render(wrapWithProviders(React.createElement(TestComp), botCtx));
-    await waitForCommit();
+    await waitForCondition(() => captured !== null);
     expect(captured).toEqual(photoData);
   });
 
@@ -245,7 +260,7 @@ describe('useOn', () => {
     let output: OutputNode | null = null;
     const root = createRoot((tree) => { output = tree; });
     root.render(wrapWithProviders(React.createElement(TestComp), botCtx));
-    await waitForCommit();
+    await waitForCondition(() => captured !== null);
     expect(captured).toEqual(contactData);
   });
 
@@ -261,8 +276,7 @@ describe('useOn', () => {
     let output: OutputNode | null = null;
     const root = createRoot((tree) => { output = tree; });
     root.render(wrapWithProviders(React.createElement(TestComp), botCtx));
-    await waitForCommit();
-    expect(capturedCtx).toBeTruthy();
+    await waitForCondition(() => capturedCtx !== null);
     expect(capturedCtx.chatId).toBe('999');
     expect(capturedCtx.userId).toBe('888');
   });

@@ -34,8 +34,15 @@
       "@teactjs/testing": ["packages/testing/src"],
       "@teactjs/testing/*": ["packages/testing/src/*"],
       "@teactjs/cli": ["packages/cli/src"],
-      "@teactjs/cli/*": ["packages/cli/src/*"]
+      "@teactjs/cli/*": ["packages/cli/src/*"],
+      "@teactjs/bot-templates": ["packages/bot-templates/src"],
+      "@teactjs/bot-templates/*": ["packages/bot-templates/src/*"]
     }
   },
-  "exclude": ["node_modules", "dist", "examples"]
+  "exclude": [
+    "node_modules",
+    "dist",
+    "examples",
+    "packages/bot-templates/src/assets"
+  ]
 }

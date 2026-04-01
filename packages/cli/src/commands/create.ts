@@ -1,7 +1,16 @@
 import { mkdirSync, writeFileSync, existsSync } from 'fs';
 import { resolve, join } from 'path';
 import * as p from '@clack/prompts';
-import { getTemplate } from '../templates/bot-templates';
+import {
+  buildDependencies,
+  buildEnvContent,
+  defaultFeaturesForTemplate,
+  getTemplateFiles,
+  normalizeTemplate,
+  TEMPLATE_SELECT_OPTIONS,
+  FEATURE_SELECT_OPTIONS,
+  type TemplateId,
+} from '@teactjs/bot-templates';
 
 interface CreateOptions {
   template?: string;
@@ -11,6 +20,16 @@ interface CreateOptions {
 }
 
 const isTTY = process.stdin.isTTY;
+
+async function runInstall(pm: string, cwd: string): Promise<number> {
+  const proc = Bun.spawn([pm, 'install'], {
+    cwd,
+    stdout: 'inherit',
+    stderr: 'inherit',
+    stdin: 'inherit',
+  });
+  return proc.exited.then(() => proc.exitCode ?? 1);
+}
 
 export async function createCommand(name: string, opts: CreateOptions): Promise<void> {
   const dir = resolve(process.cwd(), name);
@@ -22,34 +41,23 @@ export async function createCommand(name: string, opts: CreateOptions): Promise<
 
   p.intro(`Creating Teact project: ${name}`);
 
-  let template: string;
+  let template: TemplateId;
   let features: string[];
   let pm: string;
 
   if (isTTY && !opts.template) {
     const t = await p.select({
       message: 'Pick a template',
-      options: [
-        { value: 'router', label: 'Router', hint: 'multi-page bot with navigation (recommended)' },
-        { value: 'counter', label: 'Counter', hint: 'simple stateful counter bot' },
-        { value: 'full', label: 'Full-Stack', hint: 'router + storage + conversations + streaming + auth' },
-        { value: 'empty', label: 'Empty', hint: 'minimal setup' },
-      ],
+      options: [...TEMPLATE_SELECT_OPTIONS],
     });
     if (p.isCancel(t)) { p.cancel('Cancelled'); process.exit(0); }
-    template = t as string;
+    template = normalizeTemplate(t as string);
 
+    const initial = defaultFeaturesForTemplate(template);
     const f = await p.multiselect({
-      message: 'Select features',
-      options: [
-        { value: 'storage', label: 'Storage', hint: 'persistent state with useStorage' },
-        { value: 'conversations', label: 'Conversations', hint: 'multi-step flows with Grammy' },
-        { value: 'streaming', label: 'Streaming', hint: 'live text updates with useStream' },
-        { value: 'auth', label: 'Auth', hint: 'role-based access control' },
-        { value: 'i18n', label: 'Internationalization', hint: 'multi-language support with i18next' },
-        { value: 'payments', label: 'Payments', hint: 'Telegram payments with useInvoice' },
-      ],
-      initialValues: template === 'full' ? ['storage', 'conversations', 'streaming', 'auth'] : [],
+      message: 'Plugins & integrations (toggle what you need)',
+      options: [...FEATURE_SELECT_OPTIONS],
+      initialValues: initial,
       required: false,
     });
     if (p.isCancel(f)) { p.cancel('Cancelled'); process.exit(0); }
@@ -66,15 +74,19 @@ export async function createCommand(name: string, opts: CreateOptions): Promise<
     if (p.isCancel(m)) { p.cancel('Cancelled'); process.exit(0); }
     pm = m as string;
   } else {
-    template = opts.template ?? 'router';
-    features = opts.features ? opts.features.split(',') : (template === 'full' ? ['storage', 'conversations', 'streaming', 'auth'] : []);
+    template = normalizeTemplate(opts.template ?? 'starter');
+    features = opts.features
+      ? opts.features.split(',').map((s) => s.trim()).filter(Boolean)
+      : defaultFeaturesForTemplate(template);
     pm = opts.pm ?? 'bun';
   }
 
   const spin = p.spinner();
   spin.start('Generating project');
 
-  mkdirSync(join(dir, 'src', 'components'), { recursive: true });
+  mkdirSync(join(dir, 'src', 'pages'), { recursive: true });
+
+  const { dependencies, devDependencies } = buildDependencies(template, features);
 
   const packageJson: Record<string, unknown> = {
     name,
@@ -86,20 +98,8 @@ export async function createCommand(name: string, opts: CreateOptions): Promise<
       build: 'teact build',
       start: 'bun run dist/index.js',
     },
-    dependencies: {
-      '@teactjs/core': '^0.1.0-alpha.7',
-      '@teactjs/ui': '^0.1.0-alpha.7',
-      '@teactjs/telegram': '^0.1.0-alpha.7',
-      '@teactjs/cli': '^0.1.0-alpha.7',
-      react: '^19.0.0',
-      ...(features.includes('storage') ? { '@teactjs/storage': '^0.1.0-alpha.7' } : {}),
-      ...(features.includes('i18n') ? { 'i18next': '^23.0.0', 'react-i18next': '^15.0.0' } : {}),
-    },
-    devDependencies: {
-      typescript: '^5.7.0',
-      '@types/bun': 'latest',
-      '@types/react': '^19.0.0',
-    },
+    dependencies,
+    devDependencies,
   };
 
   writeFileSync(join(dir, 'package.json'), JSON.stringify(packageJson, null, 2));
@@ -115,18 +115,16 @@ export async function createCommand(name: string, opts: CreateOptions): Promise<
       strict: true,
       esModuleInterop: true,
       skipLibCheck: true,
-      outDir: 'dist',
-      rootDir: 'src',
       resolveJsonModule: true,
     },
-    include: ['src'],
+    include: ['src', 'teact.config.ts'],
   };
 
   writeFileSync(join(dir, 'tsconfig.json'), JSON.stringify(tsconfig, null, 2));
-  writeFileSync(join(dir, '.env'), 'TELEGRAM_BOT_TOKEN=\nPAYMENT_PROVIDER_TOKEN=\n');
-  writeFileSync(join(dir, '.gitignore'), 'node_modules/\ndist/\n.env\n.teact/\n*.log\n');
+  writeFileSync(join(dir, '.env'), buildEnvContent(features));
+  writeFileSync(join(dir, '.gitignore'), 'node_modules/\ndist/\n.env\n.teact/\n*.log\n.DS_Store\n');
 
-  const files = getTemplate(template, features);
+  const files = getTemplateFiles(template, features);
   for (const [filePath, content] of Object.entries(files)) {
     const fullPath = join(dir, filePath);
     mkdirSync(resolve(fullPath, '..'), { recursive: true });
@@ -136,25 +134,21 @@ export async function createCommand(name: string, opts: CreateOptions): Promise<
   spin.stop('Project generated');
 
   if (opts.install !== false) {
-    const installSpin = p.spinner();
-    installSpin.start(`Installing dependencies with ${pm}`);
-    try {
-      const proc = Bun.spawnSync([pm, 'install'], { cwd: dir, stderr: 'pipe', stdout: 'pipe' });
-      if (proc.exitCode === 0) {
-        installSpin.stop('Dependencies installed');
-      } else {
-        installSpin.stop('Install failed — run manually');
-      }
-    } catch {
-      installSpin.stop('Install failed — run manually');
+    p.log.info(`Installing dependencies with ${pm}…`);
+    const code = await runInstall(pm, dir);
+    if (code === 0) {
+      p.log.success('Dependencies installed');
+    } else {
+      p.log.warn('Install exited with an error — run the install command manually in the project folder');
     }
   }
 
+  const runCmd = pm === 'bun' ? 'bun dev' : `${pm} run dev`;
   p.note(
     [
       `cd ${name}`,
-      '# Add your TELEGRAM_BOT_TOKEN to .env',
-      `${pm === 'bun' ? 'bun' : pm + ' run'} dev`,
+      '# Add TELEGRAM_BOT_TOKEN to .env',
+      runCmd,
     ].join('\n'),
     'Next steps',
   );

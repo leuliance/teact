@@ -1,6 +1,6 @@
 {
   "name": "@teactjs/renderer",
-  "version": "0.1.0-alpha.7",
+  "version": "0.1.0-alpha.8",
   "description": "Internal React reconciler for Teact",
   "type": "module",
   "main": "dist/index.js",

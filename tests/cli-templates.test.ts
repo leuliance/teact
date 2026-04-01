@@ -1,9 +1,9 @@
 import { describe, test, expect } from 'bun:test';
-import { getTemplate } from '../packages/cli/src/templates/bot-templates';
+import { getTemplate, getTemplateFiles, normalizeTemplate } from '@teactjs/bot-templates';
 
 describe('getTemplate — shared files', () => {
   test('all templates include .env file', () => {
-    for (const tmpl of ['counter', 'router', 'full', 'empty']) {
+    for (const tmpl of ['counter', 'router', 'full', 'empty', 'starter', 'showcase']) {
       const files = getTemplate(tmpl, []);
       expect(files['.env']).toBeDefined();
       expect(files['.env']).toContain('TELEGRAM_BOT_TOKEN');
@@ -59,7 +59,7 @@ describe('getTemplate — counter template', () => {
   });
 });
 
-describe('getTemplate — router template', () => {
+describe('getTemplate — starter template (router)', () => {
   const files = getTemplate('router', []);
 
   test('returns expected files', () => {
@@ -68,13 +68,18 @@ describe('getTemplate — router template', () => {
     expect(files['src/pages/About.tsx']).toBeDefined();
   });
 
-  test('router template uses createRouter', () => {
+  test('starter template uses createRouter', () => {
     expect(files['src/index.tsx']).toContain('createRouter');
   });
 
-  test('router template defines routes', () => {
+  test('starter template defines routes', () => {
     expect(files['src/index.tsx']).toContain("'/': MainMenu");
     expect(files['src/index.tsx']).toContain("'/about': About");
+  });
+
+  test('starter uses middleware and experimental', () => {
+    expect(files['src/index.tsx']).toContain('middleware');
+    expect(files['src/index.tsx']).toContain('experimental');
   });
 
   test('MainMenu uses useNavigate', () => {
@@ -86,7 +91,7 @@ describe('getTemplate — router template', () => {
   });
 });
 
-describe('getTemplate — router template with features', () => {
+describe('getTemplate — starter template with features', () => {
   test('storage feature generates teact.config.ts and Settings page', () => {
     const files = getTemplate('router', ['storage']);
     expect(files['teact.config.ts']).toBeDefined();
@@ -148,11 +153,19 @@ describe('getTemplate — router template with features', () => {
   });
 });
 
-describe('getTemplate — full template', () => {
+describe('getTemplate — full template (showcase + all plugins)', () => {
   const files = getTemplate('full', []);
 
-  test('includes src/index.tsx', () => {
+  test('includes src/index.tsx with QueryClient and notFound', () => {
     expect(files['src/index.tsx']).toBeDefined();
+    expect(files['src/index.tsx']).toContain('QueryClient');
+    expect(files['src/index.tsx']).toContain('notFound: NotFoundPage');
+  });
+
+  test('includes commands with deepLink and help handler', () => {
+    expect(files['src/commands.ts']).toBeDefined();
+    expect(files['src/commands.ts']).toContain('deepLink');
+    expect(files['src/commands.ts']).toContain('handler:');
   });
 
   test('includes teact.config.ts', () => {
@@ -160,13 +173,16 @@ describe('getTemplate — full template', () => {
     expect(files['teact.config.ts']).toContain('defineConfig');
   });
 
-  test('includes pages for all features', () => {
+  test('includes showcase pages', () => {
     expect(files['src/pages/MainMenu.tsx']).toBeDefined();
-    expect(files['src/pages/About.tsx']).toBeDefined();
-    expect(files['src/pages/Settings.tsx']).toBeDefined();
-    expect(files['src/pages/StreamDemo.tsx']).toBeDefined();
-    expect(files['src/pages/LanguagePage.tsx']).toBeDefined();
-    expect(files['src/pages/StorePage.tsx']).toBeDefined();
+    expect(files['src/pages/PokemonList.tsx']).toBeDefined();
+    expect(files['src/pages/ComponentShowcase.tsx']).toBeDefined();
+    expect(files['src/pages/NotFoundPage.tsx']).toBeDefined();
+  });
+
+  test('includes auth guard routes when auth enabled', () => {
+    expect(files['src/index.tsx']).toContain('/secret-login');
+    expect(files['src/index.tsx']).toContain('beforeLoad');
   });
 
   test('full template has storagePlugin', () => {
@@ -206,6 +222,19 @@ describe('getTemplate — full template', () => {
     expect(files['src/pages/StorePage.tsx']).toContain('useInvoice');
     expect(files['src/pages/StorePage.tsx']).toContain('providerToken');
   });
+
+  test('defineConversation in ComponentShowcase when conversations on', () => {
+    expect(files['src/pages/ComponentShowcase.tsx']).toContain('defineConversation');
+  });
+});
+
+describe('showcase without conversations uses lite ComponentShowcase', () => {
+  const files = getTemplateFiles('showcase', ['storage', 'streaming', 'auth', 'i18n', 'payments']);
+
+  test('no defineConversation import (lite template only mentions it in copy)', () => {
+    expect(files['src/pages/ComponentShowcase.tsx']).not.toMatch(/from ['"]@teactjs\/telegram['"]/);
+    expect(files['src/pages/ComponentShowcase.tsx']).not.toMatch(/defineConversation\s*\(/);
+  });
 });
 
 describe('getTemplate — empty template', () => {
@@ -220,7 +249,7 @@ describe('getTemplate — empty template', () => {
   });
 
   test('empty template has no page files', () => {
-    const pageFiles = Object.keys(files).filter(f => f.includes('pages/'));
+    const pageFiles = Object.keys(files).filter((f) => f.includes('pages/'));
     expect(pageFiles).toHaveLength(0);
   });
 
@@ -239,10 +268,16 @@ describe('getTemplate — empty template', () => {
   });
 });
 
-describe('getTemplate — unknown template falls back to router', () => {
-  test('unknown template name returns router-like files', () => {
-    const files = getTemplate('nonexistent', []);
-    expect(files['src/index.tsx']).toBeDefined();
-    expect(files['src/index.tsx']).toContain('createRouter');
+describe('normalizeTemplate', () => {
+  test('unknown template name falls back to starter', () => {
+    expect(normalizeTemplate('nonexistent')).toBe('starter');
+  });
+
+  test('router maps to starter', () => {
+    expect(normalizeTemplate('router')).toBe('starter');
+  });
+
+  test('full maps to showcase', () => {
+    expect(normalizeTemplate('full')).toBe('showcase');
   });
 });

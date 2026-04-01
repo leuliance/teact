@@ -1,6 +1,6 @@
 {
   "name": "create-teact",
-  "version": "0.1.0-alpha.7",
+  "version": "0.1.0-alpha.8",
   "description": "Create a new Teact bot project — scaffolds a ready-to-run Telegram bot",
   "type": "module",
   "bin": {
@@ -8,7 +8,8 @@
   },
   "files": ["index.ts", "README.md"],
   "dependencies": {
-    "@clack/prompts": "^1.1.0"
+    "@clack/prompts": "^1.1.0",
+    "@teactjs/bot-templates": "workspace:*"
   },
   "license": "MIT"
 }
