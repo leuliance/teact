@@ -1,4 +1,4 @@
-import React, { useState, useContext, useId, useMemo, useCallback } from 'react';
+import React, { useState, useContext, useId, useMemo, useCallback, useRef } from 'react';
 import { useBot } from './context';
 import { CallbackRegistryCtx } from '../renderer';
 
@@ -167,10 +167,14 @@ export function useConversation(config?: StepsConfig | UseConversationOptions): 
   const opts = stepsMode ? undefined : config as UseConversationOptions | undefined;
 
   const [answers, setAnswers] = useState<Record<string, string>>({});
-  const [activeKey, setActiveKey] = useState<string | null>(null);
-  const [waitMode, setWaitMode] = useState<'text' | 'callback'>('text');
-  const [processedMsgId, setProcessedMsgId] = useState('');
   const [lastError, setLastError] = useState<string | null>(null);
+  // Activation tracking lives in REFS, not state. `renderStep()` (which activates the
+  // current step) runs inside the child <Form>/<Conversation>, so doing setState there
+  // would warn "update X while rendering a different component". Mutating refs during
+  // render is safe; re-renders are still driven by setAnswers/setLastError.
+  const activeKeyRef = useRef<string | null>(null);
+  const waitModeRef = useRef<'text' | 'callback'>('text');
+  const processedMsgIdRef = useRef('');
 
   const bot = useBot();
   const registry = useContext(CallbackRegistryCtx);
@@ -194,42 +198,43 @@ export function useConversation(config?: StepsConfig | UseConversationOptions): 
     return opts?.validate;
   }, [steps, opts?.validate]);
 
-  if (activeKey && !(activeKey in answers) && msgId !== processedMsgId) {
-    if (waitMode === 'text' && text && !callbackData) {
-      const result = validateFn?.(activeKey, text) ?? true;
+  const active = activeKeyRef.current;
+  if (active && !(active in answers) && msgId !== processedMsgIdRef.current) {
+    if (waitModeRef.current === 'text' && text && !callbackData) {
+      const result = validateFn?.(active, text) ?? true;
       if (result === true) {
-        setAnswers({ ...answers, [activeKey]: text });
-        setActiveKey(null);
+        setAnswers({ ...answers, [active]: text });
+        activeKeyRef.current = null;
         if (lastError) setLastError(null);
       } else {
         setLastError(result);
       }
-      setProcessedMsgId(msgId);
-    } else if (waitMode === 'callback' && text && !callbackData) {
+      processedMsgIdRef.current = msgId;
+    } else if (waitModeRef.current === 'callback' && text && !callbackData) {
       setLastError('Please pick an option from the buttons above.');
-      setProcessedMsgId(msgId);
+      processedMsgIdRef.current = msgId;
     }
   }
 
   const setFn = useCallback((key: string, value: string) => {
     setAnswers(prev => ({ ...prev, [key]: value }));
-    setActiveKey(prev => prev === key ? null : prev);
+    if (activeKeyRef.current === key) activeKeyRef.current = null;
     setLastError(null);
   }, []);
 
   function activateText(key: string) {
-    if (!activeKey && !(key in answers)) {
-      setActiveKey(key);
-      setWaitMode('text');
-      setProcessedMsgId(msgId);
+    if (!activeKeyRef.current && !(key in answers)) {
+      activeKeyRef.current = key;
+      waitModeRef.current = 'text';
+      processedMsgIdRef.current = msgId;
     }
   }
 
   function buildAsk(key: string, questionText: string, options: AskOption[][]): React.ReactElement {
-    if (!activeKey && !(key in answers)) {
-      setActiveKey(key);
-      setWaitMode('callback');
-      setProcessedMsgId(msgId);
+    if (!activeKeyRef.current && !(key in answers)) {
+      activeKeyRef.current = key;
+      waitModeRef.current = 'callback';
+      processedMsgIdRef.current = msgId;
     }
 
     const rows = options.map((row, ri) => {
@@ -282,7 +287,7 @@ export function useConversation(config?: StepsConfig | UseConversationOptions): 
       delete next[key];
       return next;
     });
-    setActiveKey(null);
+    activeKeyRef.current = null;
     setLastError(null);
   }
 
@@ -334,14 +339,14 @@ export function useConversation(config?: StepsConfig | UseConversationOptions): 
     step: currentKey ? stepKeys.indexOf(currentKey) : stepKeys.length,
     current: currentKey,
     complete: stepsMode ? currentKey === null && stepKeys.length > 0 : false,
-    isWaiting: activeKey !== null,
+    isWaiting: activeKeyRef.current !== null,
     lastError,
     data: answers,
     render: render as ConversationState['render'],
     back,
     goTo,
     canGoBack,
-    reset: () => { setAnswers({}); setActiveKey(null); setWaitMode('text'); setLastError(null); },
+    reset: () => { setAnswers({}); activeKeyRef.current = null; waitModeRef.current = 'text'; setLastError(null); },
   } as ConversationState;
 }
 

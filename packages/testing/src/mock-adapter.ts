@@ -23,6 +23,7 @@ export class MockAdapter implements Adapter {
   readonly name = 'mock';
   private listeners = new Map<string, Set<EventHandler>>();
   private msgIdCounter = 1;
+  private inMsgId = 100;
 
   sent: SentMessage[] = [];
   edited: EditedMessage[] = [];
@@ -81,20 +82,21 @@ export class MockAdapter implements Adapter {
     // no-op: tests drive updates via simulateMessage / simulateCallback
   }
 
-  /** Simulate an incoming text message. */
+  /** Simulate an incoming text message. Each gets a unique messageId, like Telegram. */
   simulateMessage(chatId: string, userId: string, text: string): void {
-    this.emit('message', makeBotCtx({ chatId, userId, text }));
+    this.emit('message', makeBotCtx({ chatId, userId, text, messageId: String(this.inMsgId++) }));
   }
 
   /** Simulate a callback query (button press). */
   simulateCallback(chatId: string, userId: string, data: string, messageId?: string): void {
-    this.emit('callback_query', makeBotCtx({ chatId, userId, callbackData: data, messageId }));
+    this.emit('callback_query', makeBotCtx({ chatId, userId, callbackData: data, messageId: messageId ?? String(this.inMsgId++) }));
   }
 
   reset(): void {
     this.sent = [];
     this.edited = [];
     this.msgIdCounter = 1;
+    this.inMsgId = 100;
   }
 
   getLastSent(): SentMessage | undefined {
