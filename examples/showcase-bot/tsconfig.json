@@ -9,10 +9,8 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "outDir": "dist",
-    "rootDir": ".",
+    "noEmit": true,
     "baseUrl": ".",
-    "//": "In-repo example only: resolve @teactjs/* to source so there's a SINGLE module instance (shared React context). Generated user projects don't need this — they install the published packages.",
     "paths": {
       "@teactjs/core": ["../../packages/core/src"],
       "@teactjs/core/*": ["../../packages/core/src/*"],
