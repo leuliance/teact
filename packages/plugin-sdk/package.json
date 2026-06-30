@@ -1,0 +1,23 @@
+{
+  "name": "@teactjs/plugin-sdk",
+  "version": "0.1.0-alpha.14",
+  "description": "Author Teact plugins — definePlugin with middleware, providers, services (DI), and lifecycle hooks",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/plugin-sdk/src/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/plugin-sdk/src/index.d.ts"
+    }
+  },
+  "files": ["dist", "README.md"],
+  "scripts": {
+    "build": "bun build ./src/index.ts --outdir ./dist --format esm --target bun --external react --external react/jsx-runtime --external react/jsx-dev-runtime --external @teactjs/core && tsc --emitDeclarationOnly --outDir dist --declaration --project tsconfig.build.json"
+  },
+  "peerDependencies": {
+    "react": "^18.0.0 || ^19.0.0",
+    "@teactjs/core": "^0.1.0-alpha.14"
+  },
+  "license": "MIT"
+}

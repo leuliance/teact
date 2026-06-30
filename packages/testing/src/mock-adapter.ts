@@ -1,4 +1,4 @@
-import type { BotContext, OutputNode } from '@teactjs/core';
+import type { Adapter, BotContext, OutputNode } from '@teactjs/core';
 
 type EventHandler = (ctx: BotContext) => void;
 
@@ -19,13 +19,15 @@ export interface EditedMessage {
  * Mock adapter that records sent/edited messages and lets tests
  * simulate incoming messages and callback queries.
  */
-export class MockAdapter {
+export class MockAdapter implements Adapter {
   readonly name = 'mock';
   private listeners = new Map<string, Set<EventHandler>>();
   private msgIdCounter = 1;
 
   sent: SentMessage[] = [];
   edited: EditedMessage[] = [];
+  cleared: { chatId: string | number; messageId: number }[] = [];
+  commands: { command: string; description: string }[] = [];
   connected = false;
 
   on(event: string, handler: EventHandler): void {
@@ -57,6 +59,26 @@ export class MockAdapter {
 
   async edit(chatId: string | number, messageId: number, output: OutputNode): Promise<void> {
     this.edited.push({ chatId, messageId, output, timestamp: Date.now() });
+  }
+
+  /** A tg-message with no reply-keyboard mutation can be applied as an edit. */
+  canEdit(output: OutputNode): boolean {
+    if (output.type !== 'tg-message') return false;
+    return !output.children.some(
+      (c) => c.type === 'tg-reply-keyboard' || c.type === 'tg-reply-keyboard-remove',
+    );
+  }
+
+  async clearButtons(chatId: string | number, messageId: number): Promise<void> {
+    this.cleared.push({ chatId, messageId });
+  }
+
+  async setCommands(commands: { command: string; description: string }[]): Promise<void> {
+    this.commands = commands;
+  }
+
+  async listen(): Promise<void> {
+    // no-op: tests drive updates via simulateMessage / simulateCallback
   }
 
   /** Simulate an incoming text message. */

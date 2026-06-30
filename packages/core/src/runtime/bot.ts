@@ -7,6 +7,7 @@ import { CallbackRegistryCtx, ErrorBoundary, type CallbackMap } from '../rendere
 const InternalSuspenseFallback = () =>
   React.createElement('tg-message', { text: '⏳ Loading…' });
 import { RuntimeContext, type RuntimeContextValue } from './context';
+import { ServicesCtx, type ServiceMap } from './services';
 import { MemorySessionStore } from './session';
 import { compose } from './middleware';
 import { RouterProvider, CommitModeCtx, type RouterConfig, type NavigateMode, type CommitModeRef } from './router';
@@ -271,6 +272,7 @@ export function createBot(options: CreateBotOptions) {
   let plugins: TeactPlugin[] = [];
   let userMiddleware: Middleware[] = [];
   let pluginMiddleware: Middleware[] = [];
+  let mergedServices: ServiceMap = {};
   let sessionStore: SessionStore = new MemorySessionStore(options.session?.ttl);
 
   function resetChatRoot(ctx: BotContext) {
@@ -481,15 +483,19 @@ export function createBot(options: CreateBotOptions) {
     );
 
     const element = React.createElement(
-      CallbackRegistryCtx.Provider,
-      { value: { handlers: chatState.handlers } },
+      ServicesCtx.Provider,
+      { value: mergedServices },
       React.createElement(
-        RuntimeContext.Provider,
-        { value: runtimeValue },
+        CallbackRegistryCtx.Provider,
+        { value: { handlers: chatState.handlers } },
         React.createElement(
-          CommitModeCtx.Provider,
-          { value: chatState.commitMode },
-          wrappedElement,
+          RuntimeContext.Provider,
+          { value: runtimeValue },
+          React.createElement(
+            CommitModeCtx.Provider,
+            { value: chatState.commitMode },
+            wrappedElement,
+          ),
         ),
       ),
     );
@@ -510,6 +516,7 @@ export function createBot(options: CreateBotOptions) {
       // Merge: config plugins first, then createBot plugins (app can add more)
       plugins = [...(fileConfig.plugins ?? []), ...(options.plugins ?? [])];
       pluginMiddleware = plugins.filter(p => p.middleware).map(p => p.middleware!);
+      mergedServices = Object.assign({}, ...plugins.map(p => p.services ?? {}));
       userMiddleware = [...(fileConfig.middleware ?? []), ...(options.middleware ?? [])];
 
       // Commands: co-located router `command:` entries first, then explicit

@@ -26,4 +26,9 @@ export interface TeactPlugin {
   Provider?: FunctionComponent<{ children: ReactNode }>;
   /** Cleanup when the bot stops. */
   onStop?: () => Promise<void> | void;
+  /**
+   * Services this plugin contributes to the DI container, keyed by name.
+   * Read from any component with `useService(key)`. Populated by `definePlugin`.
+   */
+  services?: Record<string, unknown>;
 }

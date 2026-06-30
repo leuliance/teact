@@ -74,6 +74,14 @@
         "@clack/prompts": "^1.1.0",
       },
     },
+    "packages/plugin-sdk": {
+      "name": "@teactjs/plugin-sdk",
+      "version": "0.1.0-alpha.14",
+      "peerDependencies": {
+        "@teactjs/core": "^0.1.0-alpha.14",
+        "react": "^18.0.0 || ^19.0.0",
+      },
+    },
     "packages/storage": {
       "name": "@teactjs/storage",
       "version": "0.1.0-alpha.14",
@@ -275,6 +283,8 @@
     "@teactjs/cli": ["@teactjs/cli@workspace:packages/cli"],
 
     "@teactjs/core": ["@teactjs/core@workspace:packages/core"],
+
+    "@teactjs/plugin-sdk": ["@teactjs/plugin-sdk@workspace:packages/plugin-sdk"],
 
     "@teactjs/storage": ["@teactjs/storage@workspace:packages/storage"],
 

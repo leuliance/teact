@@ -13,6 +13,9 @@ export type { ConversationState, FormFieldDef, FormResult, Validator, ValidateFn
 
 export type { TeactPlugin } from './plugin';
 
+export { ServicesCtx, useService, useOptionalService } from './services';
+export type { ServiceMap } from './services';
+
 export { useStream } from './stream';
 export type { UseStreamResult } from './stream';
 

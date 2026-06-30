@@ -56,6 +56,9 @@ export type { AuthTokens, AuthSessionState } from './runtime';
 
 export type { TeactPlugin } from './runtime';
 
+export { ServicesCtx, useService, useOptionalService } from './runtime';
+export type { ServiceMap } from './runtime';
+
 export { defineConfig } from './runtime';
 export type { TeactConfig } from './runtime';
 
