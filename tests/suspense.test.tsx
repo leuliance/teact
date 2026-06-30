@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test';
 import React, { Suspense, use } from 'react';
-import { createRoot, type OutputNode } from '../packages/renderer/src';
+import { createRoot, type OutputNode } from '../packages/core/src/renderer';
 
 function waitFor(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));

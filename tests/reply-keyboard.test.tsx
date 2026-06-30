@@ -1,10 +1,10 @@
 import { describe, test, expect } from 'bun:test';
 import React from 'react';
-import { createRoot, type OutputNode } from '../packages/renderer/src';
+import { createRoot, type OutputNode } from '../packages/core/src/renderer';
 import {
   Message, ReplyKeyboard, ReplyRow, ReplyButton,
   RequestContactButton, ReplyKeyboardRemove,
-} from '../packages/react/src/components';
+} from '../packages/ui/src/components';
 import { serializeOutput } from '../packages/telegram/src/serialize';
 
 const waitForCommit = (ms = 15) => new Promise<void>(r => setTimeout(r, ms));

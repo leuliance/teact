@@ -1,8 +1,8 @@
 import { describe, test, expect } from 'bun:test';
 import React from 'react';
-import { createRoot, type OutputNode } from '../packages/renderer/src';
-import { RuntimeContext, type RuntimeContextValue } from '../packages/runtime/src/context';
-import { useAuthSession } from '../packages/runtime/src/auth-session';
+import { createRoot, type OutputNode } from '../packages/core/src/renderer';
+import { RuntimeContext, type RuntimeContextValue } from '../packages/core/src/runtime/context';
+import { useAuthSession } from '../packages/core/src/runtime/auth-session';
 
 function waitForCommit(ms = 15): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));

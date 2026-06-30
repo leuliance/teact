@@ -1,10 +1,10 @@
 import { describe, test, expect } from 'bun:test';
 import React, { useState } from 'react';
-import { createRoot, type OutputNode } from '../packages/renderer/src';
-import { RuntimeContext, type RuntimeContextValue } from '../packages/runtime/src/context';
-import { useOn, useEventData, type TelegramEvent } from '../packages/runtime/src/event-hooks';
-import { RouterCtx, CommitModeCtx, type CommitModeRef } from '../packages/runtime/src/router';
-import type { BotContext } from '../packages/renderer/src';
+import { createRoot, type OutputNode } from '../packages/core/src/renderer';
+import { RuntimeContext, type RuntimeContextValue } from '../packages/core/src/runtime/context';
+import { useOn, useEventData, type TelegramEvent } from '../packages/core/src/runtime/event-hooks';
+import { RouterCtx, CommitModeCtx, type CommitModeRef } from '../packages/core/src/runtime/router';
+import type { BotContext } from '../packages/core/src/renderer';
 
 const waitForCommit = (ms = 20) => new Promise<void>((r) => setTimeout(r, ms));
 

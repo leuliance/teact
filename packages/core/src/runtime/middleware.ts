@@ -1,4 +1,4 @@
-import type { BotContext, Middleware } from '@teactjs/renderer';
+import type { BotContext, Middleware } from '../renderer';
 
 /**
  * Compose an array of middleware functions into a single middleware.

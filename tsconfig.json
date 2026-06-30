@@ -19,12 +19,8 @@
     "paths": {
       "@teactjs/core": ["packages/core/src"],
       "@teactjs/core/*": ["packages/core/src/*"],
-      "@teactjs/react": ["packages/react/src"],
-      "@teactjs/react/*": ["packages/react/src/*"],
-      "@teactjs/runtime": ["packages/runtime/src"],
-      "@teactjs/runtime/*": ["packages/runtime/src/*"],
-      "@teactjs/renderer": ["packages/renderer/src"],
-      "@teactjs/renderer/*": ["packages/renderer/src/*"],
+      "@teactjs/plugin-sdk": ["packages/plugin-sdk/src"],
+      "@teactjs/plugin-sdk/*": ["packages/plugin-sdk/src/*"],
       "@teactjs/telegram": ["packages/telegram/src"],
       "@teactjs/telegram/*": ["packages/telegram/src/*"],
       "@teactjs/ui": ["packages/ui/src"],
@@ -39,8 +35,9 @@
   },
   "exclude": [
     "node_modules",
-    "dist",
+    "**/dist",
     "examples",
-    "packages/create-teact/lib/assets"
+    "packages/create-teact/lib/assets",
+    "packages/cli/src/lib/assets"
   ]
 }

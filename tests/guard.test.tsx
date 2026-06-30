@@ -1,12 +1,12 @@
 import { describe, test, expect } from 'bun:test';
 import React from 'react';
-import { createRoot, type OutputNode } from '../packages/renderer/src';
-import { RuntimeContext, type RuntimeContextValue } from '../packages/runtime/src/context';
+import { createRoot, type OutputNode } from '../packages/core/src/renderer';
+import { RuntimeContext, type RuntimeContextValue } from '../packages/core/src/runtime/context';
 import {
   createRouter, RouterProvider, CommitModeCtx, redirect,
   type CommitModeRef, type GuardRedirect,
-} from '../packages/runtime/src/router';
-import type { BotContext } from '../packages/renderer/src';
+} from '../packages/core/src/runtime/router';
+import type { BotContext } from '../packages/core/src/renderer';
 
 const waitForCommit = (ms = 15) => new Promise<void>(r => setTimeout(r, ms));
 

@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test';
-import type { InvoiceConfig, InvoiceResult, LabeledPrice, SuccessfulPayment } from '../packages/runtime/src/invoice';
+import type { InvoiceConfig, InvoiceResult, LabeledPrice, SuccessfulPayment } from '../packages/core/src/runtime/invoice';
 
 describe('InvoiceConfig interface', () => {
   test('has all required fields', () => {

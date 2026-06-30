@@ -22,7 +22,7 @@
     },
     "examples/showcase-bot": {
       "name": "showcase-bot",
-      "version": "0.1.0",
+      "version": "0.1.1-alpha.0",
       "dependencies": {
         "@tanstack/react-query": "^5.95.2",
         "@teactjs/core": "workspace:*",
@@ -56,8 +56,9 @@
       "name": "@teactjs/core",
       "version": "0.1.0-alpha.14",
       "dependencies": {
-        "@teactjs/renderer": "^0.1.0-alpha.14",
-        "@teactjs/runtime": "^0.1.0-alpha.14",
+        "i18next": "^26.0.3",
+        "react-i18next": "^17.0.2",
+        "react-reconciler": "^0.31.0",
       },
       "peerDependencies": {
         "react": "^18.0.0 || ^19.0.0",
@@ -73,42 +74,11 @@
         "@clack/prompts": "^1.1.0",
       },
     },
-    "packages/react": {
-      "name": "@teactjs/react",
-      "version": "0.1.0-alpha.14",
-      "dependencies": {
-        "@teactjs/renderer": "^0.1.0-alpha.14",
-      },
-      "peerDependencies": {
-        "react": "^18.0.0 || ^19.0.0",
-      },
-    },
-    "packages/renderer": {
-      "name": "@teactjs/renderer",
-      "version": "0.1.0-alpha.14",
-      "dependencies": {
-        "react-reconciler": "^0.31.0",
-      },
-      "peerDependencies": {
-        "react": "^18.0.0 || ^19.0.0",
-      },
-    },
-    "packages/runtime": {
-      "name": "@teactjs/runtime",
-      "version": "0.1.0-alpha.14",
-      "dependencies": {
-        "@teactjs/react": "^0.1.0-alpha.14",
-        "@teactjs/renderer": "^0.1.0-alpha.14",
-      },
-      "peerDependencies": {
-        "react": "^18.0.0 || ^19.0.0",
-      },
-    },
     "packages/storage": {
       "name": "@teactjs/storage",
       "version": "0.1.0-alpha.14",
       "peerDependencies": {
-        "@teactjs/runtime": "^0.1.0-alpha.14",
+        "@teactjs/core": "^0.1.0-alpha.14",
         "react": "^18.0.0 || ^19.0.0",
       },
     },
@@ -119,34 +89,26 @@
         "@grammyjs/auto-retry": "^2.0.2",
         "@grammyjs/conversations": "^2.1.1",
         "@grammyjs/stream": "^1.0.1",
-        "@teactjs/react": "^0.1.0-alpha.14",
-        "@teactjs/renderer": "^0.1.0-alpha.14",
-        "@teactjs/runtime": "^0.1.0-alpha.14",
         "grammy": "^1.35.0",
       },
       "peerDependencies": {
+        "@teactjs/core": "^0.1.0-alpha.14",
         "react": "^18.0.0 || ^19.0.0",
       },
     },
     "packages/testing": {
       "name": "@teactjs/testing",
       "version": "0.1.0-alpha.14",
-      "dependencies": {
-        "@teactjs/react": "^0.1.0-alpha.14",
-        "@teactjs/renderer": "^0.1.0-alpha.14",
-        "@teactjs/runtime": "^0.1.0-alpha.14",
-      },
       "peerDependencies": {
+        "@teactjs/core": "^0.1.0-alpha.14",
         "react": "^18.0.0 || ^19.0.0",
       },
     },
     "packages/ui": {
       "name": "@teactjs/ui",
       "version": "0.1.0-alpha.14",
-      "dependencies": {
-        "@teactjs/react": "^0.1.0-alpha.14",
-      },
       "peerDependencies": {
+        "@teactjs/core": "^0.1.0-alpha.14",
         "react": "^18.0.0 || ^19.0.0",
       },
     },
@@ -313,12 +275,6 @@
     "@teactjs/cli": ["@teactjs/cli@workspace:packages/cli"],
 
     "@teactjs/core": ["@teactjs/core@workspace:packages/core"],
-
-    "@teactjs/react": ["@teactjs/react@workspace:packages/react"],
-
-    "@teactjs/renderer": ["@teactjs/renderer@workspace:packages/renderer"],
-
-    "@teactjs/runtime": ["@teactjs/runtime@workspace:packages/runtime"],
 
     "@teactjs/storage": ["@teactjs/storage@workspace:packages/storage"],
 

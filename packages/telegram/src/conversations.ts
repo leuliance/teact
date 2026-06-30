@@ -1,6 +1,7 @@
 import { session } from 'grammy';
 import { conversations, createConversation } from '@grammyjs/conversations';
-import type { TeactPlugin } from '@teactjs/runtime';
+import type { TeactPlugin } from '@teactjs/core';
+import type { TelegramAdapter } from './adapter';
 
 const CONVO_PREFIX = '__convo:';
 
@@ -368,8 +369,9 @@ export function conversationsPlugin(
     name: 'grammy-conversations',
 
     onStart(adapter) {
-      adapter.use(session({ initial: () => ({}) }));
-      adapter.use(conversations());
+      const tg = adapter as TelegramAdapter;
+      tg.use(session({ initial: () => ({}) }));
+      tg.use(conversations());
 
       const commandMap = new Map<string, string>();
 
@@ -381,11 +383,11 @@ export function conversationsPlugin(
       }
 
       for (const [name, def] of merged) {
-        adapter.use(createConversation(def.grammyHandler, name));
+        tg.use(createConversation(def.grammyHandler, name));
         if (def.command) commandMap.set(def.command, name);
       }
 
-      const bot = adapter.getBot();
+      const bot = tg.getBot();
 
       bot.on('callback_query:data', async (ctx, next) => {
         const data = ctx.callbackQuery.data;

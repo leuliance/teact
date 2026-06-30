@@ -1,4 +1,4 @@
-import type { SessionData, SessionStore } from '@teactjs/renderer';
+import type { SessionData, SessionStore } from '../renderer';
 
 /**
  * In-memory session store with TTL-based expiration.

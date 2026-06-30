@@ -5,9 +5,7 @@ import type { InlineConfig } from 'vite';
 const TEACT_PACKAGES = [
   '@teactjs/core',
   '@teactjs/ui',
-  '@teactjs/runtime',
-  '@teactjs/renderer',
-  '@teactjs/react',
+  '@teactjs/plugin-sdk',
   '@teactjs/telegram',
   '@teactjs/storage',
   '@teactjs/testing',

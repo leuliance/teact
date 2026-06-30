@@ -1,8 +1,8 @@
 import { describe, test, expect } from 'bun:test';
 import React, { useState } from 'react';
-import { createRoot, type OutputNode } from '../packages/renderer/src';
-import { RouterProvider, CommitModeCtx, type CommitModeRef } from '../packages/runtime/src/router';
-import { createRouter, useNavigate, useParams } from '../packages/runtime/src';
+import { createRoot, type OutputNode } from '../packages/core/src/renderer';
+import { RouterProvider, CommitModeCtx, type CommitModeRef } from '../packages/core/src/runtime/router';
+import { createRouter, useNavigate, useParams } from '../packages/core/src/runtime';
 
 function waitForCommit(ms = 15): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));

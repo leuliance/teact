@@ -1,7 +1,11 @@
 import React, { Suspense } from 'react';
 import type { FunctionComponent, ReactNode } from 'react';
-import { createRoot, type TeactRoot, type OutputNode, type BotContext, type SessionStore, type Middleware, type Adapter } from '@teactjs/renderer';
-import { CallbackRegistryCtx, ErrorBoundary, SuspenseFallback, type CallbackMap } from '@teactjs/react';
+import { createRoot, type TeactRoot, type OutputNode, type BotContext, type SessionStore, type Middleware, type Adapter } from '../renderer';
+import { CallbackRegistryCtx, ErrorBoundary, type CallbackMap } from '../renderer';
+
+/** Minimal internal Suspense fallback — a raw host element so core never imports @teactjs/ui. */
+const InternalSuspenseFallback = () =>
+  React.createElement('tg-message', { text: '⏳ Loading…' });
 import { RuntimeContext, type RuntimeContextValue } from './context';
 import { MemorySessionStore } from './session';
 import { compose } from './middleware';
@@ -470,7 +474,7 @@ export function createBot(options: CreateBotOptions) {
       },
       React.createElement(
         Suspense,
-        { fallback: React.createElement(SuspenseFallback, null) },
+        { fallback: React.createElement(InternalSuspenseFallback, null) },
         rootElement,
       ),
     );

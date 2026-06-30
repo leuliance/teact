@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test';
 import { serializeOutput } from '../packages/telegram/src/serialize';
-import type { OutputNode } from '../packages/renderer/src';
+import type { OutputNode } from '../packages/core/src/renderer';
 
 describe('Serialize new components', () => {
   test('serializes Alert', () => {

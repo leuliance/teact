@@ -1,6 +1,12 @@
 import React, { useState, useContext, useCallback, useMemo, createContext } from 'react';
-import i18next from 'i18next';
+import i18next, { type i18n as I18nextInstance } from 'i18next';
 import { initReactI18next, useTranslation, I18nextProvider } from 'react-i18next';
+
+/** Result of {@link createI18n}: a React `Provider` and the underlying i18next `instance`. */
+export interface I18nInstance {
+  Provider: (props: { children: React.ReactNode }) => React.ReactElement;
+  instance: I18nextInstance;
+}
 
 /** Configuration for {@link createI18n}. */
 export interface I18nConfig {
@@ -38,7 +44,7 @@ const LocaleCtx = createContext<LocaleContextValue | null>(null);
  * });
  * ```
  */
-export function createI18n(config: I18nConfig) {
+export function createI18n(config: I18nConfig): I18nInstance {
   const instance = i18next.createInstance();
   instance.use(initReactI18next).init({
     resources: config.resources,

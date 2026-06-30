@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test';
 import React from 'react';
-import { createRoot, type OutputNode } from '../packages/renderer/src';
+import { createRoot, type OutputNode } from '../packages/core/src/renderer';
 import {
   Video, Animation, Voice, Audio, VideoNote, Sticker,
   Contact, Location, LiveLocation, Venue,
@@ -9,7 +9,7 @@ import {
   Notification, WebAppButton,
   Message, InlineKeyboard, Button, ButtonRow, Photo, Document,
   Bold, Italic, Code, List, ListItem,
-} from '../packages/react/src';
+} from '../packages/ui/src';
 
 function waitForCommit(): Promise<void> {
   return new Promise((r) => setTimeout(r, 10));

@@ -1,5 +1,5 @@
 import React, { useContext, useId, createContext, type ReactNode, type FunctionComponent } from 'react';
-import { CallbackRegistryCtx } from './callback-registry';
+import { CallbackRegistryCtx } from '@teactjs/core';
 
 // ---- Context for tree validation ----
 

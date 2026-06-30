@@ -1,6 +1,6 @@
 import type { TeactPlugin } from './plugin';
 import type { WebhookConfig } from './bot';
-import type { Middleware, SessionStore } from '@teactjs/renderer';
+import type { Middleware, SessionStore } from '../renderer';
 
 /**
  * Infrastructure configuration for `teact.config.ts`.

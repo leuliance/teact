@@ -1,5 +1,5 @@
 import type { FunctionComponent, ReactNode } from 'react';
-import type { Adapter, Middleware } from '@teactjs/renderer';
+import type { Adapter, Middleware } from '../renderer';
 
 /**
  * Teact plugin interface.

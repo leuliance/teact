@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test';
-import { compose, commandMiddleware } from '../packages/runtime/src/middleware';
+import { compose, commandMiddleware } from '../packages/core/src/runtime/middleware';
 import type { BotContext, Middleware } from '../packages/core/src';
 
 function createMockCtx(overrides: Partial<BotContext> = {}): BotContext {

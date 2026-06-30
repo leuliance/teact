@@ -1,3 +1,6 @@
+// @teactjs/core — the engine: reconciler, runtime, router, hooks, plugin host,
+// and the platform-neutral Adapter contract. Components live in @teactjs/ui.
+
 // ---- React primitives (re-exported for convenience) ----
 
 export {
@@ -17,38 +20,44 @@ export {
   Suspense,
 } from 'react';
 
-// ---- Renderer (internal reconciler types + createRoot) ----
+// ---- Engine (reconciler, node tree, platform-neutral types, context glue) ----
 
-export { TNode, TextNode, createRoot } from '@teactjs/renderer';
-export type { TeactRoot, OutputNode, User, BotContext, SessionData, SessionStore, Middleware } from '@teactjs/renderer';
+export { TNode, TextNode, createRoot } from './renderer';
+export type { TeactRoot, OutputNode, User, BotContext, SessionData, SessionStore, Middleware, Adapter } from './renderer';
+
+// Context glue + data hooks that @teactjs/ui imports from here (single instance).
+export { ErrorBoundary, CallbackRegistryCtx } from './renderer';
+export type { ErrorBoundaryProps, CallbackHandler, CallbackMap } from './renderer';
+export { useQuery, useMutation } from './renderer';
+export type { UseQueryOptions, UseQueryResult, UseMutationOptions, UseMutationResult } from './renderer';
 
 // ---- Runtime (bot engine, hooks, router, plugins) ----
 
-export { createBot } from '@teactjs/runtime';
-export type { CreateBotOptions, CommandContext, CommandDef, ReplyOptions, ReplyButton, ReplyKeyboardButton, WebhookConfig } from '@teactjs/runtime';
+export { createBot } from './runtime';
+export type { CreateBotOptions, CommandContext, CommandDef, ReplyOptions, ReplyButton, ReplyKeyboardButton, WebhookConfig } from './runtime';
 
-export { MemorySessionStore } from '@teactjs/runtime';
-export { compose, commandMiddleware } from '@teactjs/runtime';
+export { MemorySessionStore } from './runtime';
+export { compose, commandMiddleware } from './runtime';
 
-export { createRouter, useNavigate, useParams, useRoute, redirect } from '@teactjs/runtime';
-export type { RouterConfig, NavigateOptions, NavigateMode, BeforeLoadContext, RouteGuard, GuardRedirect, GuardComponent, GuardReply, GuardReplyOptions, GuardButton, RouteValue, CreateRouterOptions } from '@teactjs/runtime';
+export { createRouter, useNavigate, useParams, useRoute, redirect } from './runtime';
+export type { RouterConfig, NavigateOptions, NavigateMode, BeforeLoadContext, RouteGuard, GuardRedirect, GuardComponent, GuardReply, GuardReplyOptions, GuardButton, RouteValue, CreateRouterOptions } from './runtime';
 
-export { useConversation, useForm, useConversationContext, useFormContext, Conversation, Form } from '@teactjs/runtime';
-export type { ConversationState, FormFieldDef, FormResult, Validator, ValidateFn, SchemaLike, StepDef, StepsConfig, StepActions, ConversationActions, FormActions } from '@teactjs/runtime';
+export { useConversation, useForm, useConversationContext, useFormContext, Conversation, Form } from './runtime';
+export type { ConversationState, FormFieldDef, FormResult, Validator, ValidateFn, SchemaLike, StepDef, StepsConfig, StepActions, ConversationActions, FormActions } from './runtime';
 
-export { useStream } from '@teactjs/runtime';
-export type { UseStreamResult } from '@teactjs/runtime';
+export { useStream } from './runtime';
+export type { UseStreamResult } from './runtime';
 
-export { authPlugin, useAuth } from '@teactjs/runtime';
-export type { AuthConfig, AuthState } from '@teactjs/runtime';
+export { authPlugin, useAuth } from './runtime';
+export type { AuthConfig, AuthState } from './runtime';
 
-export { useAuthSession } from '@teactjs/runtime';
-export type { AuthTokens, AuthSessionState } from '@teactjs/runtime';
+export { useAuthSession } from './runtime';
+export type { AuthTokens, AuthSessionState } from './runtime';
 
-export type { TeactPlugin } from '@teactjs/runtime';
+export type { TeactPlugin } from './runtime';
 
-export { defineConfig } from '@teactjs/runtime';
-export type { TeactConfig } from '@teactjs/runtime';
+export { defineConfig } from './runtime';
+export type { TeactConfig } from './runtime';
 
 export {
   RuntimeContext,
@@ -59,8 +68,8 @@ export {
   useText,
   useCallbackData,
   useCommand,
-} from '@teactjs/runtime';
-export type { RuntimeContextValue } from '@teactjs/runtime';
+} from './runtime';
+export type { RuntimeContextValue } from './runtime';
 
 export {
   useChat,
@@ -76,14 +85,14 @@ export {
   useContact,
   useVenue,
   usePoll,
-} from '@teactjs/runtime';
-export type { ChatInfo, TelegramAccess } from '@teactjs/runtime';
+} from './runtime';
+export type { ChatInfo, TelegramAccess } from './runtime';
 
-export { useOn, useEventData } from '@teactjs/runtime';
-export type { TelegramEvent, EventContext } from '@teactjs/runtime';
+export { useOn, useEventData } from './runtime';
+export type { TelegramEvent, EventContext } from './runtime';
 
-export { createI18n, useLocale } from '@teactjs/runtime';
-export type { I18nConfig } from '@teactjs/runtime';
+export { createI18n, useLocale } from './runtime';
+export type { I18nConfig } from './runtime';
 
-export { useInvoice } from '@teactjs/runtime';
-export type { InvoiceConfig, InvoiceResult, LabeledPrice, SuccessfulPayment } from '@teactjs/runtime';
+export { useInvoice } from './runtime';
+export type { InvoiceConfig, InvoiceResult, LabeledPrice, SuccessfulPayment } from './runtime';

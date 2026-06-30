@@ -1,6 +1,7 @@
 import { stream } from '@grammyjs/stream';
 import { autoRetry } from '@grammyjs/auto-retry';
-import type { TeactPlugin } from '@teactjs/runtime';
+import type { TeactPlugin } from '@teactjs/core';
+import type { TelegramAdapter } from './adapter';
 
 /**
  * Grammy stream plugin for Teact.
@@ -15,9 +16,10 @@ export function streamPlugin(): TeactPlugin {
   return {
     name: 'grammy-stream',
     onStart(adapter) {
-      const bot = adapter.getBot();
+      const tg = adapter as TelegramAdapter;
+      const bot = tg.getBot();
       bot.api.config.use(autoRetry());
-      adapter.use(stream());
+      tg.use(stream());
     },
   };
 }

@@ -1,8 +1,8 @@
 import { describe, test, expect } from 'bun:test';
 import React from 'react';
-import { createRoot, type OutputNode } from '../packages/renderer/src';
+import { createRoot, type OutputNode } from '../packages/core/src/renderer';
 import { serializeOutput } from '../packages/telegram/src/serialize';
-import { Poll } from '../packages/react/src';
+import { Poll } from '../packages/ui/src';
 
 function waitForCommit(): Promise<void> {
   return new Promise((r) => setTimeout(r, 10));

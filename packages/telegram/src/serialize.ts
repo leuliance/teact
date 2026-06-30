@@ -1,4 +1,4 @@
-import type { OutputNode } from '@teactjs/renderer';
+import type { OutputNode } from '@teactjs/core';
 import type { InlineKeyboardButton as GrammyButton, KeyboardButton } from 'grammy/types';
 
 export type SendMethod =

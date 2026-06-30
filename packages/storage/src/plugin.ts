@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useContext, createContext } from 'react';
-import type { TeactPlugin } from '@teactjs/runtime';
-import { useChatId, usePlatform } from '@teactjs/runtime';
+import type { TeactPlugin } from '@teactjs/core';
+import { useChatId, usePlatform } from '@teactjs/core';
 import type { StorageDriver, StoragePluginOptions } from './types';
 import { MemoryDriver } from './drivers/memory';
 import { FileDriver } from './drivers/file';

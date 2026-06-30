@@ -1,7 +1,7 @@
 {
   "name": "@teactjs/storage",
   "version": "0.1.0-alpha.14",
-  "description": "Persistent storage plugin for Teact — file-based and in-memory drivers",
+  "description": "Persistent storage plugin for Teact \u2014 file-based and in-memory drivers",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/storage/src/index.d.ts",
@@ -11,14 +11,17 @@
       "types": "./dist/storage/src/index.d.ts"
     }
   },
-  "files": ["dist", "README.md"],
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
-    "build": "bun build ./src/index.ts --outdir ./dist --format esm --target bun --external react --external react/jsx-runtime --external react/jsx-dev-runtime --external @teactjs/renderer --external @teactjs/react --external @teactjs/runtime --external @teactjs/telegram --external @teactjs/storage && tsc --emitDeclarationOnly --outDir dist --declaration --project tsconfig.build.json"
+    "build": "bun build ./src/index.ts --outdir ./dist --format esm --target bun --external react --external react/jsx-runtime --external react/jsx-dev-runtime --external @teactjs/core && tsc --emitDeclarationOnly --outDir dist --declaration --project tsconfig.build.json"
   },
   "dependencies": {},
   "peerDependencies": {
     "react": "^18.0.0 || ^19.0.0",
-    "@teactjs/runtime": "^0.1.0-alpha.14"
+    "@teactjs/core": "^0.1.0-alpha.14"
   },
   "license": "MIT"
 }
