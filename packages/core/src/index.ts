@@ -33,7 +33,7 @@ export type { UseQueryOptions, UseQueryResult, UseMutationOptions, UseMutationRe
 
 // ---- Runtime (bot engine, hooks, router, plugins) ----
 
-export { createBot } from './runtime';
+export { createBot, ROUTE_PREFIX } from './runtime';
 export type { CreateBotOptions, CommandContext, CommandDef, ReplyOptions, ReplyButton, ReplyKeyboardButton, WebhookConfig } from './runtime';
 
 export { MemorySessionStore } from './runtime';
@@ -85,8 +85,9 @@ export {
   useContact,
   useVenue,
   usePoll,
+  useMedia,
 } from './runtime';
-export type { ChatInfo, TelegramAccess } from './runtime';
+export type { ChatInfo, TelegramAccess, MediaSenders } from './runtime';
 
 export { useOn, useEventData } from './runtime';
 export type { TelegramEvent, EventContext } from './runtime';

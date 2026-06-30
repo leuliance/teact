@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useBot, useChatId } from './context';
 
 // ---- useChat ----
@@ -63,7 +63,50 @@ export function useTelegram(): TelegramAccess {
   };
 }
 
-// ---- Media send hooks ----
+// ---- useMedia (consolidated senders) ----
+
+/** All media-sender functions, returned together by {@link useMedia}. */
+export interface MediaSenders {
+  photo: (src: string, opts?: { caption?: string; parse_mode?: string; has_spoiler?: boolean }) => Promise<any>;
+  video: (src: string, opts?: { caption?: string; parse_mode?: string; duration?: number; width?: number; height?: number; supports_streaming?: boolean }) => Promise<any>;
+  animation: (src: string, opts?: { caption?: string; parse_mode?: string; duration?: number; width?: number; height?: number }) => Promise<any>;
+  audio: (src: string, opts?: { caption?: string; parse_mode?: string; performer?: string; title?: string; duration?: number }) => Promise<any>;
+  voice: (src: string, opts?: { caption?: string; parse_mode?: string; duration?: number }) => Promise<any>;
+  document: (src: string, opts?: { caption?: string; filename?: string }) => Promise<any>;
+  sticker: (src: string, opts?: { emoji?: string }) => Promise<any>;
+  location: (latitude: number, longitude: number, opts?: { live_period?: number; horizontal_accuracy?: number; heading?: number; proximity_alert_radius?: number }) => Promise<any>;
+  contact: (phoneNumber: string, firstName: string, opts?: { last_name?: string; vcard?: string }) => Promise<any>;
+  venue: (latitude: number, longitude: number, title: string, address: string, opts?: { foursquare_id?: string; google_place_id?: string }) => Promise<any>;
+  poll: (question: string, options: string[], opts?: { is_anonymous?: boolean; type?: 'regular' | 'quiz'; allows_multiple_answers?: boolean; correct_option_id?: number; explanation?: string; open_period?: number }) => Promise<any>;
+}
+
+/**
+ * Returns every media-sender in one object — the consolidated alternative to the
+ * individual `usePhoto`/`useVideo`/… hooks.
+ *
+ * @example
+ * const media = useMedia();
+ * await media.photo('https://example.com/cat.jpg', { caption: 'A cat' });
+ * await media.poll('Favorite color?', ['Red', 'Blue']);
+ */
+export function useMedia(): MediaSenders {
+  const { api, chatId } = useTelegram();
+  return useMemo<MediaSenders>(() => ({
+    photo: (src, opts) => api?.sendPhoto(chatId, src, opts),
+    video: (src, opts) => api?.sendVideo(chatId, src, opts),
+    animation: (src, opts) => api?.sendAnimation(chatId, src, opts),
+    audio: (src, opts) => api?.sendAudio(chatId, src, opts),
+    voice: (src, opts) => api?.sendVoice(chatId, src, opts),
+    document: (src, opts) => api?.sendDocument(chatId, src, opts),
+    sticker: (src, opts) => api?.sendSticker(chatId, src, opts),
+    location: (lat, lng, opts) => api?.sendLocation(chatId, lat, lng, opts),
+    contact: (phone, first, opts) => api?.sendContact(chatId, phone, first, opts),
+    venue: (lat, lng, title, address, opts) => api?.sendVenue(chatId, lat, lng, title, address, opts),
+    poll: (question, options, opts) => api?.sendPoll(chatId, question, options.map((text) => ({ text })), opts),
+  }), [api, chatId]);
+}
+
+// ---- Media send hooks (individual; or use useMedia() for all at once) ----
 
 /**
  * Returns a callback to send a photo to the current chat.

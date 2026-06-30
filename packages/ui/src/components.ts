@@ -1,5 +1,13 @@
 import React, { useContext, useId, createContext, type ReactNode, type FunctionComponent } from 'react';
-import { CallbackRegistryCtx } from '@teactjs/core';
+import { CallbackRegistryCtx, ROUTE_PREFIX } from '@teactjs/core';
+
+/** Replace `:param` segments in a route template with values from `params`. */
+function buildRoutePath(route: string, params?: Record<string, string | number>): string {
+  if (!params) return route;
+  return route.replace(/:([A-Za-z0-9_]+)/g, (_, key) =>
+    params[key] != null ? String(params[key]) : `:${key}`,
+  );
+}
 
 // ---- Context for tree validation ----
 
@@ -32,24 +40,54 @@ export function Message({ text, parseMode, disablePreview, children }: MessagePr
 
 // ---- InlineKeyboard ----
 
-export interface InlineKeyboardProps { children?: ReactNode; }
+export interface InlineKeyboardProps {
+  children?: ReactNode;
+  /**
+   * Auto-arrange direct `<Button>` children into rows of this many columns.
+   * Lets you skip `<ButtonRow>` entirely for grid layouts.
+   */
+  columns?: number;
+}
 
 /**
- * Container for inline keyboard button rows. Must be a child of `<Message>`.
+ * Container for inline keyboard buttons. Must be a child of `<Message>`.
+ *
+ * `<ButtonRow>` is optional: a bare `<Button>` becomes its own row. Use
+ * `columns` to auto-grid buttons, or `<InlineKeyboard.Row>` for manual rows.
  *
  * @example
+ * // Auto-grid — no ButtonRow needed:
+ * <InlineKeyboard columns={2}>
+ *   <Button text="A" route="/a" />
+ *   <Button text="B" route="/b" />
+ *   <Button text="C" route="/c" />
+ * </InlineKeyboard>
+ *
+ * @example
+ * // Manual rows:
  * <InlineKeyboard>
- *   <ButtonRow>
- *     <Button text="Option A" onClick={() => {}} />
- *     <Button text="Option B" onClick={() => {}} />
- *   </ButtonRow>
+ *   <InlineKeyboard.Row>
+ *     <Button text="Yes" onClick={onYes} />
+ *     <Button text="No" onClick={onNo} />
+ *   </InlineKeyboard.Row>
  * </InlineKeyboard>
  */
-export function InlineKeyboard({ children }: InlineKeyboardProps): React.ReactNode {
+export function InlineKeyboard({ children, columns }: InlineKeyboardProps): React.ReactNode {
+  let content: ReactNode = children;
+  if (columns && columns > 0) {
+    const items = React.Children.toArray(children);
+    const rows: React.ReactNode[] = [];
+    for (let i = 0; i < items.length; i += columns) {
+      rows.push(
+        React.createElement(ButtonRow, { key: `row-${i}` }, ...items.slice(i, i + columns)),
+      );
+    }
+    content = rows;
+  }
   return React.createElement(
     KeyboardCtx.Provider,
     { value: true },
-    React.createElement('tg-keyboard', null, children),
+    React.createElement('tg-keyboard', null, content),
   );
 }
 
@@ -79,6 +117,10 @@ export interface ButtonProps {
   onClick?: string | (() => void);
   url?: string;
   conversation?: string;
+  /** Navigate to this route when tapped (declarative alternative to `onClick={() => navigate(...)}`). */
+  route?: string;
+  /** Fills `:param` segments in `route` (e.g. route="/pokemon/:id" params={{ id }}). */
+  params?: Record<string, string | number>;
 }
 
 const VARIANT_PREFIX: Record<ButtonVariant, string> = {
@@ -100,12 +142,12 @@ const VARIANT_PREFIX: Record<ButtonVariant, string> = {
  * <Button text="Visit" url="https://example.com" />
  * <Button text="Delete" variant="destructive" onClick={handleDelete} />
  */
-export function Button({ text, variant = 'default', onClick, url, conversation }: ButtonProps): React.ReactNode {
+export function Button({ text, variant = 'default', onClick, url, conversation, route, params }: ButtonProps): React.ReactNode {
   const insideKeyboard = useContext(KeyboardCtx);
   if (!insideKeyboard) {
     throw new Error(
       '[Teact] <Button> must be used inside <InlineKeyboard>.\n' +
-      'Example:\n  <InlineKeyboard>\n    <ButtonRow>\n      <Button text="Click me" onClick={...} />\n    </ButtonRow>\n  </InlineKeyboard>',
+      'Example:\n  <InlineKeyboard>\n    <Button text="Click me" onClick={...} />\n  </InlineKeyboard>',
     );
   }
 
@@ -116,6 +158,8 @@ export function Button({ text, variant = 'default', onClick, url, conversation }
 
   if (url) {
     // URL buttons have no callback_data
+  } else if (route) {
+    callbackData = `${ROUTE_PREFIX}${buildRoutePath(route, params)}`;
   } else if (conversation) {
     callbackData = `__convo:${conversation}`;
   } else if (typeof onClick === 'function') {

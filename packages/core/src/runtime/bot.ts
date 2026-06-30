@@ -187,7 +187,8 @@ interface CommandInfo {
   initialRoute?: string;
 }
 
-const ROUTE_PREFIX = '__route:';
+/** Callback-data prefix used to encode "navigate to this route" buttons. */
+export const ROUTE_PREFIX = '__route:';
 
 function buildMessageNode(text: string, buttons?: ReplyButton[][], replyKeyboard?: ReplyKeyboardButton[][]): OutputNode {
   const children: OutputNode[] = [];

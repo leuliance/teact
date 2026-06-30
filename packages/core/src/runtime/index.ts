@@ -1,4 +1,4 @@
-export { createBot } from './bot';
+export { createBot, ROUTE_PREFIX } from './bot';
 export type { CreateBotOptions, CommandContext, CommandDef, ReplyOptions, ReplyButton, ReplyKeyboardButton, WebhookConfig } from './bot';
 
 export { MemorySessionStore } from './session';
@@ -51,8 +51,9 @@ export {
   useContact,
   useVenue,
   usePoll,
+  useMedia,
 } from './media-hooks';
-export type { ChatInfo, TelegramAccess } from './media-hooks';
+export type { ChatInfo, TelegramAccess, MediaSenders } from './media-hooks';
 
 export { useOn, useEventData } from './event-hooks';
 export type { TelegramEvent, EventContext } from './event-hooks';
