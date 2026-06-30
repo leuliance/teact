@@ -6,7 +6,7 @@ export { MemorySessionStore } from './session';
 export { compose, commandMiddleware } from './middleware';
 
 export { createRouter, useNavigate, useParams, useRoute, redirect } from './router';
-export type { RouterConfig, NavigateOptions, NavigateMode, BeforeLoadContext, RouteGuard, GuardRedirect, GuardComponent, GuardReply, GuardReplyOptions, GuardButton, RouteValue, CreateRouterOptions } from './router';
+export type { RouterConfig, NavigateOptions, NavigateMode, BeforeLoadContext, RouteGuard, GuardRedirect, GuardComponent, GuardReply, GuardReplyOptions, GuardButton, RouteValue, CreateRouterOptions, PathParams, RouteCommand, ResolvedRouteCommand } from './router';
 
 export { useConversation, useForm, useConversationContext, useFormContext, Conversation, Form } from './conversation';
 export type { ConversationState, FormFieldDef, FormResult, Validator, ValidateFn, SchemaLike, StepDef, StepsConfig, StepActions, ConversationActions, FormActions } from './conversation';

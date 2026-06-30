@@ -13,6 +13,20 @@ import { RuntimeContext } from './context';
  */
 export type NavigateMode = 'replace' | 'push' | 'stack' | 'dismiss';
 
+/**
+ * Extracts `:param` names from a route template into a typed params object.
+ *
+ * @example
+ * type P = PathParams<'/pokemon/:id'>;          // { id: string }
+ * type Q = PathParams<'/team/:tid/member/:mid'>; // { tid: string; mid: string }
+ */
+export type PathParams<P extends string> =
+  P extends `${string}:${infer Param}/${infer Rest}`
+    ? { [K in Param | keyof PathParams<`/${Rest}`>]: string }
+    : P extends `${string}:${infer Param}`
+      ? { [K in Param]: string }
+      : Record<never, string>;
+
 export interface NavigateOptions {
   /** How to handle the previous message (default: 'replace').
    *  - replace: edit the current message in-place
@@ -102,9 +116,26 @@ export type RouteGuard = (
  *   '/admin': { component: Admin, beforeLoad: ({ session }) => session.admin ? undefined : '/' },
  * };
  */
+/** A bot command co-located with the route it opens. */
+export interface RouteCommand {
+  /** The command name without the leading slash (e.g. `'pokedex'` for `/pokedex`). */
+  name: string;
+  /** Description shown in Telegram's command menu. */
+  description: string;
+  /** Resolve deep-link args (e.g. `/start payload`) to a route path. */
+  deepLink?: (args: string[]) => string;
+}
+
+/** Command shape the router hands to the bot engine (structurally a CommandDef). */
+export interface ResolvedRouteCommand {
+  description: string;
+  route: string;
+  deepLink?: (args: string[]) => string;
+}
+
 export type RouteValue =
   | FunctionComponent<any>
-  | { component: FunctionComponent<any>; beforeLoad?: RouteGuard };
+  | { component: FunctionComponent<any>; beforeLoad?: RouteGuard; command?: RouteCommand };
 
 export interface RouteDefinition {
   path: string;
@@ -118,6 +149,8 @@ export interface RouterConfig {
   routes: RouteDefinition[];
   defaultRoute: string;
   notFound: FunctionComponent<any>;
+  /** Commands co-located on routes via `command:`, collected for the bot engine. */
+  commands: Record<string, ResolvedRouteCommand>;
 }
 
 interface RouterContextValue {
@@ -279,20 +312,26 @@ export interface CreateRouterOptions {
  * );
  * ```
  */
-export function createRouter(
-  routes: Record<string, RouteValue>,
+export function createRouter<const T extends Record<string, RouteValue>>(
+  routes: T,
   options?: CreateRouterOptions,
 ): RouterConfig {
   const defs: RouteDefinition[] = [];
+  const commands: Record<string, ResolvedRouteCommand> = {};
 
   for (const [path, value] of Object.entries(routes)) {
     const component = typeof value === 'function' ? value : value.component;
     const guard = typeof value === 'function' ? undefined : value.beforeLoad;
     defs.push(parseRoute(path, component, guard));
+
+    if (typeof value === 'object' && value.command) {
+      const { name, description, deepLink } = value.command;
+      commands[name] = { description, route: path, ...(deepLink ? { deepLink } : {}) };
+    }
   }
   const defaultPath = defs.find(d => d.path === '/')?.path ?? defs[0]?.path ?? '/';
   defs.sort((a, b) => b.path.split('/').length - a.path.split('/').length);
-  return { routes: defs, defaultRoute: defaultPath, notFound: options?.notFound ?? DefaultNotFound };
+  return { routes: defs, defaultRoute: defaultPath, notFound: options?.notFound ?? DefaultNotFound, commands };
 }
 
 // ---- Internal provider ----
@@ -378,14 +417,19 @@ export function useNavigate(): (path: string, opts?: NavigateOptions) => void {
 /**
  * Read the current route's dynamic parameters.
  *
+ * Pass the route template as a type argument to infer param names (no codegen):
+ *
  * @example
  * // Route: '/pokemon/:id'
- * const { id } = useParams<{ id: string }>();
+ * const { id } = useParams<'/pokemon/:id'>();   // id: string, type-checked
+ * const params = useParams();                    // Record<string, string> (loose)
  */
-export function useParams<T extends Record<string, string> = Record<string, string>>(): T {
+export function useParams<P extends string = never>(): [P] extends [never]
+  ? Record<string, string>
+  : PathParams<P> {
   const ctx = useContext(RouterCtx);
   if (!ctx) throw new Error('useParams must be used inside a Router');
-  return ctx.params as T;
+  return ctx.params as any;
 }
 
 /**

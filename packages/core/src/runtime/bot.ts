@@ -512,8 +512,9 @@ export function createBot(options: CreateBotOptions) {
       pluginMiddleware = plugins.filter(p => p.middleware).map(p => p.middleware!);
       userMiddleware = [...(fileConfig.middleware ?? []), ...(options.middleware ?? [])];
 
-      // Commands come from createBot only — config is infrastructure, not app logic
-      rawCommands = options.commands ?? {};
+      // Commands: co-located router `command:` entries first, then explicit
+      // createBot commands (which override on name collision).
+      rawCommands = { ...(options.router?.commands ?? {}), ...(options.commands ?? {}) };
 
       // Session: createBot overrides config
       if (options.session?.store) {

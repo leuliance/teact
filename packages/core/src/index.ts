@@ -40,7 +40,7 @@ export { MemorySessionStore } from './runtime';
 export { compose, commandMiddleware } from './runtime';
 
 export { createRouter, useNavigate, useParams, useRoute, redirect } from './runtime';
-export type { RouterConfig, NavigateOptions, NavigateMode, BeforeLoadContext, RouteGuard, GuardRedirect, GuardComponent, GuardReply, GuardReplyOptions, GuardButton, RouteValue, CreateRouterOptions } from './runtime';
+export type { RouterConfig, NavigateOptions, NavigateMode, BeforeLoadContext, RouteGuard, GuardRedirect, GuardComponent, GuardReply, GuardReplyOptions, GuardButton, RouteValue, CreateRouterOptions, PathParams, RouteCommand, ResolvedRouteCommand } from './runtime';
 
 export { useConversation, useForm, useConversationContext, useFormContext, Conversation, Form } from './runtime';
 export type { ConversationState, FormFieldDef, FormResult, Validator, ValidateFn, SchemaLike, StepDef, StepsConfig, StepActions, ConversationActions, FormActions } from './runtime';
