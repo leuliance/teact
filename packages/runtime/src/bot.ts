@@ -1,7 +1,6 @@
 import React, { Suspense } from 'react';
 import type { FunctionComponent, ReactNode } from 'react';
-import { createRoot, type TeactRoot, type OutputNode, type BotContext, type SessionStore, type Middleware } from '@teactjs/renderer';
-import { TelegramAdapter, serializeOutput } from '@teactjs/telegram';
+import { createRoot, type TeactRoot, type OutputNode, type BotContext, type SessionStore, type Middleware, type Adapter } from '@teactjs/renderer';
 import { CallbackRegistryCtx, ErrorBoundary, SuspenseFallback, type CallbackMap } from '@teactjs/react';
 import { RuntimeContext, type RuntimeContextValue } from './context';
 import { MemorySessionStore } from './session';
@@ -143,7 +142,7 @@ export interface CreateBotOptions {
   component?: FunctionComponent<any>;
   router?: RouterConfig;
   providers?: FunctionComponent<{ children: ReactNode }>;
-  adapter: TelegramAdapter;
+  adapter: Adapter;
   token?: string;
   /** @default 'polling' — overrides teact.config */
   mode?: 'polling' | 'webhook';
@@ -414,14 +413,8 @@ export function createBot(options: CreateBotOptions) {
                 break;
               }
               default: {
-                if (cs.lastMessageId) {
-                  const payload = serializeOutput(tree);
-                  if (payload.method === 'sendMessage' && !payload.replyKeyboard && !payload.removeKeyboard) {
-                    await adapter.edit(Number(chatId), cs.lastMessageId, tree);
-                  } else {
-                    const msgId = await adapter.send(Number(chatId), tree);
-                    if (msgId) cs.lastMessageId = msgId;
-                  }
+                if (cs.lastMessageId && adapter.canEdit(tree)) {
+                  await adapter.edit(Number(chatId), cs.lastMessageId, tree);
                 } else {
                   const msgId = await adapter.send(Number(chatId), tree);
                   if (msgId) cs.lastMessageId = msgId;

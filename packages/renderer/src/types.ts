@@ -38,3 +38,47 @@ export interface SessionStore {
 }
 
 export type Middleware = (ctx: BotContext, next: () => Promise<void>) => Promise<void>;
+
+/** Webhook server configuration (platform-neutral). */
+export interface WebhookConfig {
+  domain: string;
+  port?: number;
+  path?: string;
+  secretToken?: string;
+}
+
+/** Options for {@link Adapter.listen}. */
+export interface ListenOptions {
+  polling?: boolean;
+  webhook?: WebhookConfig;
+}
+
+/**
+ * Platform-neutral adapter contract.
+ *
+ * A platform package (e.g. `@teactjs/telegram`) implements this so the bot
+ * engine in `@teactjs/core` never depends on a specific platform or driver.
+ * This is the seam that makes grammY / gram.io / telegraf — and eventually
+ * WhatsApp / Discord — interchangeable.
+ */
+export interface Adapter {
+  readonly name: string;
+  /** Connect to the platform (create the underlying client). Does not start receiving. */
+  connect(config: { token: string }): Promise<void>;
+  /** Subscribe to a normalized event (e.g. `'message'`, `'callback_query'`). */
+  on(event: string, handler: (ctx: BotContext) => void | Promise<void>): void;
+  /** Send a rendered output tree; resolves to the platform message id (if any). */
+  send(chatId: string | number, output: OutputNode): Promise<number | undefined>;
+  /** Edit an existing message in place from a new output tree. */
+  edit(chatId: string | number, messageId: number, output: OutputNode): Promise<void>;
+  /** Whether `output` can be applied as an in-place edit of a text message. */
+  canEdit(output: OutputNode): boolean;
+  /** Remove inline keyboard buttons from a message. */
+  clearButtons(chatId: string | number, messageId: number): Promise<void>;
+  /** Register the platform's command menu. */
+  setCommands(commands: { command: string; description: string }[]): Promise<void>;
+  /** Start receiving updates (polling or webhook). */
+  listen(opts?: ListenOptions): Promise<void>;
+  /** Stop receiving and clean up. */
+  disconnect(): Promise<void>;
+}

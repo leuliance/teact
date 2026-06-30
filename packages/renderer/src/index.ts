@@ -8,4 +8,7 @@ export type {
   SessionData,
   SessionStore,
   Middleware,
+  Adapter,
+  WebhookConfig,
+  ListenOptions,
 } from './types';

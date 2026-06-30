@@ -1,6 +1,5 @@
 import type { FunctionComponent, ReactNode } from 'react';
-import type { BotContext, Middleware } from '@teactjs/renderer';
-import type { TelegramAdapter } from '@teactjs/telegram';
+import type { Adapter, Middleware } from '@teactjs/renderer';
 
 /**
  * Teact plugin interface.
@@ -20,7 +19,7 @@ import type { TelegramAdapter } from '@teactjs/telegram';
 export interface TeactPlugin {
   name: string;
   /** Called when the bot starts. Receives the adapter for advanced setup. */
-  onStart?: (adapter: TelegramAdapter) => Promise<void> | void;
+  onStart?: (adapter: Adapter) => Promise<void> | void;
   /** Middleware that runs on every update before the component renders. */
   middleware?: Middleware;
   /** React provider component that wraps the app tree. Receives children. */

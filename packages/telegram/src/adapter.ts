@@ -1,6 +1,6 @@
 import { Bot, type Context as GrammyContext, GrammyError, HttpError } from 'grammy';
 import { autoRetry } from '@grammyjs/auto-retry';
-import type { BotContext, OutputNode } from '@teactjs/renderer';
+import type { Adapter, BotContext, OutputNode } from '@teactjs/renderer';
 import { serializeOutput } from './serialize';
 import { createServer, type Server } from 'node:http';
 
@@ -36,7 +36,7 @@ type EventHandler = (ctx: BotContext) => void | Promise<void>;
  *   2. use()     — registers Grammy middleware (conversations, session, etc.).
  *   3. listen()  — registers Teact bridge handlers, then starts polling or webhook.
  */
-export class TelegramAdapter {
+export class TelegramAdapter implements Adapter {
   readonly name = 'telegram';
   private bot: Bot | null = null;
   private httpServer: Server | null = null;
@@ -305,6 +305,15 @@ export class TelegramAdapter {
         return msg.message_id;
       }
     }
+  }
+
+  /**
+   * Whether a rendered tree can be applied as an in-place text edit.
+   * Used by the core engine to decide edit-vs-send without importing the serializer.
+   */
+  canEdit(output: OutputNode): boolean {
+    const payload = serializeOutput(output);
+    return payload.method === 'sendMessage' && !payload.replyKeyboard && !payload.removeKeyboard;
   }
 
   getPendingNotification(): { text: string; showAlert?: boolean } | null {
