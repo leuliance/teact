@@ -1,0 +1,18 @@
+{
+  "mode": "pre",
+  "tag": "alpha",
+  "initialVersions": {
+    "showcase-bot": "0.1.0",
+    "@teactjs/cli": "0.1.0-alpha.14",
+    "@teactjs/core": "0.1.0-alpha.14",
+    "create-teact": "0.1.0-alpha.14",
+    "@teactjs/react": "0.1.0-alpha.14",
+    "@teactjs/renderer": "0.1.0-alpha.14",
+    "@teactjs/runtime": "0.1.0-alpha.14",
+    "@teactjs/storage": "0.1.0-alpha.14",
+    "@teactjs/telegram": "0.1.0-alpha.14",
+    "@teactjs/testing": "0.1.0-alpha.14",
+    "@teactjs/ui": "0.1.0-alpha.14"
+  },
+  "changesets": []
+}

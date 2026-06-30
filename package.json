@@ -13,8 +13,13 @@
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf packages/*/dist examples/*/dist",
+    "clean:modules": "find . -type d -name 'node_modules*' -prune -exec rm -rf {} + ; rm -f bun.lock bun.lockb",
+    "reinstall": "bun run clean:modules && bun install",
     "changeset": "changeset",
-    "version": "changeset version",
+    "version": "changeset version && bun run sync-peer-version && bun install",
+    "sync-peer-version": "bun scripts/sync-peer-version.ts",
+    "deploy": "bash scripts/release.sh",
+    "deploy:tag": "bash scripts/release.sh --git-tag",
     "release": "bun run build && changeset publish"
   },
   "devDependencies": {

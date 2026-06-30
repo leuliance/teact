@@ -17,7 +17,7 @@ import { TelegramAdapter } from "@teactjs/telegram";
 const bot = createBot({
   component: App,
   adapter: new TelegramAdapter(),
-  token: process.env.BOT_TOKEN,
+  token: process.env.TELEGRAM_BOT_TOKEN,
 });
 
 await bot.start();
@@ -31,7 +31,7 @@ The default mode. The adapter long-polls the Telegram API for updates.
 const bot = createBot({
   component: App,
   adapter: new TelegramAdapter(),
-  token: process.env.BOT_TOKEN,
+  token: process.env.TELEGRAM_BOT_TOKEN,
   mode: "polling",
 });
 ```
@@ -44,7 +44,7 @@ For production, use webhooks. The adapter starts an HTTP server and registers th
 const bot = createBot({
   component: App,
   adapter: new TelegramAdapter(),
-  token: process.env.BOT_TOKEN,
+  token: process.env.TELEGRAM_BOT_TOKEN,
   mode: "webhook",
   webhook: {
     domain: "https://my-bot.example.com",

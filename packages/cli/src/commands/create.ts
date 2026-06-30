@@ -144,14 +144,17 @@ export async function createCommand(name: string, opts: CreateOptions): Promise<
   }
 
   const runCmd = pm === 'bun' ? 'bun dev' : `${pm} run dev`;
+  const installHint = opts.install !== false ? null : (pm === 'bun' ? 'bun install' : `${pm} install`);
   p.note(
     [
       `cd ${name}`,
-      '# Add TELEGRAM_BOT_TOKEN to .env',
+      ...(installHint ? [installHint] : []),
+      '# Add your TELEGRAM_BOT_TOKEN (from @BotFather) to .env',
       runCmd,
     ].join('\n'),
     'Next steps',
   );
 
+  p.log.info('Docs: https://teact-docs.vercel.app');
   p.outro('Happy building!');
 }

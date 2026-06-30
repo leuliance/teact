@@ -17,7 +17,7 @@ import { TelegramAdapter } from "@teactjs/telegram";
 const bot = createBot({
   component: App,            // root component (or use `router`)
   adapter: new TelegramAdapter(),
-  token: process.env.BOT_TOKEN,
+  token: process.env.TELEGRAM_BOT_TOKEN,
   mode: "polling",           // "polling" | "webhook"
   session: { ttl: 3600_000 },
   plugins: [storagePlugin()],
