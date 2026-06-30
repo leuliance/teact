@@ -28,19 +28,23 @@ PAYMENT_PROVIDER_TOKEN=...               # only needed for the /store payments d
 
 | Area | Where | Highlights |
 |------|-------|------------|
-| Routing & deep links | `src/index.tsx`, `src/commands.ts` | `createRouter`, params (`/pokemon/:id`), `deepLink` payloads |
+| **AI streaming** | `src/pages/AIAssistant.tsx`, `src/ai/assistant.ts` | LLM-style token-by-token streaming with `useStream` + a live typing cursor; pluggable for a real model (Claude/OpenAI) |
+| Plugin SDK + DI | `src/plugins/analytics.ts`, `teact.config.ts` | custom `definePlugin` providing a service, read in the UI via `useService` |
+| Routing & deep links | `src/index.tsx` | typed `createRouter`, params (`/pokemon/:id`), **co-located `command:`** per route, `deepLink` payloads |
+| Keyboards | `src/pages/MainMenu.tsx` | `<InlineKeyboard columns={2}>` auto-grid + declarative `<Button route="…">` |
 | Data fetching | `src/api/`, `src/hooks/`, `src/pages/Pokemon*` | `useQuery` against the PokéAPI |
 | UI components | `src/pages/ComponentShowcase.tsx` | messages, keyboards, media, polls, formatting |
 | Storage | `src/pages/Settings.tsx` | `useStorage` with the file driver |
-| Conversations | `src/pages/Feedback*` | multi-step flows via `defineConversation` |
-| Streaming | `src/pages/StreamDemo.tsx` | live message updates with `useStream` |
+| Conversations & forms | `src/pages/Feedback*`, `TrainerProfile.tsx` | multi-step flows (`defineConversation`, `useForm` + zod) |
 | Auth guards | `src/pages/Secret*`, `LoginPage.tsx` | `beforeLoad` redirect / JSX / reply guards, `useAuthSession` |
+| Events | `src/pages/ContactDemo.tsx` | `useOn` / `useEventData` |
 | i18n | `src/locales/`, `LanguagePage.tsx` | `createI18n`, `useLocale` |
 | Payments | `src/pages/StorePage.tsx` | Telegram invoices with `useInvoice` |
 
 ## Commands
 
-`/start`, `/pokedex`, `/showcase`, `/stream`, `/settings`, `/language`, `/store`, `/secret`, `/help` — see `src/commands.ts`.
+`/start`, `/ai`, `/pokedex`, `/showcase`, `/profile`, `/settings`, `/store`, `/language`, `/secret`, `/admin`, `/help`
+— most are **co-located on their routes** in `src/index.tsx` (`command:`); only `/help` (handler-only) is passed to `createBot`.
 
 ## Learn more
 

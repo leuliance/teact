@@ -1,9 +1,8 @@
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createBot, createRouter, createI18n, redirect } from '@teactjs/core';
-import type { Middleware } from '@teactjs/core';
+import type { Middleware, CommandDef } from '@teactjs/core';
 import { TelegramAdapter } from '@teactjs/telegram';
-import { commands } from './commands';
 
 // Pages
 import { MainMenu } from './pages/MainMenu';
@@ -14,7 +13,7 @@ import { Counter } from './pages/Counter';
 import { TrainerProfile } from './pages/TrainerProfile';
 import { Settings } from './pages/Settings';
 import { FeedbackLauncher } from './pages/FeedbackLauncher';
-import { StreamDemo } from './pages/StreamDemo';
+import { AIAssistant } from './pages/AIAssistant';
 import { AdminPanel } from './pages/AdminPanel';
 import { ComponentShowcase, ComponentGallery } from './pages/ComponentShowcase';
 import { FeedbackWithHook } from './pages/FeedbackWithHook';
@@ -47,26 +46,44 @@ const loggerMiddleware: Middleware = async (ctx) => {
   console.log(`[middleware] ${ctx.chatId} | ${ctx.text ?? ctx.callbackData ?? '—'}`);
 };
 
+// Commands are CO-LOCATED on their routes via `command:` — one source of truth.
+// createBot collects them automatically (see Phase 3 of the revamp).
 const router = createRouter(
   {
-    '/': MainMenu,
-    '/list': PokemonList,
+    '/': {
+      component: MainMenu,
+      command: {
+        name: 'start',
+        description: 'Open the showcase',
+        // Deep links: t.me/yourbot?start=poke-25  →  /pokemon/25
+        deepLink: (args) => {
+          const param = args[0];
+          if (param?.startsWith('comments-')) return `/pokemon/${param.slice(9)}/comments`;
+          if (param?.startsWith('poke-')) return `/pokemon/${param.slice(5)}`;
+          return '/';
+        },
+      },
+    },
+    '/ai': { component: AIAssistant, command: { name: 'ai', description: '🤖 AI assistant (streaming)' } },
+    '/stream': AIAssistant, // alias
+    '/list': { component: PokemonList, command: { name: 'pokedex', description: 'Browse the Pokédex' } },
     '/pokemon/:id': PokemonCard,
     '/pokemon/:id/comments': PokemonComments,
-    '/counter': Counter,
-    '/profile': TrainerProfile,
-    '/settings': Settings,
-    '/feedback': FeedbackLauncher,
-    '/stream': StreamDemo,
-    '/admin': AdminPanel,
-    '/showcase': ComponentShowcase,
-    '/showcase/gallery': ComponentGallery,
+    '/counter': { component: Counter, command: { name: 'counter', description: 'Counter (useState)' } },
+    '/profile': { component: TrainerProfile, command: { name: 'profile', description: 'Trainer profile (form)' } },
+    '/settings': { component: Settings, command: { name: 'settings', description: 'Settings (storage)' } },
+    '/feedback': { component: FeedbackLauncher, command: { name: 'feedback', description: 'Send feedback (conversation)' } },
     '/feedback-hook': FeedbackWithHook,
-    '/contact-demo': ContactDemo,
-    '/store': StorePage,
-    '/language': LanguagePage,
+    '/admin': { component: AdminPanel, command: { name: 'admin', description: 'Admin panel (roles)' } },
+    '/showcase': { component: ComponentShowcase, command: { name: 'showcase', description: 'Component gallery' } },
+    '/showcase/gallery': ComponentGallery,
+    '/contact-demo': { component: ContactDemo, command: { name: 'contact', description: 'Contact & events demo' } },
+    '/store': { component: StorePage, command: { name: 'store', description: 'Premium store (payments)' } },
+    '/language': { component: LanguagePage, command: { name: 'language', description: 'Change language (i18n)' } },
+    '/session-demo': { component: SessionDemo, command: { name: 'session', description: 'Session state demo' } },
     '/secret': {
       component: SecretPage,
+      command: { name: 'secret', description: 'Secret area (requires login)' },
       beforeLoad: ({ session }) => {
         if (!session.auth?.accessToken) return redirect('/');
       },
@@ -88,10 +105,23 @@ const router = createRouter(
       },
     },
     '/login': LoginPage,
-    '/session-demo': SessionDemo,
   },
   { notFound: NotFoundPage },
 );
+
+// Handler-only commands (no route) stay here. Everything else is co-located above.
+const commands: Record<string, CommandDef> = {
+  help: {
+    description: 'Show help',
+    handler: ({ reply }) =>
+      reply('What do you need help with?', {
+        buttons: [
+          [{ text: '🤖 AI Assistant', route: '/ai' }, { text: '📋 Pokédex', route: '/list' }],
+          [{ text: '🏠 Menu', route: '/' }],
+        ],
+      }),
+  },
+};
 
 const bot = createBot({
   adapter: new TelegramAdapter(),
@@ -102,7 +132,6 @@ const bot = createBot({
     </QueryClientProvider>
   ),
   middleware: [loggerMiddleware],
-  experimental: {},
   commands,
 });
 
