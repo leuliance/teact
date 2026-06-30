@@ -2,6 +2,8 @@ import { Command } from 'commander';
 import { createCommand } from './commands/create';
 import { devCommand } from './commands/dev';
 import { buildCommand } from './commands/build';
+import { startCommand } from './commands/start';
+import { typecheckCommand } from './commands/typecheck';
 import { generateCommand } from './commands/generate';
 import { doctorCommand } from './commands/doctor';
 import { infoCommand } from './commands/info';
@@ -42,6 +44,20 @@ program
   .option('--no-sourcemap', 'Disable source maps')
   .action(async (opts) => {
     await buildCommand(opts);
+  });
+
+program
+  .command('start')
+  .description('Run the production build (dist/index.js) — run `teact build` first')
+  .action(async () => {
+    await startCommand();
+  });
+
+program
+  .command('typecheck')
+  .description('Type-check the project with tsc --noEmit')
+  .action(async () => {
+    await typecheckCommand();
   });
 
 program

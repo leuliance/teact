@@ -1,6 +1,6 @@
 {
   "name": "create-teact",
-  "version": "0.1.0-alpha.14",
+  "version": "0.2.0-alpha.0",
   "description": "Create a new Teact bot project — scaffolds a ready-to-run Telegram bot",
   "type": "module",
   "bin": {

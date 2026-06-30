@@ -36,7 +36,7 @@ OTP_FLAG=""
 [[ -n "$OTP" ]] && OTP_FLAG="--otp=$OTP"
 
 # Publish order: dependencies first.
-PACKAGES=(renderer react runtime core telegram storage testing ui cli create-teact)
+PACKAGES=(core plugin-sdk ui telegram storage testing cli create-teact)
 
 # npm package name for each dir (create-teact is unscoped).
 pkg_name() {

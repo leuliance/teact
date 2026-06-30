@@ -14,7 +14,8 @@
     "@teactjs/storage": "workspace:*",
     "@teactjs/telegram": "workspace:*",
     "react": "^19.0.0",
-    "zod": "^4.3.6"
+    "zod": "^4.3.6",
+    "@teactjs/plugin-sdk": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.7.0",
