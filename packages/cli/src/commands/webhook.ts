@@ -2,11 +2,11 @@ import { resolve } from 'path';
 import { existsSync, readFileSync } from 'fs';
 import { heading, log, error, success, findProjectRoot } from '../utils';
 
-function readToken(projectRoot: string): string | undefined {
-  if (process.env.TELEGRAM_BOT_TOKEN) return process.env.TELEGRAM_BOT_TOKEN;
+function readEnvVar(projectRoot: string, name: string): string | undefined {
+  if (process.env[name]) return process.env[name];
   const envPath = resolve(projectRoot, '.env');
   if (existsSync(envPath)) {
-    const m = readFileSync(envPath, 'utf-8').match(/^\s*TELEGRAM_BOT_TOKEN\s*=\s*(.+)\s*$/m);
+    const m = readFileSync(envPath, 'utf-8').match(new RegExp(`^\\s*${name}\\s*=\\s*(.+)\\s*$`, 'm'));
     if (m) return m[1].trim().replace(/^["']|["']$/g, '');
   }
   return undefined;
@@ -32,7 +32,7 @@ interface WebhookOptions {
  */
 export async function webhookCommand(action: string, url: string | undefined, opts: WebhookOptions): Promise<void> {
   const projectRoot = findProjectRoot() ?? process.cwd();
-  const token = readToken(projectRoot);
+  const token = readEnvVar(projectRoot, 'TELEGRAM_BOT_TOKEN');
   if (!token) {
     error('No TELEGRAM_BOT_TOKEN found (checked env and .env).');
     process.exit(1);
@@ -43,13 +43,14 @@ export async function webhookCommand(action: string, url: string | undefined, op
   try {
     if (action === 'set') {
       if (!url) { error('Usage: teact webhook set <https-url> [--secret <token>]'); process.exit(1); }
+      const secret = opts.secret ?? readEnvVar(projectRoot, 'WEBHOOK_SECRET');
       const body: Record<string, unknown> = { url };
-      if (opts.secret) body.secret_token = opts.secret;
+      if (secret) body.secret_token = secret;
       if (opts.drop) body.drop_pending_updates = true;
       const r = await callApi(token, 'setWebhook', body);
       if (r.ok) {
         success(`Webhook set to ${url}`);
-        if (opts.secret) log('  Secret token configured — pass the same value as WEBHOOK_SECRET to your deployment.');
+        if (secret) log('  Secret token configured (from --secret or .env WEBHOOK_SECRET) — must match the worker\'s WEBHOOK_SECRET.');
       } else {
         error(`Failed: ${r.description}`); process.exit(1);
       }
