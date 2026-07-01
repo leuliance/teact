@@ -77,6 +77,9 @@ export async function deployCommand(target: string | undefined, opts: DeployOpti
   log('  2. bunx wrangler secret put WEBHOOK_SECRET        # any random string');
   log('  3. bunx wrangler deploy                            # or: teact deploy --run');
   log('  4. teact webhook set https://<your-worker>.workers.dev --secret <same WEBHOOK_SECRET>');
+  log('');
+  log('ℹ On the edge there is no filesystem, so teact.config.ts is NOT auto-loaded.');
+  log('  Pass your plugins directly: createBot({ plugins: [...] }) so they run on Workers.');
 
   if (opts.run) {
     log('');

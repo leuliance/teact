@@ -65,6 +65,10 @@ teact webhook set https://<your-worker>.workers.dev --secret <WEBHOOK_SECRET>
 `teact webhook set|delete|info` manages the Telegram webhook. To go back to local polling:
 `teact webhook delete` then `bun dev`.
 
+> **Edge note:** serverless runtimes have no filesystem, so `teact.config.ts` isn't
+> auto-loaded there. For edge deploys, pass plugins directly to `createBot({ plugins: [...] })`
+> instead of `teact.config.ts` so storage/auth/etc. run on the worker.
+
 ## Learn more
 
 📖 [Documentation](https://teact-docs.vercel.app/) · [Teact on GitHub](https://github.com/leuliance/teact)
