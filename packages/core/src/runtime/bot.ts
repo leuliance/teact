@@ -17,9 +17,21 @@ import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+// Filesystem is only available on Node/Bun. Serverless/edge (Cloudflare Workers,
+// Deno Deploy, Vercel Edge) has none — every fs call below is guarded so it can't
+// throw there (an uncaught throw would 500 the webhook).
+const HAS_FS = (() => {
+  try {
+    // Cloudflare Workers expose this; treat as no-fs even under nodejs_compat.
+    if (typeof navigator !== 'undefined' && (navigator as any).userAgent === 'Cloudflare-Workers') return false;
+    return typeof process !== 'undefined' && typeof (readFileSync as unknown) === 'function';
+  } catch { return false; }
+})();
+
 // ---- .env auto-loader ----
 
 function loadEnvFile(): void {
+  if (!HAS_FS) return;
   try {
     const content = readFileSync('.env', 'utf-8');
     for (const line of content.split('\n')) {
@@ -39,18 +51,21 @@ loadEnvFile();
 // ---- Auto-load teact.config ----
 
 async function loadTeactConfig(): Promise<TeactConfig> {
-  for (const name of ['teact.config.ts', 'teact.config.js', 'teact.config.mjs']) {
-    const fullPath = resolve(process.cwd(), name);
-    if (existsSync(fullPath)) {
-      try {
-        const mod = await import(pathToFileURL(fullPath).href);
-        console.log(`[teact] Loaded ${name}`);
-        return mod.default ?? mod;
-      } catch (err) {
-        console.warn(`[teact] Failed to load ${name}:`, err);
+  if (!HAS_FS) return {};
+  try {
+    for (const name of ['teact.config.ts', 'teact.config.js', 'teact.config.mjs']) {
+      const fullPath = resolve(process.cwd(), name);
+      if (existsSync(fullPath)) {
+        try {
+          const mod = await import(pathToFileURL(fullPath).href);
+          console.log(`[teact] Loaded ${name}`);
+          return mod.default ?? mod;
+        } catch (err) {
+          console.warn(`[teact] Failed to load ${name}:`, err);
+        }
       }
     }
-  }
+  } catch {}
   return {};
 }
 
@@ -520,6 +535,12 @@ export function createBot(options: CreateBotOptions) {
 
     debugLog('rendering', { chatId: botCtx.chatId, hasRouter: !!options.router, plugins: plugins.length });
     chatState.root.render(element);
+
+    // Wait for the render's commit (the actual send/edit) to finish before returning.
+    // Critical on serverless/edge: once bot.fetch() resolves its Response, the isolate
+    // may be frozen, so a fire-and-forget send would never reach Telegram. Harmless for
+    // long-running polling (just makes each update await its own send).
+    await chatState.commitQueue;
   }
 
   /**
