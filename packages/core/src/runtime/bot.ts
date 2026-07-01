@@ -197,6 +197,13 @@ interface ChatRoot {
   commitMode: CommitModeRef;
   /** Set when a render threw; the next update rebuilds a fresh root to recover. */
   errored?: boolean;
+  /**
+   * Resolved by onCommit once a render has committed (and its send task has been
+   * appended to commitQueue). renderForChat awaits this so the send is guaranteed
+   * to be enqueued before bot.fetch() returns — essential on serverless/edge, where
+   * the isolate freezes after the Response and a not-yet-scheduled send would be lost.
+   */
+  commitSignal?: () => void;
 }
 
 interface CommandInfo {
@@ -466,6 +473,9 @@ export function createBot(options: CreateBotOptions) {
             }
           }
         });
+
+        // Wake any renderForChat awaiting this commit: the send task is now queued.
+        cs.commitSignal?.();
       });
 
       chatState = { root, handlers, chatId, lastMessageId: undefined, commitQueue: Promise.resolve(), commitMode };
@@ -534,13 +544,24 @@ export function createBot(options: CreateBotOptions) {
     );
 
     debugLog('rendering', { chatId: botCtx.chatId, hasRouter: !!options.router, plugins: plugins.length });
-    chatState.root.render(element);
 
-    // Wait for the render's commit (the actual send/edit) to finish before returning.
-    // Critical on serverless/edge: once bot.fetch() resolves its Response, the isolate
-    // may be frozen, so a fire-and-forget send would never reach Telegram. Harmless for
-    // long-running polling (just makes each update await its own send).
-    await chatState.commitQueue;
+    // The reconciler commits asynchronously (scheduleMicrotask), so we can't await
+    // commitQueue immediately — the send task isn't appended until onCommit runs. Instead
+    // wait for onCommit to signal (send task queued), THEN await the queue for the actual
+    // send/edit. Critical on serverless/edge: once bot.fetch() resolves its Response the
+    // isolate may freeze, so the send must complete before we return. A short timer guards
+    // against a render that bails out with no commit (nothing to send) so we never hang.
+    const cs = chatState;
+    let commitTimer: ReturnType<typeof setTimeout> | undefined;
+    const committed = new Promise<void>((resolve) => {
+      cs.commitSignal = resolve;
+      commitTimer = setTimeout(resolve, 100);
+    });
+    cs.root.render(element);
+    await committed;
+    if (commitTimer) clearTimeout(commitTimer);
+    cs.commitSignal = undefined;
+    await cs.commitQueue;
   }
 
   /**

@@ -29,6 +29,27 @@ describe('serverless webhook — bot.fetch()', () => {
     expect(adapter.getLastSent()?.output.props.text).toBe('hello from a worker');
   });
 
+  test('send completes BEFORE fetch() resolves (serverless isolate-freeze invariant)', async () => {
+    const adapter = new MockAdapter();
+    const bot = createBot({
+      component: () => <Message text="edge reply" />,
+      adapter,
+      token: 'test',
+    });
+
+    const req = new Request('https://bot.example.com/webhook', {
+      method: 'POST',
+      body: JSON.stringify({ text: '/start' }),
+      headers: { 'content-type': 'application/json' },
+    });
+
+    // No wait() here: on Cloudflare Workers the isolate can freeze the moment the
+    // Response resolves, so the Telegram send MUST have already happened by then.
+    await bot.fetch(req);
+    expect(adapter.getLastSent()?.output.props.text).toBe('edge reply');
+    await bot.stop();
+  });
+
   test('token can be supplied per-request (Cloudflare env pattern)', async () => {
     const adapter = new MockAdapter();
     const bot = createBot({ component: () => <Message text="ok" />, adapter });

@@ -1,6 +1,6 @@
 import type { Adapter, BotContext, OutputNode } from '@teactjs/core';
 
-type EventHandler = (ctx: BotContext) => void;
+type EventHandler = (ctx: BotContext) => void | Promise<void>;
 
 export interface SentMessage {
   chatId: string | number;
@@ -40,8 +40,11 @@ export class MockAdapter implements Adapter {
     this.listeners.get(event)?.delete(handler);
   }
 
-  private emit(event: string, ctx: BotContext): void {
-    for (const handler of this.listeners.get(event) ?? []) handler(ctx);
+  // Await handlers, exactly like the real TelegramAdapter — so bot.fetch()/webhookCallback
+  // don't resolve until handleUpdate → renderForChat (and its send) have completed. This
+  // faithfully models the serverless isolate-freeze constraint.
+  private async emit(event: string, ctx: BotContext): Promise<void> {
+    for (const handler of this.listeners.get(event) ?? []) await handler(ctx);
   }
 
   async connect(): Promise<void> {
@@ -90,22 +93,22 @@ export class MockAdapter implements Adapter {
     return async (request: Request) => {
       const body = await request.json().catch(() => ({})) as { text?: string; callbackData?: string };
       if (body.callbackData) {
-        this.emit('callback_query', makeBotCtx({ chatId: '1', userId: '1', callbackData: body.callbackData, messageId: String(this.inMsgId++) }));
+        await this.emit('callback_query', makeBotCtx({ chatId: '1', userId: '1', callbackData: body.callbackData, messageId: String(this.inMsgId++) }));
       } else if (body.text) {
-        this.emit('message', makeBotCtx({ chatId: '1', userId: '1', text: body.text, messageId: String(this.inMsgId++) }));
+        await this.emit('message', makeBotCtx({ chatId: '1', userId: '1', text: body.text, messageId: String(this.inMsgId++) }));
       }
       return new Response('ok', { status: 200 });
     };
   }
 
   /** Simulate an incoming text message. Each gets a unique messageId, like Telegram. */
-  simulateMessage(chatId: string, userId: string, text: string): void {
-    this.emit('message', makeBotCtx({ chatId, userId, text, messageId: String(this.inMsgId++) }));
+  simulateMessage(chatId: string, userId: string, text: string): Promise<void> {
+    return this.emit('message', makeBotCtx({ chatId, userId, text, messageId: String(this.inMsgId++) }));
   }
 
   /** Simulate a callback query (button press). */
-  simulateCallback(chatId: string, userId: string, data: string, messageId?: string): void {
-    this.emit('callback_query', makeBotCtx({ chatId, userId, callbackData: data, messageId: messageId ?? String(this.inMsgId++) }));
+  simulateCallback(chatId: string, userId: string, data: string, messageId?: string): Promise<void> {
+    return this.emit('callback_query', makeBotCtx({ chatId, userId, callbackData: data, messageId: messageId ?? String(this.inMsgId++) }));
   }
 
   reset(): void {
