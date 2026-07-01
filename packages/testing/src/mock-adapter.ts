@@ -82,6 +82,22 @@ export class MockAdapter implements Adapter {
     // no-op: tests drive updates via simulateMessage / simulateCallback
   }
 
+  /**
+   * Web-standard webhook handler for testing `bot.fetch()`. Accepts a JSON body of
+   * `{ text }` or `{ callbackData }` and dispatches it as an update.
+   */
+  webhookCallback(_opts: { secretToken?: string } = {}): (request: Request) => Promise<Response> {
+    return async (request: Request) => {
+      const body = await request.json().catch(() => ({})) as { text?: string; callbackData?: string };
+      if (body.callbackData) {
+        this.emit('callback_query', makeBotCtx({ chatId: '1', userId: '1', callbackData: body.callbackData, messageId: String(this.inMsgId++) }));
+      } else if (body.text) {
+        this.emit('message', makeBotCtx({ chatId: '1', userId: '1', text: body.text, messageId: String(this.inMsgId++) }));
+      }
+      return new Response('ok', { status: 200 });
+    };
+  }
+
   /** Simulate an incoming text message. Each gets a unique messageId, like Telegram. */
   simulateMessage(chatId: string, userId: string, text: string): void {
     this.emit('message', makeBotCtx({ chatId, userId, text, messageId: String(this.inMsgId++) }));

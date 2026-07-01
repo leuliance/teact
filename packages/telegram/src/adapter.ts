@@ -1,4 +1,4 @@
-import { Bot, type Context as GrammyContext, GrammyError, HttpError } from 'grammy';
+import { Bot, webhookCallback, type Context as GrammyContext, GrammyError, HttpError } from 'grammy';
 import { autoRetry } from '@grammyjs/auto-retry';
 import type { Adapter, BotContext, OutputNode } from '@teactjs/core';
 import { serializeOutput } from './serialize';
@@ -41,6 +41,7 @@ export class TelegramAdapter implements Adapter {
   private bot: Bot | null = null;
   private httpServer: Server | null = null;
   private listeners = new Map<string, Set<EventHandler>>();
+  private bridgeRegistered = false;
   private _pendingNotification: { text: string; showAlert?: boolean } | null = null;
 
   /** Register a handler for a given event (e.g. `'message'`, `'callback_query'`). */
@@ -85,9 +86,11 @@ export class TelegramAdapter implements Adapter {
     for (const m of middlewares) this.bot.use(m);
   }
 
-  /** Step 2 — register Teact bridge handlers, then start polling or webhook. */
-  async listen(opts: ListenOptions = {}): Promise<void> {
+  /** Wire grammY updates → Teact events. Idempotent; used by both polling and webhook. */
+  private registerBridge(): void {
     if (!this.bot) throw new Error('Adapter not connected');
+    if (this.bridgeRegistered) return;
+    this.bridgeRegistered = true;
 
     this.bot.on('message', async (ctx) => {
       await this.emit('message', this.mapContext(ctx));
@@ -101,6 +104,28 @@ export class TelegramAdapter implements Adapter {
     this.bot.on('pre_checkout_query', async (ctx) => {
       await ctx.answerPreCheckoutQuery(true);
     });
+  }
+
+  /**
+   * A web-standard webhook handler: `(request: Request) => Promise<Response>`.
+   *
+   * This is the deploy-anywhere entry point — Cloudflare Workers, Vercel/Deno Edge,
+   * Bun.serve, or Node (via an adapter). Point your Telegram webhook at the URL that
+   * invokes this and the bot runs serverless (one update per request, no polling).
+   */
+  webhookCallback(opts: { secretToken?: string } = {}): (request: Request) => Promise<Response> {
+    if (!this.bot) throw new Error('Adapter not connected — call connect() first');
+    this.registerBridge();
+    return webhookCallback(this.bot, 'std/http', {
+      secretToken: opts.secretToken,
+    }) as (request: Request) => Promise<Response>;
+  }
+
+  /** Step 2 — register Teact bridge handlers, then start polling or webhook. */
+  async listen(opts: ListenOptions = {}): Promise<void> {
+    if (!this.bot) throw new Error('Adapter not connected');
+
+    this.registerBridge();
 
     if (opts.webhook) {
       await this.startWebhook(opts.webhook);

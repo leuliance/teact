@@ -256,11 +256,10 @@ export function createBot(options: CreateBotOptions) {
 
   const adapter = options.adapter;
   const debugMode = options.debug ?? false;
-  const token = options.token ?? process.env.TELEGRAM_BOT_TOKEN;
-  if (!token) {
-    console.error('[teact] No bot token found. Add TELEGRAM_BOT_TOKEN to your .env file.');
-    process.exit(1);
-  }
+  // Token is resolved lazily: on serverless (Cloudflare Workers etc.) there is no
+  // process.env at module load — bot.fetch(request, { token }) supplies it per request.
+  let resolvedToken: string | undefined =
+    options.token ?? (typeof process !== 'undefined' ? process.env?.TELEGRAM_BOT_TOKEN : undefined);
 
   function debugLog(...args: any[]) {
     if (debugMode) console.log(`[teact:debug ${new Date().toISOString()}]`, ...args);
@@ -268,14 +267,17 @@ export function createBot(options: CreateBotOptions) {
 
   const chatRoots = new Map<string, ChatRoot>();
   let disposed = false;
+  let initPromise: Promise<void> | null = null;
+  let webhookFn: ((request: Request) => Promise<Response>) | null = null;
 
-  // These are mutable — they get merged with teact.config in start()
+  // These are mutable — they get merged with teact.config during initialize()
   let rawCommands: Record<string, CommandDef> = options.commands ?? {};
   let plugins: TeactPlugin[] = [];
   let userMiddleware: Middleware[] = [];
   let pluginMiddleware: Middleware[] = [];
   let mergedServices: ServiceMap = {};
   let sessionStore: SessionStore = new MemorySessionStore(options.session?.ttl);
+  let loadedConfig: TeactConfig = {};
 
   function resetChatRoot(ctx: BotContext) {
     const chatKey = `${ctx.platform}:${ctx.chatId}`;
@@ -520,66 +522,78 @@ export function createBot(options: CreateBotOptions) {
     chatState.root.render(element);
   }
 
+  /**
+   * One-time setup shared by start() (polling/webhook server) and fetch() (serverless):
+   * load config, merge plugins, connect the adapter, run onStart, wire update handlers.
+   * Memoized so serverless cold-starts initialize exactly once.
+   */
+  async function initialize(opts?: { registerCommands?: boolean }): Promise<void> {
+    if (initPromise) return initPromise;
+    initPromise = (async () => {
+      // Auto-load teact.config.ts (fs-based; harmlessly returns {} on serverless/edge).
+      loadedConfig = await loadTeactConfig();
+
+      plugins = [...(loadedConfig.plugins ?? []), ...(options.plugins ?? [])];
+      pluginMiddleware = plugins.filter(p => p.middleware).map(p => p.middleware!);
+      mergedServices = Object.assign({}, ...plugins.map(p => p.services ?? {}));
+      userMiddleware = [...(loadedConfig.middleware ?? []), ...(options.middleware ?? [])];
+
+      // Commands: co-located router `command:` entries first, then explicit createBot commands.
+      rawCommands = { ...(options.router?.commands ?? {}), ...(options.commands ?? {}) };
+
+      if (options.session?.store) sessionStore = options.session.store;
+      else if (loadedConfig.session?.store) sessionStore = loadedConfig.session.store;
+
+      if (!resolvedToken) {
+        throw new Error('[teact] No bot token. Pass createBot({ token }), bot.fetch(req, { token }), or set TELEGRAM_BOT_TOKEN.');
+      }
+      await adapter.connect({ token: resolvedToken });
+
+      for (const plugin of plugins) {
+        if (plugin.onStart) {
+          try { await plugin.onStart(adapter); }
+          catch (err) { console.error(`[teact] Plugin "${plugin.name}" onStart failed:`, err); }
+        }
+      }
+
+      // Register the platform command menu (skipped on serverless by default — set it
+      // once at deploy time instead of on every cold start).
+      if (opts?.registerCommands !== false) {
+        const botCommands = Object.entries(rawCommands).map(([name, def]) => ({
+          command: name,
+          description: def.description,
+        }));
+        if (botCommands.length > 0) {
+          try {
+            await adapter.setCommands(botCommands);
+            console.log(`[teact] Registered ${botCommands.length} command(s) with Telegram`);
+          } catch (err) {
+            console.warn('[teact] Could not set bot commands:', err);
+          }
+        }
+      }
+
+      adapter.on('message', (ctx: BotContext) => handleUpdate(ctx));
+      adapter.on('callback_query', (ctx: BotContext) => handleUpdate(ctx));
+    })();
+    return initPromise;
+  }
+
   const botInstance = {
     async start() {
       // 0. Stop any previous instance (HMR / vite-node --watch)
       await cleanupPreviousInstance();
       registerGlobalInstance(botInstance);
 
-      // 1. Auto-load teact.config.ts (like next.config.js — no import needed)
-      const fileConfig = await loadTeactConfig();
-
-      // Merge: config plugins first, then createBot plugins (app can add more)
-      plugins = [...(fileConfig.plugins ?? []), ...(options.plugins ?? [])];
-      pluginMiddleware = plugins.filter(p => p.middleware).map(p => p.middleware!);
-      mergedServices = Object.assign({}, ...plugins.map(p => p.services ?? {}));
-      userMiddleware = [...(fileConfig.middleware ?? []), ...(options.middleware ?? [])];
-
-      // Commands: co-located router `command:` entries first, then explicit
-      // createBot commands (which override on name collision).
-      rawCommands = { ...(options.router?.commands ?? {}), ...(options.commands ?? {}) };
-
-      // Session: createBot overrides config
-      if (options.session?.store) {
-        sessionStore = options.session.store;
-      } else if (fileConfig.session?.store) {
-        sessionStore = fileConfig.session.store;
+      if (!resolvedToken) {
+        console.error('[teact] No bot token found. Add TELEGRAM_BOT_TOKEN to your .env file.');
+        process.exit(1);
       }
 
-      // 2. Create the Grammy bot
-      await adapter.connect({ token });
+      await initialize({ registerCommands: true });
 
-      // 2. Run plugin onStart hooks
-      for (const plugin of plugins) {
-        if (plugin.onStart) {
-          try {
-            await plugin.onStart(adapter);
-          } catch (err) {
-            console.error(`[teact] Plugin "${plugin.name}" onStart failed:`, err);
-          }
-        }
-      }
-
-      // 3. Register commands
-      const botCommands = Object.entries(rawCommands).map(([name, def]) => ({
-        command: name,
-        description: def.description,
-      }));
-      if (botCommands.length > 0) {
-        try {
-          await adapter.setCommands(botCommands);
-          console.log(`[teact] Registered ${botCommands.length} command(s) with Telegram`);
-        } catch (err) {
-          console.warn('[teact] Could not set bot commands:', err);
-        }
-      }
-
-      // 4. Register handlers and start
-      adapter.on('message', (ctx: BotContext) => handleUpdate(ctx));
-      adapter.on('callback_query', (ctx: BotContext) => handleUpdate(ctx));
-
-      const mode = options.mode ?? fileConfig.mode ?? 'polling';
-      const webhook = options.webhook ?? fileConfig.webhook;
+      const mode = options.mode ?? loadedConfig.mode ?? 'polling';
+      const webhook = options.webhook ?? loadedConfig.webhook;
       if (mode === 'webhook' && webhook) {
         await adapter.listen({ webhook });
       } else {
@@ -628,6 +642,30 @@ export function createBot(options: CreateBotOptions) {
 
       await adapter.disconnect();
       console.log('[teact] Bot stopped');
+    },
+
+    /**
+     * Serverless / edge webhook entry: `(request) => Response`. Initializes the bot
+     * once (lazily) and processes a single Telegram update per request — no polling,
+     * no long-running server. Works on Cloudflare Workers, Vercel/Deno Edge,
+     * Bun.serve, Netlify, etc.
+     *
+     * @example Cloudflare Worker (src/worker.ts)
+     * export default {
+     *   fetch: (request: Request, env: Env) =>
+     *     bot.fetch(request, { token: env.TELEGRAM_BOT_TOKEN, secretToken: env.WEBHOOK_SECRET }),
+     * };
+     */
+    async fetch(request: Request, opts?: { token?: string; secretToken?: string }): Promise<Response> {
+      if (opts?.token) resolvedToken = opts.token;
+      await initialize({ registerCommands: false });
+      if (!webhookFn) {
+        if (!adapter.webhookCallback) {
+          throw new Error('[teact] The configured adapter does not support serverless webhooks (no webhookCallback).');
+        }
+        webhookFn = adapter.webhookCallback({ secretToken: opts?.secretToken });
+      }
+      return webhookFn(request);
     },
 
     _chatRoots: chatRoots,

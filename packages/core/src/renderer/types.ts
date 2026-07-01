@@ -81,4 +81,10 @@ export interface Adapter {
   listen(opts?: ListenOptions): Promise<void>;
   /** Stop receiving and clean up. */
   disconnect(): Promise<void>;
+  /**
+   * Optional: a web-standard webhook handler `(Request) => Promise<Response>` for
+   * serverless/edge deploys (Cloudflare Workers, Vercel/Deno Edge, Bun, Node).
+   * Adapters that implement it enable `bot.fetch(request)`.
+   */
+  webhookCallback?(opts?: { secretToken?: string }): (request: Request) => Promise<Response>;
 }
