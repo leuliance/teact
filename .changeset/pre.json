@@ -12,5 +12,7 @@
     "@teactjs/cli": "0.2.0-alpha.0",
     "create-teact": "0.2.0-alpha.0"
   },
-  "changesets": []
+  "changesets": [
+    "harden-serverless-and-correctness"
+  ]
 }

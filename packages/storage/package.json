@@ -1,7 +1,7 @@
 {
   "name": "@teactjs/storage",
-  "version": "0.2.0-alpha.0",
-  "description": "Persistent storage plugin for Teact \u2014 file-based and in-memory drivers",
+  "version": "0.2.0-alpha.1",
+  "description": "Persistent storage plugin for Teact — file-based and in-memory drivers",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/storage/src/index.d.ts",
@@ -21,7 +21,7 @@
   "dependencies": {},
   "peerDependencies": {
     "react": "^18.0.0 || ^19.0.0",
-    "@teactjs/core": "^0.2.0-alpha.0"
+    "@teactjs/core": "^0.2.0-alpha.1"
   },
   "license": "MIT"
 }

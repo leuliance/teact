@@ -11,7 +11,8 @@ describe('scaffolder · dependencies', () => {
   const templates = ['empty', 'counter', 'starter', 'showcase'] as const;
 
   test('peer version is the 0.2.0-alpha line', () => {
-    expect(TEACT_PEER_VERSION).toBe('^0.2.0-alpha.0');
+    // Not pinned to an exact prerelease number — sync-peer-version bumps it each release.
+    expect(TEACT_PEER_VERSION).toMatch(/^\^0\.2\.0-alpha\.\d+$/);
   });
 
   for (const tpl of templates) {

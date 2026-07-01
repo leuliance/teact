@@ -1,7 +1,7 @@
 {
   "name": "@teactjs/ui",
-  "version": "0.2.0-alpha.0",
-  "description": "Telegram UI components for Teact \u2014 Message, Button, InlineKeyboard, Photo, and more",
+  "version": "0.2.0-alpha.1",
+  "description": "Telegram UI components for Teact — Message, Button, InlineKeyboard, Photo, and more",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/ui/src/index.d.ts",
@@ -21,7 +21,7 @@
   "dependencies": {},
   "peerDependencies": {
     "react": "^18.0.0 || ^19.0.0",
-    "@teactjs/core": "^0.2.0-alpha.0"
+    "@teactjs/core": "^0.2.0-alpha.1"
   },
   "license": "MIT"
 }

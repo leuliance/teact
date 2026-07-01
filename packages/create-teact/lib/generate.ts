@@ -9,7 +9,7 @@ function asset(name: string): string {
 }
 
 /** Published @teactjs/* version range for generated package.json */
-export const TEACT_PEER_VERSION = '^0.2.0-alpha.0';
+export const TEACT_PEER_VERSION = '^0.2.0-alpha.1';
 
 export type TemplateId = 'empty' | 'counter' | 'starter' | 'showcase';
 

@@ -1,7 +1,7 @@
 {
   "name": "@teactjs/testing",
-  "version": "0.2.0-alpha.0",
-  "description": "Testing utilities for Teact bots \u2014 mock adapter, render helpers",
+  "version": "0.2.0-alpha.1",
+  "description": "Testing utilities for Teact bots — mock adapter, render helpers",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/testing/src/index.d.ts",
@@ -21,7 +21,7 @@
   "dependencies": {},
   "peerDependencies": {
     "react": "^18.0.0 || ^19.0.0",
-    "@teactjs/core": "^0.2.0-alpha.0"
+    "@teactjs/core": "^0.2.0-alpha.1"
   },
   "license": "MIT"
 }
