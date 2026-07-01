@@ -46,6 +46,25 @@ PAYMENT_PROVIDER_TOKEN=...               # only needed for the /store payments d
 `/start`, `/ai`, `/pokedex`, `/showcase`, `/profile`, `/settings`, `/store`, `/language`, `/secret`, `/admin`, `/help`
 — most are **co-located on their routes** in `src/index.tsx` (`command:`); only `/help` (handler-only) is passed to `createBot`.
 
+## Deploy (serverless / edge)
+
+The bot exports `bot` and only polls when run directly (`if (import.meta.main) bot.start()`),
+so it can also run as a **web-standard `fetch` handler** — deployable to Cloudflare Workers,
+Vercel/Deno Edge, Bun, or Node via `bot.fetch(request)`.
+
+Cloudflare Workers (one command scaffolds `src/worker.ts` + `wrangler.jsonc`):
+
+```bash
+teact deploy cloudflare            # scaffold the worker + wrangler config
+bunx wrangler secret put TELEGRAM_BOT_TOKEN
+bunx wrangler secret put WEBHOOK_SECRET      # any random string
+bunx wrangler deploy                          # or: teact deploy --run
+teact webhook set https://<your-worker>.workers.dev --secret <WEBHOOK_SECRET>
+```
+
+`teact webhook set|delete|info` manages the Telegram webhook. To go back to local polling:
+`teact webhook delete` then `bun dev`.
+
 ## Learn more
 
 📖 [Documentation](https://teact-docs.vercel.app/) · [Teact on GitHub](https://github.com/leuliance/teact)

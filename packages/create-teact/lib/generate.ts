@@ -173,13 +173,13 @@ function App() {
   return <Message text="Hello from Teact!" />;
 }
 
-const bot = createBot({
+export const bot = createBot({
   component: App,
   adapter: new TelegramAdapter(),
   commands: { start: { description: 'Start the bot' } },
 });
 
-bot.start();
+if (import.meta.main) bot.start();
 `,
   };
 }
@@ -210,13 +210,13 @@ function App() {
   );
 }
 
-const bot = createBot({
+export const bot = createBot({
   component: App,
   adapter: new TelegramAdapter(),
   commands: { start: { description: 'Start the counter' } },
 });
 
-bot.start();
+if (import.meta.main) bot.start();
 `,
   };
 }
@@ -276,7 +276,7 @@ function starterFiles(features: string[]): Record<string, string> {
   }
   indexSrc += `}, { notFound: () => <Message text="Not found. Try /start." /> });\n`;
 
-  indexSrc += `\nconst bot = createBot({\n  adapter: new TelegramAdapter(),\n  router,\n`;
+  indexSrc += `\nexport const bot = createBot({\n  adapter: new TelegramAdapter(),\n  router,\n`;
   indexSrc += `  middleware: [loggerMiddleware],\n  experimental: {},\n`;
   if (has('i18n')) {
     indexSrc += `  providers: ({ children }) => (\n    <i18n.Provider>{children}</i18n.Provider>\n  ),\n`;
@@ -286,7 +286,7 @@ function starterFiles(features: string[]): Record<string, string> {
     indexSrc += `    ${cmd}: { description: '${cmd.charAt(0).toUpperCase() + cmd.slice(1)}', route: ${route} },\n`;
   }
   indexSrc += `    help: {\n      description: 'Help',\n      handler: ({ reply }) =>\n        reply('Need help?', { buttons: [[{ text: 'Menu', route: '/' }]] }),\n    },\n`;
-  indexSrc += `  },\n});\n\nbot.start();\n`;
+  indexSrc += `  },\n});\n\nif (import.meta.main) bot.start();\n`;
 
   files['src/index.tsx'] = indexSrc;
 
@@ -611,7 +611,7 @@ ${routeLines.join('\n')}
   { notFound: NotFoundPage },
 );
 
-const bot = createBot({
+export const bot = createBot({
   adapter: new TelegramAdapter(),
   router,
   providers: ({ children }) => (
@@ -622,7 +622,7 @@ const bot = createBot({
   commands,
 });
 
-bot.start();
+if (import.meta.main) bot.start();
 `;
 }
 

@@ -123,7 +123,7 @@ const commands: Record<string, CommandDef> = {
   },
 };
 
-const bot = createBot({
+export const bot = createBot({
   adapter: new TelegramAdapter(),
   router,
   providers: ({ children }) => (
@@ -135,4 +135,6 @@ const bot = createBot({
   commands,
 });
 
-bot.start();
+// Start polling only when run directly (bun dev). A serverless entry (src/worker.ts,
+// created by `teact deploy`) imports { bot } and calls bot.fetch(request) instead.
+if (import.meta.main) bot.start();

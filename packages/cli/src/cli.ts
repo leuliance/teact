@@ -4,6 +4,8 @@ import { devCommand } from './commands/dev';
 import { buildCommand } from './commands/build';
 import { startCommand } from './commands/start';
 import { typecheckCommand } from './commands/typecheck';
+import { deployCommand } from './commands/deploy';
+import { webhookCommand } from './commands/webhook';
 import { generateCommand } from './commands/generate';
 import { doctorCommand } from './commands/doctor';
 import { infoCommand } from './commands/info';
@@ -87,6 +89,23 @@ program
   .description('List registered routes in the project')
   .action(async () => {
     await routesCommand();
+  });
+
+program
+  .command('deploy [target]')
+  .description('Scaffold & deploy to a serverless platform (default: cloudflare)')
+  .option('--run', 'Run the platform deploy command (e.g. wrangler deploy)')
+  .action(async (target: string | undefined, opts) => {
+    await deployCommand(target, opts);
+  });
+
+program
+  .command('webhook <action> [url]')
+  .description('Manage the Telegram webhook: set <url> | delete | info')
+  .option('--secret <token>', 'Secret token to verify webhook requests')
+  .option('--drop', 'Drop pending updates')
+  .action(async (action: string, url: string | undefined, opts) => {
+    await webhookCommand(action, url, opts);
   });
 
 export { program };
