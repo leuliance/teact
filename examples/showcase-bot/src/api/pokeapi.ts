@@ -11,7 +11,7 @@ export interface Pokemon {
 export async function fetchPokemon(nameOrId: string | number): Promise<Pokemon> {
   const res = await fetch(`https://pokeapi.co/api/v2/pokemon/${String(nameOrId).toLowerCase()}`);
   if (!res.ok) throw new Error(`Pokemon "${nameOrId}" not found`);
-  const data = await res.json();
+  const data = await res.json() as any;
 
   return {
     id: data.id,
@@ -36,7 +36,7 @@ export interface PokemonListItem {
 
 export async function fetchPokemonList(offset = 0, limit = 5): Promise<PokemonListItem[]> {
   const res = await fetch(`https://pokeapi.co/api/v2/pokemon?offset=${offset}&limit=${limit}`);
-  const data = await res.json();
+  const data = await res.json() as any;
   return data.results.map((p: any, i: number) => ({
     name: p.name,
     id: offset + i + 1,

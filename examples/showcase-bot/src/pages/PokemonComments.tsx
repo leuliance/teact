@@ -2,7 +2,7 @@ import { useNavigate, useParams, useBot } from '@teactjs/core';
 import { Message, Button, InlineKeyboard, ButtonRow } from '@teactjs/ui';
 
 export function PokemonComments() {
-  const { id } = useParams<{ id: string }>();
+  const { id } = useParams<'/pokemon/:id/comments'>();
   const navigate = useNavigate();
   const bot = useBot();
 

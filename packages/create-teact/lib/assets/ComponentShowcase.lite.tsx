@@ -9,8 +9,8 @@ export function ComponentShowcase() {
   const bot = useBot();
 
   useOn('*', (data, ctx) => {
-    const type = data?.message ? 'message' : data?.callbackQuery ? 'callback' : 'other';
-    const preview = data?.message?.text ?? data?.callbackQuery?.data ?? '—';
+    const type = data?.message ? 'message' : data?.callback_query ? 'callback' : 'other';
+    const preview = data?.message?.text ?? data?.callback_query?.data ?? '—';
     console.log(`[showcase] ${type} from ${ctx.user.firstName}: ${preview}`);
   });
 

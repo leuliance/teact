@@ -28,19 +28,46 @@ PAYMENT_PROVIDER_TOKEN=...               # only needed for the /store payments d
 
 | Area | Where | Highlights |
 |------|-------|------------|
-| Routing & deep links | `src/index.tsx`, `src/commands.ts` | `createRouter`, params (`/pokemon/:id`), `deepLink` payloads |
+| **AI streaming** | `src/pages/AIAssistant.tsx`, `src/ai/assistant.ts` | LLM-style token-by-token streaming with `useStream` + a live typing cursor; pluggable for a real model (Claude/OpenAI) |
+| Plugin SDK + DI | `src/plugins/analytics.ts`, `teact.config.ts` | custom `definePlugin` providing a service, read in the UI via `useService` |
+| Routing & deep links | `src/index.tsx` | typed `createRouter`, params (`/pokemon/:id`), **co-located `command:`** per route, `deepLink` payloads |
+| Keyboards | `src/pages/MainMenu.tsx` | `<InlineKeyboard columns={2}>` auto-grid + declarative `<Button route="…">` |
 | Data fetching | `src/api/`, `src/hooks/`, `src/pages/Pokemon*` | `useQuery` against the PokéAPI |
 | UI components | `src/pages/ComponentShowcase.tsx` | messages, keyboards, media, polls, formatting |
 | Storage | `src/pages/Settings.tsx` | `useStorage` with the file driver |
-| Conversations | `src/pages/Feedback*` | multi-step flows via `defineConversation` |
-| Streaming | `src/pages/StreamDemo.tsx` | live message updates with `useStream` |
+| Conversations & forms | `src/pages/Feedback*`, `TrainerProfile.tsx` | multi-step flows (`defineConversation`, `useForm` + zod) |
 | Auth guards | `src/pages/Secret*`, `LoginPage.tsx` | `beforeLoad` redirect / JSX / reply guards, `useAuthSession` |
+| Events | `src/pages/ContactDemo.tsx` | `useOn` / `useEventData` |
 | i18n | `src/locales/`, `LanguagePage.tsx` | `createI18n`, `useLocale` |
 | Payments | `src/pages/StorePage.tsx` | Telegram invoices with `useInvoice` |
 
 ## Commands
 
-`/start`, `/pokedex`, `/showcase`, `/stream`, `/settings`, `/language`, `/store`, `/secret`, `/help` — see `src/commands.ts`.
+`/start`, `/ai`, `/pokedex`, `/showcase`, `/profile`, `/settings`, `/store`, `/language`, `/secret`, `/admin`, `/help`
+— most are **co-located on their routes** in `src/index.tsx` (`command:`); only `/help` (handler-only) is passed to `createBot`.
+
+## Deploy (serverless / edge)
+
+The bot exports `bot` and only polls when run directly (`if (import.meta.main) bot.start()`),
+so it can also run as a **web-standard `fetch` handler** — deployable to Cloudflare Workers,
+Vercel/Deno Edge, Bun, or Node via `bot.fetch(request)`.
+
+Cloudflare Workers (one command scaffolds `src/worker.ts` + `wrangler.jsonc`):
+
+```bash
+teact deploy cloudflare            # scaffold the worker + wrangler config
+bunx wrangler secret put TELEGRAM_BOT_TOKEN
+bunx wrangler secret put WEBHOOK_SECRET      # any random string
+bunx wrangler deploy                          # or: teact deploy --run
+teact webhook set https://<your-worker>.workers.dev --secret <WEBHOOK_SECRET>
+```
+
+`teact webhook set|delete|info` manages the Telegram webhook. To go back to local polling:
+`teact webhook delete` then `bun dev`.
+
+> **Edge note:** serverless runtimes have no filesystem, so `teact.config.ts` isn't
+> auto-loaded there. For edge deploys, pass plugins directly to `createBot({ plugins: [...] })`
+> instead of `teact.config.ts` so storage/auth/etc. run on the worker.
 
 ## Learn more
 

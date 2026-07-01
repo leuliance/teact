@@ -3,7 +3,7 @@ import { Message, Button, InlineKeyboard, ButtonRow, Alert, Divider, List, ListI
 import { usePokemon } from '../hooks/usePokemon';
 
 export function PokemonCard() {
-  const { id } = useParams<{ id: string }>();
+  const { id } = useParams<'/pokemon/:id'>();
   const navigate = useNavigate();
   const bot = useBot();
   const { data: pokemon, isLoading, isError, error } = usePokemon(Number(id));

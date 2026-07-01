@@ -1,3 +1,6 @@
+// @teactjs/ui — visual components for Telegram bots. Depends on @teactjs/core
+// for the reconciler host elements + the CallbackRegistry click bridge.
+
 export {
   Message,
   Button,
@@ -13,7 +16,6 @@ export {
   ListItem,
   Divider,
   SuspenseFallback,
-  ErrorBoundary,
   Video,
   Animation,
   Voice,
@@ -36,7 +38,7 @@ export {
   Notification,
   WebAppButton,
   Poll,
-} from '@teactjs/react';
+} from './components';
 
 export type {
   MessageProps,
@@ -55,7 +57,6 @@ export type {
   ListItemProps,
   DividerProps,
   SuspenseFallbackProps,
-  ErrorBoundaryProps,
   VideoProps,
   AnimationProps,
   VoiceProps,
@@ -77,12 +78,14 @@ export type {
   NotificationProps,
   WebAppButtonProps,
   PollProps,
-} from '@teactjs/react';
+} from './components';
 
-export { useQuery, useMutation } from '@teactjs/react';
+// Resilience + data hooks re-exported from core for convenience.
+export { ErrorBoundary, useQuery, useMutation } from '@teactjs/core';
 export type {
+  ErrorBoundaryProps,
   UseQueryOptions,
   UseQueryResult,
   UseMutationOptions,
   UseMutationResult,
-} from '@teactjs/react';
+} from '@teactjs/core';

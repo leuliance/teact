@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test';
-import { MemorySessionStore } from '../packages/runtime/src/session';
+import { MemorySessionStore } from '../packages/core/src/runtime/session';
 
 describe('MemorySessionStore', () => {
   test('stores and retrieves session data', async () => {

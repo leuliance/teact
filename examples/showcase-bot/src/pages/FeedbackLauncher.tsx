@@ -19,17 +19,20 @@ const feedback = defineConversation('feedback', {
       '📱 Would you like to share your contact info? Tap the button below.',
     );
 
-    await conversation.replyWithPoll(
-      'Which features should we improve?',
-      ['Speed', 'UI Design', 'More Pokémon', 'Better Search'],
-      { allows_multiple_answers: true, is_anonymous: false },
-    );
-
+    // The collected steps are done — send the summary first.
     await conversation.send(
       `✅ Thanks for your feedback!\n\n` +
       `📝 "${opinion}"\n⭐ Rating: ${rating}/5\n` +
       `📱 Contact: ${contact.phone_number} (${contact.first_name})\n\n` +
       `Use /start to go back to the menu.`,
+    );
+
+    // Bonus: an optional poll (fire-and-forget — replyWithPoll sends a poll, it does
+    // not wait for votes, so it comes AFTER the summary, clearly marked optional).
+    await conversation.replyWithPoll(
+      '📊 Optional: which features should we improve?',
+      ['Speed', 'UI Design', 'More Pokémon', 'Better Search'],
+      { allows_multiple_answers: true, is_anonymous: false },
     );
   },
 });

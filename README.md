@@ -158,16 +158,18 @@ bot.start();
 
 | Package | Description |
 |---------|-------------|
-| [`@teactjs/core`](./packages/core) | Main entry point — `createBot`, router, hooks, and re-exported React primitives |
+| [`@teactjs/core`](./packages/core) | Engine — `createBot`, router, hooks, plugin host, the React reconciler, and re-exported React primitives |
 | [`@teactjs/ui`](./packages/ui) | UI components (`Message`, `Button`, `Photo`, `Poll`, …) — start here for imports |
-| [`@teactjs/react`](./packages/react) | The underlying component + data-hook implementations (`@teactjs/ui` re-exports these) |
-| [`@teactjs/runtime`](./packages/runtime) | Bot engine — routing, sessions, hooks, middleware, i18n, payments |
-| [`@teactjs/telegram`](./packages/telegram) | Telegram adapter powered by grammY — polling and webhook support |
-| [`@teactjs/storage`](./packages/storage) | Persistent storage plugin with file and memory drivers |
+| [`@teactjs/telegram`](./packages/telegram) | Telegram adapter powered by grammY — polling and webhook support, plus `conversationsPlugin`/`streamPlugin` |
+| [`@teactjs/plugin-sdk`](./packages/plugin-sdk) | `definePlugin` — author your own plugins with services/DI, providers, and lifecycle |
+| [`@teactjs/storage`](./packages/storage) | Persistent storage plugin with file and memory drivers (bring your own for KV/Redis/DB) |
 | [`@teactjs/testing`](./packages/testing) | Test utilities — `MockAdapter`, `renderBot` |
-| [`@teactjs/cli`](./packages/cli) | CLI (`teact`) — `dev`, `build`, `generate`, `doctor`, `routes` |
-| [`@teactjs/renderer`](./packages/renderer) | Internal React reconciler (private, not published as a public API) |
+| [`@teactjs/cli`](./packages/cli) | CLI (`teact`) — `dev`, `build`, `start`, `deploy`, `webhook`, `generate`, `doctor`, `routes`, `typecheck` |
 | [`create-teact`](./packages/create-teact) | Interactive project scaffolder (`bun create teact`) |
+
+> The 0.2.0 rewrite folded the old `@teactjs/react`, `@teactjs/runtime`, and `@teactjs/renderer`
+> packages into `@teactjs/core`. If you're upgrading, import components from `@teactjs/ui` and
+> everything else from `@teactjs/core`.
 
 ## Examples
 
@@ -205,6 +207,12 @@ export default defineConfig({
 ```
 
 See the [Configuration guide](https://teact-docs.vercel.app/docs/getting-started/configuration) for the full list of options.
+
+> **Deploying to the edge?** Serverless runtimes (Cloudflare Workers, Vercel/Deno Edge) have
+> no filesystem, so `teact.config.ts` isn't loaded there. Pass your plugins directly to
+> `createBot({ plugins: [...] })` so they run on the worker, and use a durable `SessionStore`
+> (KV/Redis/DB) instead of the default in-memory one. `bot.fetch(request)` is the deploy-anywhere
+> entry point — see the [Deployment guide](https://teact-docs.vercel.app/docs/guides/deployment).
 
 ## Links
 

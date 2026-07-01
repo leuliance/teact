@@ -80,7 +80,16 @@ export async function doctorCommand(): Promise<void> {
         log('  → Then set it: TELEGRAM_BOT_TOKEN=123456:ABC-DEF...');
         issues++;
       } else if (envContent.match(/TELEGRAM_BOT_TOKEN=\S+/)) {
-        success('TELEGRAM_BOT_TOKEN is set');
+        const m = envContent.match(/TELEGRAM_BOT_TOKEN=(\S+)/);
+        const token = m?.[1] ?? '';
+        // Telegram bot tokens look like: <digits>:<35-char base64-ish>
+        if (/^\d+:[A-Za-z0-9_-]{30,}$/.test(token)) {
+          success('TELEGRAM_BOT_TOKEN is set (valid format)');
+        } else {
+          warn('TELEGRAM_BOT_TOKEN is set but does not look like a valid Telegram token');
+          log('  → Expected format: 123456789:ABCdef... (from @BotFather)');
+          issues++;
+        }
       }
     }
 

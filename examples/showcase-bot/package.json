@@ -1,6 +1,6 @@
 {
   "name": "showcase-bot",
-  "version": "0.1.1-alpha.0",
+  "version": "0.1.1-alpha.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -14,11 +14,13 @@
     "@teactjs/storage": "workspace:*",
     "@teactjs/telegram": "workspace:*",
     "react": "^19.0.0",
-    "zod": "^4.3.6"
+    "zod": "^4.3.6",
+    "@teactjs/plugin-sdk": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.7.0",
     "@types/bun": "latest",
-    "@types/react": "^19.0.0"
+    "@types/react": "^19.0.0",
+    "@teactjs/cli": "workspace:*"
   }
 }

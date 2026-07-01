@@ -1,7 +1,7 @@
 import { describe, test, expect, mock } from 'bun:test';
 import React from 'react';
-import { createRoot, type OutputNode } from '../packages/renderer/src';
-import { ErrorBoundary } from '../packages/react/src/error-boundary';
+import { createRoot, type OutputNode } from '../packages/core/src/renderer';
+import { ErrorBoundary } from '../packages/core/src/renderer/error-boundary';
 
 function waitForCommit(ms = 15): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
@@ -109,7 +109,7 @@ describe('ErrorBoundary', () => {
     console.error = orig;
 
     expect(onError).toHaveBeenCalled();
-    const [err] = onError.mock.calls[0] as [Error, any];
+    const [err] = onError.mock.calls[0] as unknown as [Error, any];
     expect(err.message).toBe('Component exploded');
   });
 

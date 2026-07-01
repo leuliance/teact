@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'bun:test';
 import React from 'react';
-import { createRoot, type OutputNode } from '../packages/renderer/src';
-import { RuntimeContext, type RuntimeContextValue } from '../packages/runtime/src/context';
+import { createRoot, type OutputNode } from '../packages/core/src/renderer';
+import { RuntimeContext, type RuntimeContextValue } from '../packages/core/src/runtime/context';
 import {
   useChat,
   useTelegram,
@@ -15,7 +15,7 @@ import {
   useContact,
   useVenue,
   useAnimation,
-} from '../packages/runtime/src/media-hooks';
+} from '../packages/core/src/runtime/media-hooks';
 
 function waitForCommit(): Promise<void> {
   return new Promise((r) => setTimeout(r, 20));

@@ -9,7 +9,7 @@ function asset(name: string): string {
 }
 
 /** Published @teactjs/* version range for generated package.json */
-export const TEACT_PEER_VERSION = '^0.1.0-alpha.14';
+export const TEACT_PEER_VERSION = '^0.2.0-alpha.1';
 
 export type TemplateId = 'empty' | 'counter' | 'starter' | 'showcase';
 
@@ -63,42 +63,57 @@ function hasFeature(features: string[], f: string): boolean {
   return features.includes(f);
 }
 
-function buildTeactConfig(features: string[]): string {
-  const configPlugins: string[] = [];
-  const configImportsCore: string[] = ['defineConfig'];
-  const configImportsTelegram: string[] = [];
-  const configImportsStorage: string[] = [];
+/**
+ * teact.config.ts holds non-plugin config only (mode/webhook/session). Plugins
+ * are registered via `createBot({ plugins: [...] })` in src/index.tsx so they
+ * also load on the edge (Cloudflare Workers), where teact.config.ts is absent.
+ */
+function buildTeactConfig(_features: string[]): string {
+  return `import { defineConfig } from '@teactjs/core';
+
+export default defineConfig({
+  mode: 'polling',
+});
+`;
+}
+
+/**
+ * Feature-gated plugin registration for src/index.tsx. Returns the extra import
+ * lines (grouped by package) plus a `plugins: [...]` snippet to splice into the
+ * createBot(...) call. Empty when no plugin features are enabled.
+ */
+function buildPlugins(features: string[]): {
+  coreImports: string[];
+  telegramImports: string[];
+  storageImports: string[];
+  pluginsBlock: string;
+} {
+  const plugins: string[] = [];
+  const coreImports: string[] = [];
+  const telegramImports: string[] = [];
+  const storageImports: string[] = [];
 
   if (hasFeature(features, 'storage')) {
-    configImportsStorage.push('storagePlugin');
-    configPlugins.push("storagePlugin({ driver: 'file', path: '.teact/storage.json' })");
+    storageImports.push('storagePlugin');
+    plugins.push("storagePlugin({ driver: 'file', path: '.teact/storage.json' })");
   }
   if (hasFeature(features, 'conversations')) {
-    configImportsTelegram.push('conversationsPlugin');
-    configPlugins.push('conversationsPlugin()');
+    telegramImports.push('conversationsPlugin');
+    plugins.push('conversationsPlugin()');
   }
   if (hasFeature(features, 'streaming')) {
-    configImportsTelegram.push('streamPlugin');
-    configPlugins.push('streamPlugin()');
+    telegramImports.push('streamPlugin');
+    plugins.push('streamPlugin()');
   }
   if (hasFeature(features, 'auth')) {
-    configImportsCore.push('authPlugin');
-    configPlugins.push('authPlugin({ admins: [] })');
+    coreImports.push('authPlugin');
+    plugins.push('authPlugin({ admins: [] })');
   }
 
-  let configSrc = `import { ${configImportsCore.join(', ')} } from '@teactjs/core';\n`;
-  if (configImportsTelegram.length > 0) {
-    configSrc += `import { ${configImportsTelegram.join(', ')} } from '@teactjs/telegram';\n`;
-  }
-  if (configImportsStorage.length > 0) {
-    configSrc += `import { ${configImportsStorage.join(', ')} } from '@teactjs/storage';\n`;
-  }
-  configSrc += `\nexport default defineConfig({\n  mode: 'polling',\n`;
-  if (configPlugins.length > 0) {
-    configSrc += `\n  plugins: [\n    ${configPlugins.join(',\n    ')},\n  ],\n`;
-  }
-  configSrc += `});\n`;
-  return configSrc;
+  const pluginsBlock =
+    plugins.length > 0 ? `  plugins: [\n    ${plugins.join(',\n    ')},\n  ],\n` : '';
+
+  return { coreImports, telegramImports, storageImports, pluginsBlock };
 }
 
 export function buildDependencies(template: TemplateId, features: string[]): {
@@ -117,10 +132,8 @@ export function buildDependencies(template: TemplateId, features: string[]): {
     deps['@tanstack/react-query'] = '^5.95.2';
   }
   if (hasFeature(features, 'storage')) deps['@teactjs/storage'] = TEACT_PEER_VERSION;
-  if (hasFeature(features, 'i18n')) {
-    deps['i18next'] = '^23.0.0';
-    deps['react-i18next'] = '^15.0.0';
-  }
+  // i18next / react-i18next come transitively from @teactjs/core; do not pin them
+  // here or two conflicting major versions can break the react-i18next singleton.
   return {
     dependencies: deps,
     devDependencies: {
@@ -173,13 +186,13 @@ function App() {
   return <Message text="Hello from Teact!" />;
 }
 
-const bot = createBot({
+export const bot = createBot({
   component: App,
   adapter: new TelegramAdapter(),
   commands: { start: { description: 'Start the bot' } },
 });
 
-bot.start();
+if (import.meta.main) bot.start();
 `,
   };
 }
@@ -210,13 +223,13 @@ function App() {
   );
 }
 
-const bot = createBot({
+export const bot = createBot({
   component: App,
   adapter: new TelegramAdapter(),
   commands: { start: { description: 'Start the counter' } },
 });
 
-bot.start();
+if (import.meta.main) bot.start();
 `,
   };
 }
@@ -253,11 +266,24 @@ function starterFiles(features: string[]): Record<string, string> {
     commands['store'] = "'/store'";
   }
 
+  const plugins = buildPlugins(features);
+  const coreNamed = ['createBot', 'createRouter'];
+  if (has('i18n')) coreNamed.push('createI18n');
+  coreNamed.push(...plugins.coreImports);
+
   let indexSrc = `import React from 'react';\n`;
   indexSrc += `import { Message } from '@teactjs/ui';\n`;
-  indexSrc += `import { createBot, createRouter${has('i18n') ? ', createI18n' : ''} } from '@teactjs/core';\n`;
+  indexSrc += `import { ${coreNamed.join(', ')} } from '@teactjs/core';\n`;
   indexSrc += `import type { Middleware } from '@teactjs/core';\n`;
-  indexSrc += `import { TelegramAdapter } from '@teactjs/telegram';\n\n`;
+  if (plugins.telegramImports.length > 0) {
+    indexSrc += `import { TelegramAdapter, ${plugins.telegramImports.join(', ')} } from '@teactjs/telegram';\n`;
+  } else {
+    indexSrc += `import { TelegramAdapter } from '@teactjs/telegram';\n`;
+  }
+  if (plugins.storageImports.length > 0) {
+    indexSrc += `import { ${plugins.storageImports.join(', ')} } from '@teactjs/storage';\n`;
+  }
+  indexSrc += `\n`;
 
   for (const r of routes) {
     indexSrc += `import { ${r.component} } from '${r.file}';\n`;
@@ -276,8 +302,9 @@ function starterFiles(features: string[]): Record<string, string> {
   }
   indexSrc += `}, { notFound: () => <Message text="Not found. Try /start." /> });\n`;
 
-  indexSrc += `\nconst bot = createBot({\n  adapter: new TelegramAdapter(),\n  router,\n`;
+  indexSrc += `\nexport const bot = createBot({\n  adapter: new TelegramAdapter(),\n  router,\n`;
   indexSrc += `  middleware: [loggerMiddleware],\n  experimental: {},\n`;
+  if (plugins.pluginsBlock) indexSrc += plugins.pluginsBlock;
   if (has('i18n')) {
     indexSrc += `  providers: ({ children }) => (\n    <i18n.Provider>{children}</i18n.Provider>\n  ),\n`;
   }
@@ -286,7 +313,7 @@ function starterFiles(features: string[]): Record<string, string> {
     indexSrc += `    ${cmd}: { description: '${cmd.charAt(0).toUpperCase() + cmd.slice(1)}', route: ${route} },\n`;
   }
   indexSrc += `    help: {\n      description: 'Help',\n      handler: ({ reply }) =>\n        reply('Need help?', { buttons: [[{ text: 'Menu', route: '/' }]] }),\n    },\n`;
-  indexSrc += `  },\n});\n\nbot.start();\n`;
+  indexSrc += `  },\n});\n\nif (import.meta.main) bot.start();\n`;
 
   files['src/index.tsx'] = indexSrc;
 
@@ -508,13 +535,28 @@ function showcaseFiles(features: string[]): Record<string, string> {
 function buildShowcaseIndex(features: string[]): string {
   const has = (f: string) => hasFeature(features, f);
 
+  const plugins = buildPlugins(features);
+  const coreNamed = ['createBot', 'createRouter', 'redirect'];
+  if (has('i18n')) coreNamed.push('createI18n');
+  coreNamed.push(...plugins.coreImports);
+
+  const telegramImport =
+    plugins.telegramImports.length > 0
+      ? `import { TelegramAdapter, ${plugins.telegramImports.join(', ')} } from '@teactjs/telegram';`
+      : `import { TelegramAdapter } from '@teactjs/telegram';`;
+
   const imports: string[] = [
     `import React from 'react';`,
     `import { QueryClient, QueryClientProvider } from '@tanstack/react-query';`,
-    `import { createBot, createRouter, redirect${has('i18n') ? ', createI18n' : ''} } from '@teactjs/core';`,
+    `import { ${coreNamed.join(', ')} } from '@teactjs/core';`,
     `import type { Middleware } from '@teactjs/core';`,
-    `import { TelegramAdapter } from '@teactjs/telegram';`,
-    `import { commands } from './commands';`,
+    telegramImport,
+  ];
+  if (plugins.storageImports.length > 0) {
+    imports.push(`import { ${plugins.storageImports.join(', ')} } from '@teactjs/storage';`);
+  }
+  imports.push(`import { commands } from './commands';`);
+  imports.push(
     ``,
     `import { MainMenu } from './pages/MainMenu';`,
     `import { PokemonList } from './pages/PokemonList';`,
@@ -522,7 +564,7 @@ function buildShowcaseIndex(features: string[]): string {
     `import { PokemonComments } from './pages/PokemonComments';`,
     `import { ComponentShowcase, ComponentGallery } from './pages/ComponentShowcase';`,
     `import { NotFoundPage } from './pages/NotFoundPage';`,
-  ];
+  );
 
   if (has('streaming')) imports.push(`import { StreamDemo } from './pages/StreamDemo';`);
   if (has('storage')) imports.push(`import { Settings } from './pages/Settings';`);
@@ -611,7 +653,7 @@ ${routeLines.join('\n')}
   { notFound: NotFoundPage },
 );
 
-const bot = createBot({
+export const bot = createBot({
   adapter: new TelegramAdapter(),
   router,
   providers: ({ children }) => (
@@ -619,10 +661,10 @@ const bot = createBot({
   ),
   middleware: [loggerMiddleware],
   experimental: {},
-  commands,
+${plugins.pluginsBlock}  commands,
 });
 
-bot.start();
+if (import.meta.main) bot.start();
 `;
 }
 

@@ -26,7 +26,7 @@ describe('Conversation interface shape', () => {
 describe('Conversation media methods (mock)', () => {
   function createMockConversation(): Conversation {
     const calls: { method: string; args: any[] }[] = [];
-    const mockApi = new Proxy({}, {
+    const mockApi: any = new Proxy({}, {
       get: (_target, prop) => (...args: any[]) => {
         calls.push({ method: String(prop), args });
         return Promise.resolve({ message_id: 1 });
@@ -68,6 +68,9 @@ describe('Conversation media methods (mock)', () => {
       async replyWithLocation(lat, lng, opts) { await mockApi.sendLocation(12345, lat, lng, opts); },
       async replyWithVenue(lat, lng, title, addr, opts) { await mockApi.sendVenue(12345, lat, lng, title, addr, opts); },
       async replyWithMediaGroup(media) { await mockApi.sendMediaGroup(12345, media); },
+      async replyWithPoll(question, options, opts) { await mockApi.sendPoll(12345, question, options, opts); },
+      async requestContact(text) { await mockCtx.reply(text); return { phone_number: '', first_name: '' }; },
+      async requestLocation(text) { await mockCtx.reply(text); return { latitude: 0, longitude: 0 }; },
     };
     return convo;
   }

@@ -1,36 +1,32 @@
-import { useState } from 'react';
-import { useNavigate, useOn, useEventData } from '@teactjs/core';
+import { useEventData } from '@teactjs/core';
 import {
-  Message, InlineKeyboard, ButtonRow, Button,
+  Message, InlineKeyboard, Button,
   ReplyKeyboard, ReplyRow, RequestContactButton,
   ReplyKeyboardRemove,
 } from '@teactjs/ui';
 
+/**
+ * Telegram events demo — reads the shared contact declaratively with `useEventData`.
+ * (One mechanism only: mixing useEventData with a useOn that also re-renders would
+ * emit the "received" message twice.)
+ */
 export function ContactDemo() {
-  const navigate = useNavigate();
-  const [contact, setContact] = useState<{ phone_number: string; first_name: string } | null>(null);
+  const contact = useEventData<{ phone_number: string; first_name: string }>('contact');
 
-  useOn('contact', (data) => {
-    setContact(data);
-  });
-
-  const incomingContact = useEventData<{ phone_number: string; first_name: string }>('contact');
-  const displayContact = contact ?? incomingContact;
-
-  if (displayContact) {
+  if (contact) {
     return (
-      <Message text={
-        `✅ Contact received!\n\n` +
-        `📱 Phone: ${displayContact.phone_number}\n` +
-        `👤 Name: ${displayContact.first_name}\n\n` +
-        `This was shared via Telegram's native contact sharing.`
-      }>
+      <Message
+        text={
+          `✅ Contact received!\n\n` +
+          `📱 Phone: ${contact.phone_number}\n` +
+          `👤 Name: ${contact.first_name}\n\n` +
+          `Read with useEventData('contact') — Telegram's native contact sharing.`
+        }
+      >
         <ReplyKeyboardRemove />
-        <InlineKeyboard>
-          <ButtonRow>
-            <Button text="🔄 Share Again" onClick={() => setContact(null)} />
-            <Button text="🏠 Menu" onClick={() => navigate('/')} />
-          </ButtonRow>
+        <InlineKeyboard columns={2}>
+          <Button text="🔄 Share Again" route="/contact-demo" />
+          <Button text="🏠 Menu" route="/" />
         </InlineKeyboard>
       </Message>
     );

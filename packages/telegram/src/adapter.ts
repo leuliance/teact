@@ -1,7 +1,7 @@
-import { Bot, type Context as GrammyContext, GrammyError, HttpError } from 'grammy';
+import { Bot, webhookCallback, type Context as GrammyContext, GrammyError, HttpError } from 'grammy';
 import { autoRetry } from '@grammyjs/auto-retry';
-import type { BotContext, OutputNode } from '@teactjs/renderer';
-import { serializeOutput } from './serialize';
+import type { Adapter, BotContext, OutputNode } from '@teactjs/core';
+import { serializeOutput, type SendMethod } from './serialize';
 import { createServer, type Server } from 'node:http';
 
 export interface TelegramAdapterConfig {
@@ -36,12 +36,19 @@ type EventHandler = (ctx: BotContext) => void | Promise<void>;
  *   2. use()     — registers Grammy middleware (conversations, session, etc.).
  *   3. listen()  — registers Teact bridge handlers, then starts polling or webhook.
  */
-export class TelegramAdapter {
+export class TelegramAdapter implements Adapter {
   readonly name = 'telegram';
   private bot: Bot | null = null;
   private httpServer: Server | null = null;
   private listeners = new Map<string, Set<EventHandler>>();
-  private _pendingNotification: { text: string; showAlert?: boolean } | null = null;
+  private bridgeRegistered = false;
+  // A <Notification> rendered in response to a callback query is stashed here (keyed by
+  // String(chatId) so concurrent chats don't clobber each other) and flushed as the answer
+  // to that query after the render completes — see the callback_query:data bridge handler.
+  private pendingNotifications = new Map<string, { text: string; showAlert?: boolean }>();
+  // The Telegram method last used for each chat's tracked message. Editing text onto a
+  // photo (or vice-versa) is impossible, so canEdit() consults this to fall back to send.
+  private lastMethod = new Map<string, SendMethod>();
 
   /** Register a handler for a given event (e.g. `'message'`, `'callback_query'`). */
   on(event: string, handler: EventHandler): void {
@@ -85,22 +92,57 @@ export class TelegramAdapter {
     for (const m of middlewares) this.bot.use(m);
   }
 
-  /** Step 2 — register Teact bridge handlers, then start polling or webhook. */
-  async listen(opts: ListenOptions = {}): Promise<void> {
+  /** Wire grammY updates → Teact events. Idempotent; used by both polling and webhook. */
+  private registerBridge(): void {
     if (!this.bot) throw new Error('Adapter not connected');
+    if (this.bridgeRegistered) return;
+    this.bridgeRegistered = true;
 
     this.bot.on('message', async (ctx) => {
       await this.emit('message', this.mapContext(ctx));
     });
 
     this.bot.on('callback_query:data', async (ctx) => {
-      ctx.answerCallbackQuery().catch(() => {});
+      const chatId = String(ctx.chat?.id ?? '');
+      this.pendingNotifications.delete(chatId);
+      // Render FIRST — a <Notification> in the render populates pendingNotifications —
+      // then answer the query with it (toast/alert), or an empty answer to stop the
+      // button's loading spinner. Awaited so it flushes before the isolate freezes on edge.
       await this.emit('callback_query', this.mapContext(ctx));
+      const note = this.pendingNotifications.get(chatId);
+      this.pendingNotifications.delete(chatId);
+      try {
+        await ctx.answerCallbackQuery(note ? { text: note.text, show_alert: note.showAlert } : undefined);
+      } catch {
+        // Query may have expired (>15 min) — nothing actionable.
+      }
     });
 
     this.bot.on('pre_checkout_query', async (ctx) => {
       await ctx.answerPreCheckoutQuery(true);
     });
+  }
+
+  /**
+   * A web-standard webhook handler: `(request: Request) => Promise<Response>`.
+   *
+   * This is the deploy-anywhere entry point — Cloudflare Workers, Vercel/Deno Edge,
+   * Bun.serve, or Node (via an adapter). Point your Telegram webhook at the URL that
+   * invokes this and the bot runs serverless (one update per request, no polling).
+   */
+  webhookCallback(opts: { secretToken?: string } = {}): (request: Request) => Promise<Response> {
+    if (!this.bot) throw new Error('Adapter not connected — call connect() first');
+    this.registerBridge();
+    return webhookCallback(this.bot, 'std/http', {
+      secretToken: opts.secretToken,
+    }) as (request: Request) => Promise<Response>;
+  }
+
+  /** Step 2 — register Teact bridge handlers, then start polling or webhook. */
+  async listen(opts: ListenOptions = {}): Promise<void> {
+    if (!this.bot) throw new Error('Adapter not connected');
+
+    this.registerBridge();
 
     if (opts.webhook) {
       await this.startWebhook(opts.webhook);
@@ -161,8 +203,11 @@ export class TelegramAdapter {
     if (replyMarkup) captionOpts.reply_markup = replyMarkup;
 
     if (payload.notification) {
-      this._pendingNotification = payload.notification;
+      this.pendingNotifications.set(String(chatId), payload.notification);
     }
+    // Remember what we're about to send so a later canEdit() can avoid editing text
+    // onto a media message (or vice-versa), which Telegram rejects.
+    this.lastMethod.set(String(chatId), payload.method);
 
     switch (payload.method) {
       case 'sendPhoto': {
@@ -294,7 +339,12 @@ export class TelegramAdapter {
 
       default: {
         const text = payload.text?.trim();
-        if (!text) return undefined;
+        if (!text) {
+          if (replyMarkup) {
+            console.warn('[teact] A <Message> has buttons but no text — Telegram requires text to attach a keyboard, so nothing was sent.');
+          }
+          return undefined;
+        }
 
         const msgOpts: Record<string, any> = {};
         if (payload.parseMode) msgOpts.parse_mode = payload.parseMode;
@@ -307,10 +357,25 @@ export class TelegramAdapter {
     }
   }
 
-  getPendingNotification(): { text: string; showAlert?: boolean } | null {
-    const n = this._pendingNotification;
-    this._pendingNotification = null;
-    return n;
+  /**
+   * Whether a rendered tree can be applied as an in-place text edit.
+   * Used by the core engine to decide edit-vs-send without importing the serializer.
+   *
+   * A text edit is only valid when BOTH the new tree is a plain message AND the last
+   * message we sent to this chat was also a plain message — you cannot edit text onto
+   * a photo/media message (Telegram rejects it), so in that case we return false and
+   * the engine sends a fresh message instead.
+   */
+  canEdit(output: OutputNode, chatId?: string | number): boolean {
+    const payload = serializeOutput(output);
+    if (payload.method !== 'sendMessage' || payload.replyKeyboard || payload.removeKeyboard) {
+      return false;
+    }
+    if (chatId != null) {
+      const key = String(chatId);
+      if (this.lastMethod.has(key) && this.lastMethod.get(key) !== 'sendMessage') return false;
+    }
+    return true;
   }
 
   /**
@@ -336,6 +401,7 @@ export class TelegramAdapter {
 
     try {
       await this.bot.api.editMessageText(chatId, messageId, text, editOpts);
+      this.lastMethod.set(String(chatId), 'sendMessage');
     } catch (err: any) {
       const msg = err?.message || err?.description || '';
       if (msg.includes('message is not modified')) return;

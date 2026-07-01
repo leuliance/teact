@@ -9,8 +9,20 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "outDir": "dist",
-    "rootDir": "."
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@teactjs/core": ["../../packages/core/src"],
+      "@teactjs/core/*": ["../../packages/core/src/*"],
+      "@teactjs/ui": ["../../packages/ui/src"],
+      "@teactjs/ui/*": ["../../packages/ui/src/*"],
+      "@teactjs/telegram": ["../../packages/telegram/src"],
+      "@teactjs/telegram/*": ["../../packages/telegram/src/*"],
+      "@teactjs/storage": ["../../packages/storage/src"],
+      "@teactjs/storage/*": ["../../packages/storage/src/*"],
+      "@teactjs/plugin-sdk": ["../../packages/plugin-sdk/src"],
+      "@teactjs/plugin-sdk/*": ["../../packages/plugin-sdk/src/*"]
+    }
   },
   "include": ["src", "teact.config.ts"]
 }

@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'bun:test';
 import React, { useState } from 'react';
-import { createRoot, type OutputNode } from '../packages/renderer/src';
-import { createI18n, useLocale } from '../packages/runtime/src/i18n';
+import { createRoot, type OutputNode } from '../packages/core/src/renderer';
+import { createI18n, useLocale } from '../packages/core/src/runtime/i18n';
 
 const waitForCommit = (ms = 20) => new Promise<void>(r => setTimeout(r, ms));
 
