@@ -180,6 +180,8 @@ interface ChatRoot {
   lastMessageId?: number;
   commitQueue: Promise<void>;
   commitMode: CommitModeRef;
+  /** Set when a render threw; the next update rebuilds a fresh root to recover. */
+  errored?: boolean;
 }
 
 interface CommandInfo {
@@ -368,6 +370,14 @@ export function createBot(options: CreateBotOptions) {
     const session = (await sessionStore.get(chatKey)) ?? {};
     let chatState = chatRoots.get(chatKey);
 
+    // Recover from a previous render error: rebuild a fresh root so the chat isn't
+    // permanently stuck showing the error boundary fallback.
+    if (chatState?.errored) {
+      chatState.root.unmount();
+      chatRoots.delete(chatKey);
+      chatState = undefined;
+    }
+
     if (botCtx.callbackData && chatState) {
       const handler = chatState.handlers.get(botCtx.callbackData);
       if (handler) handler();
@@ -473,7 +483,13 @@ export function createBot(options: CreateBotOptions) {
     const wrappedElement = React.createElement(
       ErrorBoundary,
       {
-        onError: (err: Error) => console.error(`[teact] Render error in chat ${chatState.chatId}:`, err),
+        onError: (err: Error) => {
+          console.error(`[teact] Render error in chat ${chatState.chatId}:`, err);
+          // Mark the root so the NEXT update rebuilds it fresh. Otherwise the
+          // ErrorBoundary stays in its error state forever and sticks the chat.
+          const cs = chatRoots.get(chatKey);
+          if (cs) cs.errored = true;
+        },
       },
       React.createElement(
         Suspense,
