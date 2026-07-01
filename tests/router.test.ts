@@ -24,7 +24,7 @@ function About() {
 }
 
 function UserPage() {
-  const { id } = useParams<{ id: string }>();
+  const { id } = useParams<'/user/:id'>();
   return React.createElement('tg-message', { text: `User ${id}` });
 }
 

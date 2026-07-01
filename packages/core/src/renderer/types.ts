@@ -71,8 +71,12 @@ export interface Adapter {
   send(chatId: string | number, output: OutputNode): Promise<number | undefined>;
   /** Edit an existing message in place from a new output tree. */
   edit(chatId: string | number, messageId: number, output: OutputNode): Promise<void>;
-  /** Whether `output` can be applied as an in-place edit of a text message. */
-  canEdit(output: OutputNode): boolean;
+  /**
+   * Whether `output` can be applied as an in-place edit of the chat's tracked message.
+   * `chatId` lets the adapter reject edits that would change a media message into text
+   * (or vice-versa), which the platform can't do in place.
+   */
+  canEdit(output: OutputNode, chatId?: string | number): boolean;
   /** Remove inline keyboard buttons from a message. */
   clearButtons(chatId: string | number, messageId: number): Promise<void>;
   /** Register the platform's command menu. */

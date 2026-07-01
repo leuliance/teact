@@ -55,22 +55,34 @@ export class MockAdapter implements Adapter {
     this.connected = false;
   }
 
+  private lastType = new Map<string | number, string>();
+
   async send(chatId: string | number, output: OutputNode): Promise<number> {
     const id = this.msgIdCounter++;
     this.sent.push({ chatId, output, timestamp: Date.now() });
+    this.lastType.set(chatId, output.type);
     return id;
   }
 
   async edit(chatId: string | number, messageId: number, output: OutputNode): Promise<void> {
     this.edited.push({ chatId, messageId, output, timestamp: Date.now() });
+    this.lastType.set(chatId, output.type);
   }
 
-  /** A tg-message with no reply-keyboard mutation can be applied as an edit. */
-  canEdit(output: OutputNode): boolean {
+  /**
+   * A tg-message with no reply-keyboard mutation can be applied as an edit — but only if
+   * the chat's last message was also a plain message (mirrors the real adapter's guard
+   * against editing text onto a media message).
+   */
+  canEdit(output: OutputNode, chatId?: string | number): boolean {
     if (output.type !== 'tg-message') return false;
-    return !output.children.some(
+    if (output.children.some(
       (c) => c.type === 'tg-reply-keyboard' || c.type === 'tg-reply-keyboard-remove',
-    );
+    )) return false;
+    if (chatId != null && this.lastType.has(chatId) && this.lastType.get(chatId) !== 'tg-message') {
+      return false;
+    }
+    return true;
   }
 
   async clearButtons(chatId: string | number, messageId: number): Promise<void> {
@@ -114,6 +126,7 @@ export class MockAdapter implements Adapter {
   reset(): void {
     this.sent = [];
     this.edited = [];
+    this.lastType.clear();
     this.msgIdCounter = 1;
     this.inMsgId = 100;
   }

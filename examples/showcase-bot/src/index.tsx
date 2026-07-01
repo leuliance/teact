@@ -1,8 +1,10 @@
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createBot, createRouter, createI18n, redirect } from '@teactjs/core';
+import { createBot, createRouter, createI18n, redirect, authPlugin } from '@teactjs/core';
 import type { Middleware, CommandDef } from '@teactjs/core';
-import { TelegramAdapter } from '@teactjs/telegram';
+import { TelegramAdapter, conversationsPlugin, streamPlugin } from '@teactjs/telegram';
+import { storagePlugin } from '@teactjs/storage';
+import { analyticsPlugin } from './plugins/analytics';
 
 // Pages
 import { MainMenu } from './pages/MainMenu';
@@ -132,6 +134,15 @@ export const bot = createBot({
     </QueryClientProvider>
   ),
   middleware: [loggerMiddleware],
+  // Plugins are registered here (not only in teact.config.ts) so they also load when
+  // deployed to the edge, where teact.config.ts isn't available (no filesystem).
+  plugins: [
+    storagePlugin({ driver: 'file', path: '.teact/storage.json' }),
+    conversationsPlugin(),
+    streamPlugin(),
+    authPlugin({ admins: [] }),
+    analyticsPlugin({ verbose: true }),
+  ],
   commands,
 });
 

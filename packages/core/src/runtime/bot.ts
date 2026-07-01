@@ -215,6 +215,9 @@ interface CommandInfo {
 /** Callback-data prefix used to encode "navigate to this route" buttons. */
 export const ROUTE_PREFIX = '__route:';
 
+/** Safety timeout for awaiting a render commit; see renderForChat for why it's generous. */
+const COMMIT_BACKSTOP_MS = 10_000;
+
 function buildMessageNode(text: string, buttons?: ReplyButton[][], replyKeyboard?: ReplyKeyboardButton[][]): OutputNode {
   const children: OutputNode[] = [];
   if (buttons?.length) {
@@ -288,6 +291,11 @@ export function createBot(options: CreateBotOptions) {
   }
 
   const chatRoots = new Map<string, ChatRoot>();
+  // Serializes updates per chat: a chat's next update waits for its previous one to
+  // finish rendering + sending. Without this, two rapid messages/callbacks for the same
+  // chat interleave and race on the shared ChatRoot (commitSignal, commitMode, handlers).
+  const chatLocks = new Map<string, Promise<void>>();
+  let warnedMemoryStoreOnEdge = false;
   let disposed = false;
   let initPromise: Promise<void> | null = null;
   let webhookFn: ((request: Request) => Promise<Response>) | null = null;
@@ -323,7 +331,25 @@ export function createBot(options: CreateBotOptions) {
     };
   }
 
-  async function handleUpdate(botCtx: BotContext): Promise<void> {
+  /**
+   * Entry point for every incoming update. Serializes updates per chat so concurrent
+   * events for the same chat can't race on the shared ChatRoot; different chats still
+   * run concurrently. The adapter awaits the returned promise (important on serverless
+   * where the isolate freezes once the Response resolves).
+   */
+  function handleUpdate(botCtx: BotContext): Promise<void> {
+    const chatKey = `${botCtx.platform}:${botCtx.chatId}`;
+    const prev = chatLocks.get(chatKey) ?? Promise.resolve();
+    const tail = prev.then(() => processUpdate(botCtx));
+    chatLocks.set(chatKey, tail);
+    // Prune the lock once settled, unless another update has already queued behind us.
+    tail.finally(() => {
+      if (chatLocks.get(chatKey) === tail) chatLocks.delete(chatKey);
+    });
+    return tail;
+  }
+
+  async function processUpdate(botCtx: BotContext): Promise<void> {
     const updateStart = Date.now();
     debugLog('update received', {
       chatId: botCtx.chatId,
@@ -407,12 +433,17 @@ export function createBot(options: CreateBotOptions) {
       if (handler) handler();
     }
 
+    // Track the latest session write so we can await it before returning. On serverless
+    // the isolate freezes once the Response resolves, so a fire-and-forget set() to an
+    // async store (KV, Redis, DB) would be dropped and the session would never persist.
+    let sessionWrite: Promise<unknown> = Promise.resolve();
     const runtimeValue: RuntimeContextValue = {
       botCtx,
       session,
       updateSession(patch) {
         Object.assign(session, patch);
-        sessionStore.set(chatKey, session);
+        // Snapshot so later mutations of `session` don't leak into an in-flight write.
+        sessionWrite = Promise.resolve(sessionStore.set(chatKey, { ...session }));
       },
       command: commandInfo ? { name: commandInfo.name, args: commandInfo.args } : null,
     };
@@ -454,7 +485,7 @@ export function createBot(options: CreateBotOptions) {
                 break;
               }
               default: {
-                if (cs.lastMessageId && adapter.canEdit(tree)) {
+                if (cs.lastMessageId && adapter.canEdit(tree, Number(chatId))) {
                   await adapter.edit(Number(chatId), cs.lastMessageId, tree);
                 } else {
                   const msgId = await adapter.send(Number(chatId), tree);
@@ -463,8 +494,15 @@ export function createBot(options: CreateBotOptions) {
                 break;
               }
             }
-          } catch {
+          } catch (err) {
             if (disposed) return;
+            // 'dismiss' only clears buttons — a failure there must NOT turn into a
+            // surprise full message the user never expected. Only fall back to send
+            // for modes that were already trying to render a message.
+            if (mode === 'dismiss') {
+              console.error('[teact] Failed to dismiss keyboard:', err);
+              return;
+            }
             try {
               const msgId = await adapter.send(Number(chatId), tree);
               if (msgId) cs.lastMessageId = msgId;
@@ -555,13 +593,24 @@ export function createBot(options: CreateBotOptions) {
     let commitTimer: ReturnType<typeof setTimeout> | undefined;
     const committed = new Promise<void>((resolve) => {
       cs.commitSignal = resolve;
-      commitTimer = setTimeout(resolve, 100);
+      // Backstop only: renderForChat always renders a fresh element (new context
+      // identities), so the root always commits and commitSignal always fires. This
+      // timer just prevents a permanent hang in the pathological no-commit case
+      // (e.g. disposed mid-render). It must be long enough never to cut off a real
+      // (possibly Suspense-delayed) commit — the previous 100ms value did exactly that.
+      commitTimer = setTimeout(() => {
+        debugLog('commit backstop fired — no commit observed', { chatId: botCtx.chatId });
+        resolve();
+      }, COMMIT_BACKSTOP_MS);
     });
     cs.root.render(element);
     await committed;
     if (commitTimer) clearTimeout(commitTimer);
     cs.commitSignal = undefined;
     await cs.commitQueue;
+    // Ensure any session write triggered by this render (or its onClick handler) is
+    // durably persisted before we return — critical on serverless (see above).
+    await sessionWrite;
   }
 
   /**
@@ -576,6 +625,18 @@ export function createBot(options: CreateBotOptions) {
       loadedConfig = await loadTeactConfig();
 
       plugins = [...(loadedConfig.plugins ?? []), ...(options.plugins ?? [])];
+      // Drop duplicate plugins (same name registered in both teact.config.ts and
+      // createBot({ plugins })). Otherwise you get two driver instances, doubled
+      // Providers, and duplicated onStart/onStop — the classic dual-instance footgun.
+      const seenPlugins = new Set<string>();
+      plugins = plugins.filter((p) => {
+        if (seenPlugins.has(p.name)) {
+          console.warn(`[teact] Plugin "${p.name}" registered more than once — ignoring the duplicate.`);
+          return false;
+        }
+        seenPlugins.add(p.name);
+        return true;
+      });
       pluginMiddleware = plugins.filter(p => p.middleware).map(p => p.middleware!);
       mergedServices = Object.assign({}, ...plugins.map(p => p.services ?? {}));
       userMiddleware = [...(loadedConfig.middleware ?? []), ...(options.middleware ?? [])];
@@ -701,6 +762,17 @@ export function createBot(options: CreateBotOptions) {
     async fetch(request: Request, opts?: { token?: string; secretToken?: string }): Promise<Response> {
       if (opts?.token) resolvedToken = opts.token;
       await initialize({ registerCommands: false });
+      // The in-memory session store is per-isolate; on serverless each request may get
+      // a fresh isolate, so sessions silently never persist. Warn once so this doesn't
+      // masquerade as a working bot in production.
+      if (!warnedMemoryStoreOnEdge && sessionStore instanceof MemorySessionStore) {
+        warnedMemoryStoreOnEdge = true;
+        console.warn(
+          '[teact] Running on the edge with the default in-memory session store — ' +
+          'sessions will NOT persist between requests. Pass a durable store via ' +
+          'createBot({ session: { store } }) (e.g. a KV/Redis-backed SessionStore).',
+        );
+      }
       if (!webhookFn) {
         if (!adapter.webhookCallback) {
           throw new Error('[teact] The configured adapter does not support serverless webhooks (no webhookCallback).');
@@ -711,7 +783,9 @@ export function createBot(options: CreateBotOptions) {
     },
 
     _chatRoots: chatRoots,
-    _sessionStore: sessionStore,
+    // Getter so callers see the store actually in use after initialize() may have
+    // replaced the default with one from createBot({ session }) or teact.config.ts.
+    get _sessionStore() { return sessionStore; },
   };
 
   return botInstance;

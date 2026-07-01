@@ -8,34 +8,34 @@ import type { StorageDriver } from '../packages/storage/src/types';
 describe('MemoryDriver', () => {
   test('get returns undefined for missing key', () => {
     const driver = new MemoryDriver();
-    expect(driver.get('missing')).toBeUndefined();
+    expect(driver.get<any>('missing')).toBeUndefined();
   });
 
   test('set and get stores a string value', () => {
     const driver = new MemoryDriver();
     driver.set('name', 'Alice');
-    expect(driver.get('name')).toBe('Alice');
+    expect(driver.get<any>('name')).toBe('Alice');
   });
 
   test('set and get stores an object value', () => {
     const driver = new MemoryDriver();
     driver.set('user', { id: 1, name: 'Bob' });
-    expect(driver.get('user')).toEqual({ id: 1, name: 'Bob' });
+    expect(driver.get<any>('user')).toEqual({ id: 1, name: 'Bob' });
   });
 
   test('set overwrites existing value', () => {
     const driver = new MemoryDriver();
     driver.set('count', 1);
     driver.set('count', 2);
-    expect(driver.get('count')).toBe(2);
+    expect(driver.get<any>('count')).toBe(2);
   });
 
   test('delete removes a key', () => {
     const driver = new MemoryDriver();
     driver.set('temp', 'value');
-    expect(driver.get('temp')).toBe('value');
+    expect(driver.get<any>('temp')).toBe('value');
     driver.delete('temp');
-    expect(driver.get('temp')).toBeUndefined();
+    expect(driver.get<any>('temp')).toBeUndefined();
   });
 
   test('delete on missing key does not throw', () => {
@@ -77,8 +77,8 @@ describe('MemoryDriver', () => {
     driver.set('y', 2);
     driver.clear();
     expect(driver.keys()).toEqual([]);
-    expect(driver.get('x')).toBeUndefined();
-    expect(driver.get('y')).toBeUndefined();
+    expect(driver.get<any>('x')).toBeUndefined();
+    expect(driver.get<any>('y')).toBeUndefined();
   });
 
   test('stores various data types', () => {
@@ -88,10 +88,10 @@ describe('MemoryDriver', () => {
     driver.set('array', [1, 2, 3]);
     driver.set('null', null);
 
-    expect(driver.get('number')).toBe(42);
-    expect(driver.get('boolean')).toBe(false);
-    expect(driver.get('array')).toEqual([1, 2, 3]);
-    expect(driver.get('null')).toBeNull();
+    expect(driver.get<any>('number')).toBe(42);
+    expect(driver.get<any>('boolean')).toBe(false);
+    expect(driver.get<any>('array')).toEqual([1, 2, 3]);
+    expect(driver.get<any>('null')).toBeNull();
   });
 
   test('implements StorageDriver interface', () => {
@@ -118,7 +118,7 @@ describe('FileDriver', () => {
     cleanUp();
     mkdirSync(testDir, { recursive: true });
     const driver = new FileDriver(testPath);
-    expect(driver.get('missing')).toBeUndefined();
+    expect(driver.get<any>('missing')).toBeUndefined();
     cleanUp();
   });
 
@@ -127,7 +127,7 @@ describe('FileDriver', () => {
     mkdirSync(testDir, { recursive: true });
     const driver = new FileDriver(testPath);
     driver.set('name', 'Charlie');
-    expect(driver.get('name')).toBe('Charlie');
+    expect(driver.get<any>('name')).toBe('Charlie');
     cleanUp();
   });
 
@@ -137,7 +137,7 @@ describe('FileDriver', () => {
     const driver = new FileDriver(testPath);
     driver.set('toRemove', 'val');
     driver.delete('toRemove');
-    expect(driver.get('toRemove')).toBeUndefined();
+    expect(driver.get<any>('toRemove')).toBeUndefined();
     cleanUp();
   });
 

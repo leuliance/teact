@@ -68,6 +68,25 @@ describe('scaffolder · generated files', () => {
     expect(files['teact.config.ts']).toBeTruthy();
   });
 
+  test('plugins are registered in createBot (src/index.tsx), not teact.config.ts', () => {
+    const files = getTemplateFiles('showcase', ['storage', 'streaming', 'conversations', 'auth']);
+    const index = files['src/index.tsx'];
+    // plugins now load in both `bun dev` and on the edge via createBot({ plugins })
+    expect(index).toContain('plugins: [');
+    expect(index).toContain('storagePlugin(');
+    expect(index).toContain('streamPlugin()');
+    expect(index).toContain('conversationsPlugin()');
+    expect(index).toContain('authPlugin(');
+    // teact.config.ts must no longer carry a plugins array
+    expect(files['teact.config.ts']).not.toContain('plugins:');
+
+    // starter template registers plugins the same way
+    const starter = getTemplateFiles('starter', ['storage', 'streaming']);
+    expect(starter['src/index.tsx']).toContain('plugins: [');
+    expect(starter['src/index.tsx']).toContain('storagePlugin(');
+    expect(starter['teact.config.ts']).not.toContain('plugins:');
+  });
+
   test('generated source imports only surviving packages', () => {
     const files = getTemplateFiles('showcase', ['storage', 'streaming', 'auth', 'payments']);
     const all = Object.values(files).join('\n');

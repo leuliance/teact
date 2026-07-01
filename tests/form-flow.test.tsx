@@ -31,10 +31,10 @@ describe('multi-step form through the bot (TrainerProfile scenario)', () => {
         age: { prompt: 'How old are you?' },
       });
       return React.createElement(
-        Form,
+        Form as any,
         { value: form },
-        React.createElement(Form.Complete, null, (f: any) =>
-          React.createElement(Message, { text: `done:${f.data.name}:${f.data.age}` }),
+        React.createElement(Form.Complete as any, null, ((f: any) =>
+          React.createElement(Message, { text: `done:${f.data.name}:${f.data.age}` })) as any,
         ),
       );
     }

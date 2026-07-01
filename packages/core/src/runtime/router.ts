@@ -212,8 +212,11 @@ function matchRoute(
   routes: RouteDefinition[],
   path: string,
 ): { route: RouteDefinition; params: Record<string, string> } | null {
+  // Normalize a trailing slash (except the root) so `/pokemon/` matches `/pokemon`.
+  // Easy to produce accidentally via string concatenation in deep-link resolvers.
+  const normalized = path.length > 1 ? (path.replace(/\/+$/, '') || '/') : path;
   for (const r of routes) {
-    const m = path.match(r.pattern);
+    const m = normalized.match(r.pattern);
     if (m) {
       const params: Record<string, string> = {};
       r.paramNames.forEach((name, i) => {
@@ -232,9 +235,9 @@ interface ResolvedRoute {
 }
 
 type GuardOverride =
-  | { guardComponent: FunctionComponent<any> }
-  | { guardElement: ReactElement }
-  | { guardReply: GuardReply };
+  | { guardComponent: FunctionComponent<any>; params: Record<string, string>; path: string }
+  | { guardElement: ReactElement; params: Record<string, string>; path: string }
+  | { guardReply: GuardReply; params: Record<string, string>; path: string };
 
 function isReactElement(value: unknown): value is ReactElement {
   return value != null && typeof value === 'object' && '$$typeof' in (value as any);
@@ -249,27 +252,37 @@ function resolveRoute(
   path: string,
   session: Record<string, any>,
 ): ResolvedRoute | GuardOverride | null {
+  const MAX_REDIRECTS = 5;
   let currentPath = path;
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < MAX_REDIRECTS; i++) {
     const match = matchRoute(config.routes, currentPath);
     if (!match) return null;
 
     if (match.route.beforeLoad) {
-      const result = match.route.beforeLoad({
-        path: currentPath,
-        params: match.params,
-        session,
-        reply: createGuardReply,
-      });
+      let result: ReturnType<RouteGuard>;
+      try {
+        result = match.route.beforeLoad({
+          path: currentPath,
+          params: match.params,
+          session,
+          reply: createGuardReply,
+        });
+      } catch (err) {
+        // A guard threw. Fail closed (render notFound) rather than leaking the guarded
+        // component — a thrown auth guard must never fall through to the protected page.
+        console.error(`[teact] beforeLoad guard for "${match.route.path}" threw:`, err);
+        return null;
+      }
+      const p = match.params, cur = currentPath;
       if (typeof result === 'string' && result !== currentPath) {
         currentPath = result;
         continue;
       }
       if (isGuardReply(result)) {
-        return { guardReply: result };
+        return { guardReply: result, params: p, path: cur };
       }
       if (isReactElement(result)) {
-        return { guardElement: result };
+        return { guardElement: result, params: p, path: cur };
       }
       if (result && typeof result === 'object') {
         if ('redirect' in result) {
@@ -277,12 +290,16 @@ function resolveRoute(
           continue;
         }
         if ('component' in result) {
-          return { guardComponent: (result as GuardComponent).component };
+          return { guardComponent: (result as GuardComponent).component, params: p, path: cur };
         }
       }
     }
     return { route: match.route, params: match.params, path: currentPath };
   }
+  console.warn(
+    `[teact] Router redirect loop: exceeded ${MAX_REDIRECTS} redirects starting from "${path}". ` +
+    'Check your beforeLoad guards for a cycle. Showing the notFound page.',
+  );
   return null;
 }
 
@@ -330,7 +347,14 @@ export function createRouter<const T extends Record<string, RouteValue>>(
     }
   }
   const defaultPath = defs.find(d => d.path === '/')?.path ?? defs[0]?.path ?? '/';
-  defs.sort((a, b) => b.path.split('/').length - a.path.split('/').length);
+  // Match more specific routes first: deeper paths win, and at equal depth a static
+  // route (fewer params) beats a param route — so `/pokemon/list` isn't shadowed by
+  // `/pokemon/:id` (which would otherwise match `list` as an id).
+  defs.sort((a, b) => {
+    const segDiff = b.path.split('/').length - a.path.split('/').length;
+    if (segDiff !== 0) return segDiff;
+    return a.paramNames.length - b.paramNames.length;
+  });
   return { routes: defs, defaultRoute: defaultPath, notFound: options?.notFound ?? DefaultNotFound, commands };
 }
 
@@ -362,12 +386,16 @@ export function RouterProvider({
     return React.createElement(RouterCtx.Provider, { value: providerValue }, React.createElement(config.notFound));
   }
 
+  // Guard-rendered routes still carry the matched URL's params, so a component/element
+  // shown by a guard can read useParams() (e.g. an /order/:id preview for logged-out users).
+  const guardValue = { path: resolved.path, params: resolved.params, navigate };
+
   if ('guardComponent' in resolved) {
-    return React.createElement(RouterCtx.Provider, { value: providerValue }, React.createElement(resolved.guardComponent));
+    return React.createElement(RouterCtx.Provider, { value: guardValue }, React.createElement(resolved.guardComponent));
   }
 
   if ('guardElement' in resolved) {
-    return React.createElement(RouterCtx.Provider, { value: providerValue }, resolved.guardElement);
+    return React.createElement(RouterCtx.Provider, { value: guardValue }, resolved.guardElement);
   }
 
   if ('guardReply' in resolved) {
@@ -389,7 +417,7 @@ export function RouterProvider({
       children.push(React.createElement('tg-keyboard', { key: 'kbd' }, ...rows));
     }
     const msg = React.createElement('tg-message', { text }, ...children);
-    return React.createElement(RouterCtx.Provider, { value: providerValue }, msg);
+    return React.createElement(RouterCtx.Provider, { value: guardValue }, msg);
   }
 
   return React.createElement(

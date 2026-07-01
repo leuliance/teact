@@ -22,7 +22,7 @@ const program = new Command()
 program
   .command('create <name>')
   .description('Create a new Teact bot project')
-  .option('-t, --template <template>', 'Project template (router, counter, full, empty)')
+  .option('-t, --template <template>', 'Project template (starter, counter, showcase, empty)')
   .option('-f, --features <features>', 'Comma-separated features (storage,conversations,streaming,auth,payments); i18n is always included')
   .option('--pm <manager>', 'Package manager (bun, npm, pnpm)')
   .option('--no-install', 'Skip dependency installation')

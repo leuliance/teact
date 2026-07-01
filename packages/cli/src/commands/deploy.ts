@@ -7,7 +7,7 @@ interface DeployOptions {
 }
 
 const WORKER_ENTRY = `// Cloudflare Worker entry — deploy your Teact bot to the edge.
-// src/index.ts exports the bot and only calls bot.start() when run directly
+// src/index.tsx exports the bot and only calls bot.start() when run directly
 // (\`if (import.meta.main)\`), so importing it here does NOT start polling.
 import { bot } from './index';
 

@@ -171,8 +171,8 @@ describe('Serialize ReplyKeyboard', () => {
     const r = serializeOutput(node);
     expect(r.replyKeyboard).toBeDefined();
     expect(r.replyKeyboard!.rows).toHaveLength(2);
-    expect(r.replyKeyboard!.rows[0][0].text).toBe('A');
-    expect(r.replyKeyboard!.rows[0][1].text).toBe('B');
+    expect((r.replyKeyboard!.rows[0][0] as any).text).toBe('A');
+    expect((r.replyKeyboard!.rows[0][1] as any).text).toBe('B');
     expect((r.replyKeyboard!.rows[1][0] as any).request_contact).toBe(true);
     expect((r.replyKeyboard!.rows[1][1] as any).request_location).toBe(true);
     expect(r.replyKeyboard!.resizeKeyboard).toBe(true);
@@ -188,7 +188,7 @@ describe('Serialize ReplyKeyboard', () => {
     };
     const r = serializeOutput(node);
     expect(r.replyKeyboard!.rows).toHaveLength(1);
-    expect(r.replyKeyboard!.rows[0][0].text).toBe('Standalone');
+    expect((r.replyKeyboard!.rows[0][0] as any).text).toBe('Standalone');
   });
 });
 

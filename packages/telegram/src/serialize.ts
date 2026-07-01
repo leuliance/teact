@@ -85,59 +85,139 @@ export interface TelegramSendPayload {
   pollIsClosed?: boolean;
 }
 
+/** Telegram's hard limits — exceeding them is a 400 error, so we clamp defensively. */
+const MAX_MESSAGE_LEN = 4096;
+const MAX_CAPTION_LEN = 1024;
+
+/** A piece of accumulated text: `literal` = user content (escaped in HTML mode), `markup` = tags we emit. */
+interface TextSegment {
+  text: string;
+  literal: boolean;
+}
+
+/** Escape the five HTML entities Telegram's HTML parse mode cares about. */
+export function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function truncate(s: string, max: number, what: string): string {
+  if (s.length <= max) return s;
+  console.warn(`[teact] ${what} exceeds Telegram's ${max}-char limit (${s.length}); truncating.`);
+  return s.slice(0, max - 1) + '…';
+}
+
 export function serializeOutput(node: OutputNode): TelegramSendPayload {
   const result: TelegramSendPayload = { method: 'sendMessage', text: '' };
-  walk(node, result);
+  const segments: TextSegment[] = [];
+  walk(node, result, segments);
+
+  // Assemble text now that the final parse mode is known. In HTML mode we escape the
+  // literal (user-supplied) segments so `<`, `>`, `&` in user content can't break the
+  // markup or inject tags; the tags we generated pass through untouched. When the user
+  // explicitly set a parse mode on the node, their own text is left verbatim (their
+  // responsibility) — only formatting-component children are escaped.
+  const isHtml = result.parseMode === 'HTML';
+  result.text = segments
+    .map((s) => (isHtml && s.literal ? escapeHtml(s.text) : s.text))
+    .join('');
+
+  // Clamp to Telegram limits (message text vs media caption) to avoid hard 400s.
+  const isCaption = result.method !== 'sendMessage' && result.method !== 'sendPoll';
+  if (result.text) {
+    result.text = truncate(result.text, isCaption ? MAX_CAPTION_LEN : MAX_MESSAGE_LEN,
+      isCaption ? 'Caption' : 'Message text');
+  }
+
+  validate(result);
   return result;
 }
 
-function walk(node: OutputNode, out: TelegramSendPayload): void {
+/** Post-serialization validation for the constraints Telegram enforces at the API. */
+function validate(out: TelegramSendPayload): void {
+  if (out.method === 'sendMediaGroup') {
+    const n = out.mediaGroup?.length ?? 0;
+    if (n === 1) {
+      // A media group needs 2–10 items; a single item must be sent as a normal media message.
+      const only = out.mediaGroup![0];
+      out.method = only.type === 'video' ? 'sendVideo' : 'sendPhoto';
+      if (only.type === 'video') out.video = only.media; else out.photo = only.media;
+      if (only.caption) out.text = only.caption;
+      out.mediaGroup = undefined;
+    } else if (n > 10) {
+      console.warn(`[teact] <MediaGroup> has ${n} items; Telegram allows max 10 — extra items dropped.`);
+      out.mediaGroup = out.mediaGroup!.slice(0, 10);
+    } else if (n === 0) {
+      console.warn('[teact] <MediaGroup> has no items — nothing will be sent.');
+    }
+  }
+
+  if (out.method === 'sendPoll') {
+    const opts = out.pollOptions ?? [];
+    if (opts.length < 2) {
+      console.warn(`[teact] <Poll> needs at least 2 options (got ${opts.length}); Telegram will reject it.`);
+    }
+    if (out.pollType === 'quiz' && (out.pollCorrectOptionId == null || out.pollCorrectOptionId < 0 || out.pollCorrectOptionId >= opts.length)) {
+      console.warn('[teact] <Poll.Quiz> requires a valid correctOptionId within the options range.');
+    }
+  }
+}
+
+function walk(node: OutputNode, out: TelegramSendPayload, segs: TextSegment[]): void {
+  // A subtree hidden by the reconciler (Suspense/offscreen) must not leak into the payload.
+  if ((node.props as { __hidden?: boolean }).__hidden) return;
+  const lit = (text: string) => { if (text) segs.push({ text, literal: true }); };
+  const raw = (text: string) => segs.push({ text, literal: false });
+
   switch (node.type) {
     case 'tg-message': {
-      if (node.props.text) out.text = (out.text ?? '') + node.props.text;
+      // If the user picked a parse mode, their `text` is verbatim (their escaping job);
+      // otherwise it's a literal that we escape if formatting later forces HTML.
+      if (node.props.text) {
+        if (node.props.parseMode) raw(node.props.text); else lit(node.props.text);
+      }
       if (node.props.parseMode) out.parseMode = node.props.parseMode;
       if (node.props.disablePreview) out.disablePreview = true;
-      for (const c of node.children) walk(c, out);
+      for (const c of node.children) walk(c, out, segs);
       break;
     }
 
     case '#text': {
-      if (node.props.value) out.text = (out.text ?? '') + node.props.value;
+      if (node.props.value) lit(node.props.value);
       break;
     }
 
     case 'tg-bold': {
       out.parseMode = out.parseMode || 'HTML';
-      out.text = (out.text ?? '') + '<b>';
-      for (const c of node.children) walk(c, out);
-      out.text += '</b>';
+      raw('<b>');
+      for (const c of node.children) walk(c, out, segs);
+      raw('</b>');
       break;
     }
 
     case 'tg-italic': {
       out.parseMode = out.parseMode || 'HTML';
-      out.text = (out.text ?? '') + '<i>';
-      for (const c of node.children) walk(c, out);
-      out.text += '</i>';
+      raw('<i>');
+      for (const c of node.children) walk(c, out, segs);
+      raw('</i>');
       break;
     }
 
     case 'tg-code': {
       out.parseMode = out.parseMode || 'HTML';
       if (node.props.language) {
-        out.text = (out.text ?? '') + `<pre><code class="language-${node.props.language}">`;
-        for (const c of node.children) walk(c, out);
-        out.text += '</code></pre>';
+        raw(`<pre><code class="language-${escapeHtml(String(node.props.language))}">`);
+        for (const c of node.children) walk(c, out, segs);
+        raw('</code></pre>');
       } else {
-        out.text = (out.text ?? '') + '<code>';
-        for (const c of node.children) walk(c, out);
-        out.text += '</code>';
+        raw('<code>');
+        for (const c of node.children) walk(c, out, segs);
+        raw('</code>');
       }
       break;
     }
 
     case 'tg-keyboard': {
-      for (const c of node.children) walk(c, out);
+      for (const c of node.children) walk(c, out, segs);
       break;
     }
 
@@ -162,68 +242,68 @@ function walk(node: OutputNode, out: TelegramSendPayload): void {
     case 'tg-photo': {
       out.method = 'sendPhoto';
       out.photo = node.props.src;
-      if (node.props.caption) out.text = (out.text ?? '') + node.props.caption;
+      if (node.props.caption) lit(node.props.caption);
       if (node.props.parseMode) out.parseMode = node.props.parseMode;
       if (node.props.hasSpoiler) out.hasSpoiler = true;
-      for (const c of node.children) walk(c, out);
+      for (const c of node.children) walk(c, out, segs);
       break;
     }
 
     case 'tg-document': {
       out.method = 'sendDocument';
       out.document = node.props.src;
-      if (node.props.caption) out.text = (out.text ?? '') + node.props.caption;
+      if (node.props.caption) lit(node.props.caption);
       if (node.props.filename) out.filename = node.props.filename;
-      for (const c of node.children) walk(c, out);
+      for (const c of node.children) walk(c, out, segs);
       break;
     }
 
     case 'tg-video': {
       out.method = 'sendVideo';
       out.video = node.props.src;
-      if (node.props.caption) out.text = (out.text ?? '') + node.props.caption;
+      if (node.props.caption) lit(node.props.caption);
       if (node.props.parseMode) out.parseMode = node.props.parseMode;
       if (node.props.width) out.width = node.props.width;
       if (node.props.height) out.height = node.props.height;
       if (node.props.duration) out.duration = node.props.duration;
       if (node.props.supportsStreaming) out.supportsStreaming = true;
       if (node.props.hasSpoiler) out.hasSpoiler = true;
-      for (const c of node.children) walk(c, out);
+      for (const c of node.children) walk(c, out, segs);
       break;
     }
 
     case 'tg-animation': {
       out.method = 'sendAnimation';
       out.animation = node.props.src;
-      if (node.props.caption) out.text = (out.text ?? '') + node.props.caption;
+      if (node.props.caption) lit(node.props.caption);
       if (node.props.parseMode) out.parseMode = node.props.parseMode;
       if (node.props.width) out.width = node.props.width;
       if (node.props.height) out.height = node.props.height;
       if (node.props.duration) out.duration = node.props.duration;
       if (node.props.hasSpoiler) out.hasSpoiler = true;
-      for (const c of node.children) walk(c, out);
+      for (const c of node.children) walk(c, out, segs);
       break;
     }
 
     case 'tg-voice': {
       out.method = 'sendVoice';
       out.voice = node.props.src;
-      if (node.props.caption) out.text = (out.text ?? '') + node.props.caption;
+      if (node.props.caption) lit(node.props.caption);
       if (node.props.parseMode) out.parseMode = node.props.parseMode;
       if (node.props.duration) out.duration = node.props.duration;
-      for (const c of node.children) walk(c, out);
+      for (const c of node.children) walk(c, out, segs);
       break;
     }
 
     case 'tg-audio': {
       out.method = 'sendAudio';
       out.audio = node.props.src;
-      if (node.props.caption) out.text = (out.text ?? '') + node.props.caption;
+      if (node.props.caption) lit(node.props.caption);
       if (node.props.parseMode) out.parseMode = node.props.parseMode;
       if (node.props.performer) out.performer = node.props.performer;
       if (node.props.title) out.title = node.props.title;
       if (node.props.duration) out.duration = node.props.duration;
-      for (const c of node.children) walk(c, out);
+      for (const c of node.children) walk(c, out, segs);
       break;
     }
 
@@ -232,7 +312,7 @@ function walk(node: OutputNode, out: TelegramSendPayload): void {
       out.videoNote = node.props.src;
       if (node.props.duration) out.duration = node.props.duration;
       if (node.props.length) out.length = node.props.length;
-      for (const c of node.children) walk(c, out);
+      for (const c of node.children) walk(c, out, segs);
       break;
     }
 
@@ -240,7 +320,7 @@ function walk(node: OutputNode, out: TelegramSendPayload): void {
       out.method = 'sendSticker';
       out.sticker = node.props.src;
       if (node.props.emoji) out.emoji = node.props.emoji;
-      for (const c of node.children) walk(c, out);
+      for (const c of node.children) walk(c, out, segs);
       break;
     }
 
@@ -280,7 +360,7 @@ function walk(node: OutputNode, out: TelegramSendPayload): void {
     case 'tg-media-group': {
       out.method = 'sendMediaGroup';
       if (!out.mediaGroup) out.mediaGroup = [];
-      for (const c of node.children) walk(c, out);
+      for (const c of node.children) walk(c, out, segs);
       break;
     }
 
@@ -316,7 +396,7 @@ function walk(node: OutputNode, out: TelegramSendPayload): void {
         placeholder: node.props.placeholder,
         isPersistent: node.props.isPersistent,
       };
-      for (const c of node.children) walk(c, out);
+      for (const c of node.children) walk(c, out, segs);
       break;
     }
 
@@ -373,36 +453,36 @@ function walk(node: OutputNode, out: TelegramSendPayload): void {
     }
 
     case 'tg-alert': {
-      const heading = node.props.heading ?? '';
-      out.text = (out.text ?? '') + heading + '\n';
-      for (const c of node.children) walk(c, out);
-      out.text += '\n';
+      if (node.props.heading) lit(node.props.heading);
+      raw('\n');
+      for (const c of node.children) walk(c, out, segs);
+      raw('\n');
       break;
     }
 
     case 'tg-list': {
       const ordered = node.props.ordered === true;
       node.children.forEach((c, i) => {
-        const prefix = ordered ? `${i + 1}. ` : '• ';
-        out.text = (out.text ?? '') + prefix;
-        walk(c, out);
-        out.text += '\n';
+        raw(ordered ? `${i + 1}. ` : '• ');
+        walk(c, out, segs);
+        raw('\n');
       });
       break;
     }
 
     case 'tg-list-item': {
-      for (const c of node.children) walk(c, out);
+      for (const c of node.children) walk(c, out, segs);
       break;
     }
 
     case 'tg-divider': {
-      out.text = (out.text ?? '') + (node.props.text ?? '────────────────────') + '\n';
+      if (node.props.text) lit(node.props.text); else raw('────────────────────');
+      raw('\n');
       break;
     }
 
     default: {
-      for (const c of node.children) walk(c, out);
+      for (const c of node.children) walk(c, out, segs);
     }
   }
 }

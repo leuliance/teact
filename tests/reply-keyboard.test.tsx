@@ -155,8 +155,8 @@ describe('ReplyKeyboard serialization', () => {
     expect(payload.replyKeyboard).toBeTruthy();
     expect(payload.replyKeyboard!.rows).toHaveLength(1);
     expect(payload.replyKeyboard!.rows[0]).toHaveLength(2);
-    expect(payload.replyKeyboard!.rows[0][0].text).toBe('Alpha');
-    expect(payload.replyKeyboard!.rows[0][1].text).toBe('Beta');
+    expect((payload.replyKeyboard!.rows[0][0] as any).text).toBe('Alpha');
+    expect((payload.replyKeyboard!.rows[0][1] as any).text).toBe('Beta');
     expect(payload.replyKeyboard!.resizeKeyboard).toBe(true);
   });
 
@@ -178,7 +178,7 @@ describe('ReplyKeyboard serialization', () => {
     };
 
     const payload = serializeOutput(node);
-    expect(payload.replyKeyboard!.rows[0][0].text).toBe('Share');
+    expect((payload.replyKeyboard!.rows[0][0] as any).text).toBe('Share');
     expect((payload.replyKeyboard!.rows[0][0] as any).request_contact).toBe(true);
   });
 
@@ -248,6 +248,6 @@ describe('ReplyKeyboard serialization', () => {
     expect(payload.replyKeyboard!.rows).toHaveLength(2);
     expect(payload.replyKeyboard!.rows[0]).toHaveLength(1);
     expect(payload.replyKeyboard!.rows[1]).toHaveLength(2);
-    expect(payload.replyKeyboard!.rows[1][1].text).toBe('R2B2');
+    expect((payload.replyKeyboard!.rows[1][1] as any).text).toBe('R2B2');
   });
 });

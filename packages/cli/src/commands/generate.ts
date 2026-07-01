@@ -68,7 +68,7 @@ function generateHook(name: string, root: string): void {
 
   writeFileSync(
     filePath,
-    `import { useState, useCallback } from '@teactjs/core';
+    `import { useState } from '@teactjs/core';
 
 export function ${hookName}() {
   const [state, setState] = useState(null);

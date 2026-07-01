@@ -109,7 +109,7 @@ describe('ErrorBoundary', () => {
     console.error = orig;
 
     expect(onError).toHaveBeenCalled();
-    const [err] = onError.mock.calls[0] as [Error, any];
+    const [err] = onError.mock.calls[0] as unknown as [Error, any];
     expect(err.message).toBe('Component exploded');
   });
 
