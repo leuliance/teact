@@ -832,6 +832,7 @@ export function createBot(options: CreateBotOptions) {
    */
   function initialize(opts?: { registerCommands?: boolean }): Promise<void> {
     if (initPromise) return initPromise;
+    disposed = false;
     initPromise = (async () => {
       // Auto-load teact.config.ts (fs-based; harmlessly returns {} on serverless/edge).
       loadedConfig = await loadTeactConfig();
@@ -1009,6 +1010,9 @@ export function createBot(options: CreateBotOptions) {
       }
 
       try { await adapter.disconnect(); } catch (err) { console.error('[teact] Adapter disconnect failed:', err); }
+      // Allow a later start()/fetch() on this same instance to reconnect.
+      initPromise = null;
+      webhookFn = null;
       if ((globalThis as any)[GLOBAL_KEY] === botInstance) (globalThis as any)[GLOBAL_KEY] = undefined;
       console.log('[teact] Bot stopped');
     },

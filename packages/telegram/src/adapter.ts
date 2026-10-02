@@ -190,7 +190,13 @@ export class TelegramAdapter implements Adapter {
     }
 
     const ctx = this.mapUpdate(update, kind, native);
-    if (!ctx) return;
+    if (!ctx) {
+      // No chat to render into (inline-mode / game buttons) — still stop the button spinner.
+      if (update.callback_query) {
+        await this.driver.call('answerCallbackQuery', { callback_query_id: update.callback_query.id }).catch(() => {});
+      }
+      return;
+    }
 
     if (kind === 'message') {
       await this.emit('message', ctx);
@@ -271,7 +277,9 @@ export class TelegramAdapter implements Adapter {
       case 'channel_post':
       case 'edited_channel_post': {
         const msg = update[kind] as TgMessage;
-        return { ...fromMessage(msg), text: msg.text };
+        // Only NEW user messages carry `text` (what useText/forms consume); edits and channel
+        // posts are events — read them from `raw` so an edit can't answer a form step.
+        return kind === 'message' ? { ...fromMessage(msg), text: msg.text } : fromMessage(msg);
       }
       case 'callback_query': {
         const q = update.callback_query!;
