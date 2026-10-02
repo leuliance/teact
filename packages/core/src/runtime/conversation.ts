@@ -222,8 +222,16 @@ export function useConversation(config?: StepsConfig | UseConversationOptions): 
     setLastError(null);
   }, []);
 
+  // A slot is free when nothing is active OR the active key was already answered — the
+  // latter happens when React finishes a render pass with stale `answers` right after a
+  // render-phase setAnswers, re-activating the step that was just answered.
+  function canActivate(key: string): boolean {
+    const cur = activeKeyRef.current;
+    return (!cur || cur in answers) && !(key in answers);
+  }
+
   function activateText(key: string) {
-    if (!activeKeyRef.current && !(key in answers)) {
+    if (canActivate(key)) {
       activeKeyRef.current = key;
       waitModeRef.current = 'text';
       processedMsgIdRef.current = msgId;
@@ -231,7 +239,7 @@ export function useConversation(config?: StepsConfig | UseConversationOptions): 
   }
 
   function buildAsk(key: string, questionText: string, options: AskOption[][]): React.ReactElement {
-    if (!activeKeyRef.current && !(key in answers)) {
+    if (canActivate(key)) {
       activeKeyRef.current = key;
       waitModeRef.current = 'callback';
       processedMsgIdRef.current = msgId;
@@ -417,9 +425,6 @@ export function useForm<T extends Record<string, FormFieldDef>>(
       return runValidation(field.validate, value);
     },
   });
-  const registry = useContext(CallbackRegistryCtx);
-  const formId = useId();
-
   const keys = useMemo(() => Object.keys(schema) as (keyof T & string)[], []);
   const currentKey = keys.find(k => !conv.has(k));
   const complete = !currentKey;
@@ -436,19 +441,10 @@ export function useForm<T extends Record<string, FormFieldDef>>(
       : basePrompt;
 
     if (field.options) {
-      const rows = field.options.map((row, ri) => {
-        const buttons = row.map((opt, ci) => {
-          const cbId = `__form:${formId}:${ri}:${ci}`;
-          registry?.handlers.set(cbId, () => conv.set(currentKey!, opt));
-          return React.createElement('tg-button', { key: `${ri}:${ci}`, text: opt, callbackData: cbId });
-        });
-        return React.createElement('tg-button-row', { key: String(ri) }, ...buttons);
-      });
-
-      return React.createElement(
-        'tg-message', { text: promptText },
-        React.createElement('tg-keyboard', {}, ...rows),
-      );
+      // Delegate to ask(): its callback ids include the field key, so a late tap on an
+      // earlier question's button can never answer the current one, and typed text gets
+      // a "pick an option" hint instead of being silently ignored.
+      return conv.ask(currentKey, promptText, field.options);
     }
 
     return conv.prompt(currentKey, promptText);

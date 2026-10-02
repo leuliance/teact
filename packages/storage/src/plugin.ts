@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useContext, createContext } from 'react';
+import React, { useCallback, useContext, useRef, useSyncExternalStore, createContext } from 'react';
 import type { TeactPlugin } from '@teactjs/core';
 import { useChatId, usePlatform } from '@teactjs/core';
 import type { StorageDriver, StoragePluginOptions } from './types';
@@ -13,9 +13,31 @@ function useDriver(): StorageDriver {
   return ctx;
 }
 
+// Per-driver, per-key listeners so every component (in every chat root / forum topic)
+// reading a key re-renders when any of them writes it.
+const listeners = new WeakMap<StorageDriver, Map<string, Set<() => void>>>();
+
+function subscribe(driver: StorageDriver, key: string, fn: () => void): () => void {
+  let byKey = listeners.get(driver);
+  if (!byKey) listeners.set(driver, (byKey = new Map()));
+  let set = byKey.get(key);
+  if (!set) byKey.set(key, (set = new Set()));
+  set.add(fn);
+  return () => {
+    set!.delete(fn);
+    if (!set!.size) byKey!.delete(key);
+  };
+}
+
+function notify(driver: StorageDriver, key: string): void {
+  for (const fn of [...(listeners.get(driver)?.get(key) ?? [])]) fn();
+}
+
 /**
  * Like useState but persisted across bot restarts.
- * Keys are auto-scoped to the current chat.
+ * Keys are auto-scoped to the current chat. The driver is the single source of truth:
+ * every component reading the same key sees the latest value, and updater functions
+ * always receive the freshest stored value (no lost updates).
  *
  * @example
  * const [favorites, setFavorites] = useStorage<number[]>('favorites', []);
@@ -26,19 +48,24 @@ export function useStorage<T>(key: string, defaultValue: T): [T, (value: T | ((p
   const chatId = useChatId();
   const platform = usePlatform();
   const scopedKey = `${platform}:${chatId}:${key}`;
+  // Stable default: an inline `[]` is a new array every render, which must not look like a change.
+  const defaultRef = useRef(defaultValue);
 
-  const [value, setValue] = useState<T>(() => {
-    const stored = driver.get<T>(scopedKey);
-    return stored !== undefined ? stored : defaultValue;
-  });
+  const read = useCallback(
+    (): T => (driver.has(scopedKey) ? (driver.get<T>(scopedKey) as T) : defaultRef.current),
+    [driver, scopedKey],
+  );
+  const value = useSyncExternalStore(
+    useCallback((fn: () => void) => subscribe(driver, scopedKey, fn), [driver, scopedKey]),
+    read,
+    read,
+  );
 
   const setAndPersist = useCallback((next: T | ((prev: T) => T)) => {
-    setValue(prev => {
-      const resolved = typeof next === 'function' ? (next as (p: T) => T)(prev) : next;
-      driver.set(scopedKey, resolved);
-      return resolved;
-    });
-  }, [scopedKey, driver]);
+    const resolved = typeof next === 'function' ? (next as (p: T) => T)(read()) : next;
+    driver.set(scopedKey, resolved);
+    notify(driver, scopedKey);
+  }, [driver, scopedKey, read]);
 
   return [value, setAndPersist];
 }

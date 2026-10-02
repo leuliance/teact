@@ -3,7 +3,7 @@ import React from 'react';
 import { createBot } from '../packages/core/src';
 import { Message } from '../packages/ui/src';
 import { MockAdapter } from '../packages/testing/src';
-import { TelegramAdapter } from '../packages/telegram/src';
+import { TelegramAdapter, fetchDriver } from '../packages/telegram/src';
 
 const wait = (ms = 30) => new Promise((r) => setTimeout(r, ms));
 
@@ -63,18 +63,15 @@ describe('serverless webhook — bot.fetch()', () => {
   });
 });
 
-describe('TelegramAdapter.webhookCallback (grammY std/http)', () => {
+describe('TelegramAdapter.webhookCallback', () => {
   test('returns a web-standard handler and dispatches updates without network', async () => {
-    const adapter = new TelegramAdapter();
-    await adapter.connect({ token: '123:FAKE' });
     // Mock every Telegram API call (incl. getMe) so nothing hits the network.
-    adapter.getBot().api.config.use(((_prev: any, method: string) =>
-      Promise.resolve({
-        ok: true,
-        result: method === 'getMe'
-          ? { id: 1, is_bot: true, first_name: 'Bot', username: 'bot' }
-          : {},
-      })) as any);
+    const fakeFetch = (async (url: string) => new Response(JSON.stringify({
+      ok: true,
+      result: String(url).endsWith('/getMe') ? { id: 1, is_bot: true, first_name: 'Bot', username: 'bot' } : {},
+    }))) as unknown as typeof fetch;
+    const adapter = new TelegramAdapter({ driver: fetchDriver({ fetch: fakeFetch }) });
+    await adapter.connect({ token: '123:FAKE' });
 
     let received: string | undefined;
     adapter.on('message', (ctx) => { received = ctx.text; });

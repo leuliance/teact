@@ -12,10 +12,10 @@ const TEACT_PACKAGES = [
 ];
 
 const EXTERNAL_DEPS = [
+  // Optional Telegram drivers — only loaded when the app imports
+  // @teactjs/telegram/grammy or @teactjs/telegram/gramio.
   'grammy',
-  '@grammyjs/conversations',
-  '@grammyjs/stream',
-  '@grammyjs/auto-retry',
+  'gramio',
   '@tanstack/react-query',
 ];
 
@@ -87,6 +87,9 @@ export function createBuildConfig(
           ...EXTERNAL_DEPS,
           /^node:/,
         ],
+        // Always emit dist/index.js (what `teact start` and generated scripts run),
+        // whatever the entry is called and whether or not package.json has "type":"module".
+        output: { entryFileNames: 'index.js', format: 'es' },
       },
     },
   };

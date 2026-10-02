@@ -15,6 +15,7 @@ import {
   useContact,
   useVenue,
   useAnimation,
+  useMedia,
 } from '../packages/core/src/runtime/media-hooks';
 
 function waitForCommit(): Promise<void> {
@@ -30,20 +31,16 @@ const mockBotCtx = {
   text: 'hello',
   callbackData: undefined,
   raw: {
-    api: {
-      sendPhoto: async (...args: any[]) => ({ message_id: 1, args }),
-      sendVideo: async (...args: any[]) => ({ message_id: 2, args }),
-      sendAnimation: async (...args: any[]) => ({ message_id: 3, args }),
-      sendAudio: async (...args: any[]) => ({ message_id: 4, args }),
-      sendVoice: async (...args: any[]) => ({ message_id: 5, args }),
-      sendDocument: async (...args: any[]) => ({ message_id: 6, args }),
-      sendSticker: async (...args: any[]) => ({ message_id: 7, args }),
-      sendLocation: async (...args: any[]) => ({ message_id: 8, args }),
-      sendContact: async (...args: any[]) => ({ message_id: 9, args }),
-      sendVenue: async (...args: any[]) => ({ message_id: 10, args }),
+    update_id: 1,
+    message: { message_id: 100, chat: { id: 12345 }, from: { id: 67890, first_name: 'Test', is_bot: false }, text: 'hello' },
+  },
+  api: {
+    calls: [] as { method: string; params: any }[],
+    async call(method: string, params: any) {
+      this.calls.push({ method, params });
+      return { message_id: this.calls.length };
     },
-    chat: { id: 12345 },
-    from: { id: 67890, first_name: 'Test', is_bot: false },
+    sendPhoto: () => Promise.resolve({ message_id: 1 }),
   },
 };
 
@@ -88,13 +85,25 @@ describe('useChat hook', () => {
 });
 
 describe('useTelegram hook', () => {
-  test('returns api, ctx, chat, from, chatId', async () => {
+  test('returns api, update, chat, from, chatId', async () => {
     const result = await renderWithRuntime(useTelegram);
     expect(result.api).toBeDefined();
     expect(result.api.sendPhoto).toBeDefined();
+    expect(result.update).toBe(mockBotCtx.raw);
     expect(result.chat).toEqual({ id: 12345 });
     expect(result.from).toEqual({ id: 67890, first_name: 'Test', is_bot: false });
     expect(result.chatId).toBe(12345);
+  });
+
+  test('media senders call the platform API with Bot API params for the current chat', async () => {
+    const media = await renderWithRuntime(useMedia);
+    mockBotCtx.api.calls.length = 0;
+    await media.photo('cat.jpg', { caption: 'A cat' });
+    await media.poll('Q?', ['a', 'b']);
+    expect(mockBotCtx.api.calls).toEqual([
+      { method: 'sendPhoto', params: { chat_id: 12345, photo: 'cat.jpg', caption: 'A cat' } },
+      { method: 'sendPoll', params: { chat_id: 12345, question: 'Q?', options: [{ text: 'a' }, { text: 'b' }] } },
+    ]);
   });
 });
 

@@ -38,6 +38,15 @@ export {
   Notification,
   WebAppButton,
   Poll,
+  Underline,
+  Strike,
+  Spoiler,
+  Link,
+  Mention,
+  Quote,
+  Pagination,
+  usePagination,
+  Confirm,
 } from './components';
 
 export type {
@@ -78,6 +87,15 @@ export type {
   NotificationProps,
   WebAppButtonProps,
   PollProps,
+  UnderlineProps,
+  StrikeProps,
+  SpoilerProps,
+  LinkProps,
+  MentionProps,
+  QuoteProps,
+  PaginationProps,
+  UsePaginationResult,
+  ConfirmProps,
 } from './components';
 
 // Resilience + data hooks re-exported from core for convenience.

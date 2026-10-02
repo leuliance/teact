@@ -75,7 +75,7 @@ describe('scaffolder · generated files', () => {
     // plugins now load in both `bun dev` and on the edge via createBot({ plugins })
     expect(index).toContain('plugins: [');
     expect(index).toContain('storagePlugin(');
-    expect(index).toContain('streamPlugin()');
+    expect(index).not.toContain('streamPlugin'); // streaming is built in
     expect(index).toContain('conversationsPlugin()');
     expect(index).toContain('authPlugin(');
     // teact.config.ts must no longer carry a plugins array

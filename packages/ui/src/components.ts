@@ -1,4 +1,4 @@
-import React, { useContext, useId, createContext, type ReactNode, type FunctionComponent } from 'react';
+import React, { useContext, useId, useState, useMemo, useCallback, createContext, type ReactNode, type FunctionComponent } from 'react';
 import { CallbackRegistryCtx, ROUTE_PREFIX } from '@teactjs/core';
 
 /** Replace `:param` segments in a route template with values from `params`. */
@@ -114,7 +114,7 @@ export type ButtonVariant = 'default' | 'primary' | 'destructive' | 'outline';
 export interface ButtonProps {
   text: string;
   variant?: ButtonVariant;
-  onClick?: string | (() => void);
+  onClick?: string | (() => void | Promise<void>);
   url?: string;
   conversation?: string;
   /** Navigate to this route when tapped (declarative alternative to `onClick={() => navigate(...)}`). */
@@ -610,6 +610,57 @@ export function Code({ language, children }: CodeProps): React.ReactNode {
   return React.createElement('tg-code', { language }, children);
 }
 
+export interface UnderlineProps { children?: ReactNode; }
+/** Underlined text. */
+export function Underline({ children }: UnderlineProps): React.ReactNode {
+  return React.createElement('tg-underline', null, children);
+}
+
+export interface StrikeProps { children?: ReactNode; }
+/** Strikethrough text. */
+export function Strike({ children }: StrikeProps): React.ReactNode {
+  return React.createElement('tg-strike', null, children);
+}
+
+export interface SpoilerProps { children?: ReactNode; }
+/** Hidden-until-tapped spoiler text. */
+export function Spoiler({ children }: SpoilerProps): React.ReactNode {
+  return React.createElement('tg-spoiler', null, children);
+}
+
+export interface LinkProps { href: string; children?: ReactNode; }
+/**
+ * An inline hyperlink.
+ *
+ * @example
+ * <Message>Read the <Link href="https://teact-docs.vercel.app">docs</Link>.</Message>
+ */
+export function Link({ href, children }: LinkProps): React.ReactNode {
+  return React.createElement('tg-link', { href }, children ?? href);
+}
+
+export interface MentionProps { userId: string | number; children?: ReactNode; }
+/**
+ * Mention a user by id — works even for users without a username.
+ *
+ * @example
+ * const { user } = useBot();
+ * <Message>Welcome, <Mention userId={user.id}>{user.firstName}</Mention>!</Message>
+ */
+export function Mention({ userId, children }: MentionProps): React.ReactNode {
+  return React.createElement('tg-link', { href: `tg://user?id=${userId}` }, children ?? String(userId));
+}
+
+export interface QuoteProps {
+  /** Collapse long quotes behind "show more". */
+  expandable?: boolean;
+  children?: ReactNode;
+}
+/** A block quotation. */
+export function Quote({ expandable, children }: QuoteProps): React.ReactNode {
+  return React.createElement('tg-quote', { expandable }, children);
+}
+
 // ---- Alert ----
 
 export type AlertVariant = 'info' | 'warning' | 'error' | 'success';
@@ -683,6 +734,120 @@ export function Divider({ char = '─', length = 20 }: DividerProps): React.Reac
   return React.createElement('tg-divider', { text: char.repeat(length) });
 }
 
+// ---- Pagination ----
+
+export interface UsePaginationResult<T> {
+  /** Items on the current page. */
+  items: T[];
+  /** Current page, 1-based. */
+  page: number;
+  pageCount: number;
+  hasPrev: boolean;
+  hasNext: boolean;
+  next(): void;
+  prev(): void;
+  goTo(page: number): void;
+}
+
+/**
+ * Slice a list into pages. Pair with `<Pagination>` for the buttons.
+ *
+ * @example
+ * const pager = usePagination(products, { pageSize: 5 });
+ * return (
+ *   <Message text={pager.items.map((p) => p.name).join('\n')}>
+ *     <InlineKeyboard>
+ *       <Pagination page={pager.page} pageCount={pager.pageCount} onChange={pager.goTo} />
+ *     </InlineKeyboard>
+ *   </Message>
+ * );
+ */
+export function usePagination<T>(all: readonly T[], opts: { pageSize?: number; initialPage?: number } = {}): UsePaginationResult<T> {
+  const pageSize = Math.max(1, opts.pageSize ?? 10);
+  const pageCount = Math.max(1, Math.ceil(all.length / pageSize));
+  const [rawPage, setPage] = useState(opts.initialPage ?? 1);
+  // Clamp if the list shrank underneath us.
+  const page = Math.min(Math.max(1, rawPage), pageCount);
+  const goTo = useCallback((p: number) => setPage(Math.min(Math.max(1, p), pageCount)), [pageCount]);
+  const items = useMemo(() => all.slice((page - 1) * pageSize, page * pageSize), [all, page, pageSize]);
+  return {
+    items,
+    page,
+    pageCount,
+    hasPrev: page > 1,
+    hasNext: page < pageCount,
+    next: () => goTo(page + 1),
+    prev: () => goTo(page - 1),
+    goTo,
+  };
+}
+
+export interface PaginationProps {
+  /** Current page, 1-based. */
+  page: number;
+  pageCount: number;
+  onChange: (page: number) => void;
+  /** Show « and » buttons that jump to the first/last page. @default true when pageCount > 3 */
+  showEdges?: boolean;
+}
+
+/**
+ * A `‹ 2 / 5 ›` navigation row. Must be inside `<InlineKeyboard>`. Renders nothing for a single page.
+ */
+export function Pagination({ page, pageCount, onChange, showEdges }: PaginationProps): React.ReactNode {
+  if (pageCount <= 1) return null;
+  const edges = showEdges ?? pageCount > 3;
+  const noop = () => {};
+  const buttons: React.ReactElement[] = [];
+  const btn = (key: string, text: string, onClick: () => void) =>
+    buttons.push(React.createElement(Button, { key, text, onClick }));
+  if (edges) btn('first', page > 1 ? '«' : '·', page > 1 ? () => onChange(1) : noop);
+  btn('prev', page > 1 ? '‹' : '·', page > 1 ? () => onChange(page - 1) : noop);
+  btn('label', `${page} / ${pageCount}`, noop);
+  btn('next', page < pageCount ? '›' : '·', page < pageCount ? () => onChange(page + 1) : noop);
+  if (edges) btn('last', page < pageCount ? '»' : '·', page < pageCount ? () => onChange(pageCount) : noop);
+  return React.createElement(ButtonRow, null, ...buttons);
+}
+
+// ---- Confirm ----
+
+export interface ConfirmProps {
+  /** The question. */
+  text: string;
+  onConfirm: () => void | Promise<void>;
+  onCancel?: () => void | Promise<void>;
+  confirmText?: string;
+  cancelText?: string;
+  /** Show the confirm button as destructive (✕ prefix). */
+  destructive?: boolean;
+  parseMode?: MessageProps['parseMode'];
+}
+
+/**
+ * A yes/no prompt.
+ *
+ * @example
+ * if (confirming) return (
+ *   <Confirm text="Delete your account?" destructive onConfirm={remove} onCancel={() => setConfirming(false)} />
+ * );
+ */
+export function Confirm({ text, onConfirm, onCancel, confirmText = 'Yes', cancelText = 'Cancel', destructive, parseMode }: ConfirmProps): React.ReactNode {
+  return React.createElement(
+    Message,
+    { text, parseMode },
+    React.createElement(
+      InlineKeyboard,
+      null,
+      React.createElement(
+        ButtonRow,
+        null,
+        React.createElement(Button, { text: confirmText, variant: destructive ? 'destructive' : 'default', onClick: onConfirm }),
+        React.createElement(Button, { text: cancelText, onClick: onCancel ?? (() => {}) }),
+      ),
+    ),
+  );
+}
+
 // ---- Suspense Fallback ----
 
 export interface SuspenseFallbackProps { text?: string; }
@@ -696,6 +861,12 @@ export function SuspenseFallback({ text = '⏳ Loading...' }: SuspenseFallbackPr
 Message.Bold = Bold;
 Message.Italic = Italic;
 Message.Code = Code;
+Message.Underline = Underline;
+Message.Strike = Strike;
+Message.Spoiler = Spoiler;
+Message.Link = Link;
+Message.Mention = Mention;
+Message.Quote = Quote;
 
 InlineKeyboard.Row = ButtonRow;
 InlineKeyboard.Button = Button;

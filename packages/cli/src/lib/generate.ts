@@ -101,10 +101,7 @@ function buildPlugins(features: string[]): {
     telegramImports.push('conversationsPlugin');
     plugins.push('conversationsPlugin()');
   }
-  if (hasFeature(features, 'streaming')) {
-    telegramImports.push('streamPlugin');
-    plugins.push('streamPlugin()');
-  }
+  // Streaming needs no plugin: useStream() / conversation.stream() are built in.
   if (hasFeature(features, 'auth')) {
     coreImports.push('authPlugin');
     plugins.push('authPlugin({ admins: [] })');

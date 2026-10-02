@@ -81,3 +81,35 @@ describe('plugin-sdk · end-to-end via createBot + MockAdapter', () => {
     await bot.stop();
   });
 });
+
+describe('definePlugin middleware semantics (match core)', () => {
+  const { definePlugin } = require('../packages/plugin-sdk/src');
+
+  test('auto-next and `return false` both work inside a plugin', async () => {
+    const order: string[] = [];
+    const guard = definePlugin({
+      name: 'guard',
+      setup(ctx: any) {
+        ctx.middleware(() => { order.push('logger'); });               // no next() → implied
+        ctx.middleware((c: any) => { order.push('ban'); if (c.text === 'spam') return false; });
+      },
+    });
+    const { createTestBot } = require('../packages/testing/src');
+    const React = require('react');
+    const t = await createTestBot({
+      component: () => React.createElement('tg-message', { text: 'ok' }),
+      plugins: [guard()],
+    });
+    await t.send('spam');
+    expect(order).toEqual(['logger', 'ban']);
+    expect(t.messages).toHaveLength(0);
+    await t.send('hello');
+    expect(t.messages).toHaveLength(1);
+    await t.stop();
+  });
+
+  test('async setup fails loudly instead of losing registrations', () => {
+    const bad = definePlugin({ name: 'bad', async setup(ctx: any) { await 0; ctx.provideService('db', 1); } });
+    expect(() => bad()).toThrow(/must be synchronous/);
+  });
+});

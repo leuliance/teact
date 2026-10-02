@@ -15,6 +15,13 @@ export async function generateCommand(type: string, name: string): Promise<void>
     process.exit(1);
   }
 
+  // The name becomes an exported identifier and a file name — reject anything else
+  // (`my-widget` would be a syntax error; `../x` would write outside src/).
+  if (!/^[A-Za-z_$][\w$]*$/.test(name ?? '')) {
+    error(`Invalid name "${name ?? ''}". Use a JavaScript identifier, e.g. ProfileCard or useCart.`);
+    process.exit(1);
+  }
+
   const projectRoot = findProjectRoot() || process.cwd();
   heading(`Generating ${type}: ${name}`);
   generator(name, projectRoot);

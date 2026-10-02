@@ -23,7 +23,7 @@ export {
 // ---- Engine (reconciler, node tree, platform-neutral types, context glue) ----
 
 export { TNode, TextNode, createRoot } from './renderer';
-export type { TeactRoot, OutputNode, User, BotContext, SessionData, SessionStore, Middleware, Adapter } from './renderer';
+export type { TeactRoot, OutputNode, User, BotContext, SessionData, SessionStore, Middleware, Adapter, PlatformApi, ListenOptions } from './renderer';
 
 // Context glue + data hooks that @teactjs/ui imports from here (single instance).
 export { ErrorBoundary, CallbackRegistryCtx } from './renderer';
@@ -34,9 +34,16 @@ export type { UseQueryOptions, UseQueryResult, UseMutationOptions, UseMutationRe
 // ---- Runtime (bot engine, hooks, router, plugins) ----
 
 export { createBot, ROUTE_PREFIX } from './runtime';
-export type { CreateBotOptions, CommandContext, CommandDef, ReplyOptions, ReplyButton, ReplyKeyboardButton, WebhookConfig } from './runtime';
+export type { CreateBotOptions, CommandContext, CommandDef, ReplyOptions, ReplyButton, ReplyKeyboardButton, WebhookConfig, TeactBot, BotErrorSource } from './runtime';
 
-export { MemorySessionStore } from './runtime';
+export { MemorySessionStore, kvSessionStore } from './runtime';
+export type { KVSessionStoreOptions } from './runtime';
+
+export { rateLimitPlugin, loggerPlugin } from './runtime';
+export type { RateLimitOptions, LoggerOptions } from './runtime';
+
+export { useChatAction, useInterval, useDeepLink } from './runtime';
+export type { ChatAction, DeepLink } from './runtime';
 export { compose, commandMiddleware } from './runtime';
 
 export { createRouter, useNavigate, useParams, useRoute, redirect } from './runtime';

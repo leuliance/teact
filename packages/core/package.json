@@ -4,11 +4,11 @@
   "description": "Teact framework core — createBot, hooks, router, and more",
   "type": "module",
   "main": "dist/index.js",
-  "types": "dist/core/src/index.d.ts",
+  "types": "dist/index.d.ts",
   "exports": {
     ".": {
       "import": "./dist/index.js",
-      "types": "./dist/core/src/index.d.ts"
+      "types": "./dist/index.d.ts"
     }
   },
   "files": [

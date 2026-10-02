@@ -1,12 +1,12 @@
-import { Bot, webhookCallback, type Context as GrammyContext, GrammyError, HttpError } from 'grammy';
-import { autoRetry } from '@grammyjs/auto-retry';
-import type { Adapter, BotContext, OutputNode } from '@teactjs/core';
-import { serializeOutput, type SendMethod } from './serialize';
-import { createServer, type Server } from 'node:http';
-
-export interface TelegramAdapterConfig {
-  token: string;
-}
+import type { Adapter, BotContext, ListenOptions, OutputNode } from '@teactjs/core';
+import { createTelegramApi, isNotModifiedError, type TelegramApi } from './api';
+import type { TelegramDriver } from './driver';
+import { fetchDriver } from './drivers/fetch';
+import { buildEditCall, buildSendCall, messageKind } from './methods';
+import { Poller } from './polling';
+import { serializeOutput, type SendMethod, type TelegramSendPayload } from './serialize';
+import type { TgMessage, TgUpdate, TgUser } from './types';
+import { createWebhookHandler, serveWebhook, type WebhookServer } from './webhook';
 
 export interface WebhookConfig {
   /** Public URL (e.g. https://mybot.example.com) */
@@ -19,38 +19,116 @@ export interface WebhookConfig {
   secretToken?: string;
 }
 
-export interface ListenOptions {
-  /** Set to false to skip auto-start (manual control). */
-  polling?: boolean;
-  /** If provided, uses webhook mode instead of polling. */
-  webhook?: WebhookConfig;
+export interface TelegramAdapterConfig {
+  /** Bot token. Defaults to the token `createBot` resolves (`TELEGRAM_BOT_TOKEN`). */
+  token?: string;
+  /**
+   * The Telegram client library to run on. Defaults to the zero-dependency `fetchDriver()`.
+   * Use `grammyDriver()` from `@teactjs/telegram/grammy` or `gramioDriver()` from
+   * `@teactjs/telegram/gramio` to run inside those frameworks (and keep their plugins).
+   */
+  driver?: TelegramDriver;
+  /**
+   * Update types to receive (polling and `setWebhook`).
+   * @default message, edited_message, callback_query, inline_query, chosen_inline_result,
+   *          poll, poll_answer, pre_checkout_query, shipping_query, my_chat_member
+   */
+  allowedUpdates?: readonly string[];
+  /** Drop updates that queued up while the bot was offline. @default false */
+  dropPendingUpdates?: boolean;
+  /**
+   * Answer Telegram's `pre_checkout_query` (payments). Return `true` to approve or an error
+   * message to decline. Telegram requires an answer within 10 seconds. @default approve all
+   */
+  onPreCheckout?: (query: NonNullable<TgUpdate['pre_checkout_query']>) => true | string | Promise<true | string>;
+  /** Max concurrently processed updates while polling. @default 100 */
+  concurrency?: number;
 }
+
+/** Back-compat alias. */
+export type ListenOptionsCompat = ListenOptions;
 
 type EventHandler = (ctx: BotContext) => void | Promise<void>;
 
+export const DEFAULT_ALLOWED_UPDATES = [
+  'message', 'edited_message', 'callback_query', 'inline_query', 'chosen_inline_result',
+  'poll', 'poll_answer', 'pre_checkout_query', 'shipping_query', 'my_chat_member',
+] as const;
+
+/** A Map that evicts its oldest entries past `max` — per-chat caches must not grow forever. */
+class BoundedMap<K, V> extends Map<K, V> {
+  constructor(private readonly max: number) { super(); }
+  override set(key: K, value: V): this {
+    if (this.has(key)) this.delete(key);
+    super.set(key, value);
+    if (this.size > this.max) this.delete(this.keys().next().value as K);
+    return this;
+  }
+}
+
+/** Infer what kind of payload produced an existing message (for edit-vs-send decisions). */
+function payloadFromMessage(msg: TgMessage): TelegramSendPayload {
+  const method: SendMethod =
+    msg.photo ? 'sendPhoto'
+    : msg.video ? 'sendVideo'
+    : msg.animation ? 'sendAnimation'
+    : msg.document ? 'sendDocument'
+    : msg.audio ? 'sendAudio'
+    : msg.poll ? 'sendPoll'
+    : msg.sticker ? 'sendSticker'
+    : msg.location ? 'sendLocation'
+    : msg.text != null ? 'sendMessage'
+    : 'sendPoll'; // unknown kinds are treated as non-editable
+  return { method, text: msg.text ?? msg.caption };
+}
+
 /**
- * Telegram platform adapter powered by grammY.
+ * Telegram platform adapter for Teact — framework-agnostic.
  *
- * Lifecycle: connect() → use() → listen()
- *   1. connect() — creates the Grammy Bot instance.
- *   2. use()     — registers Grammy middleware (conversations, session, etc.).
- *   3. listen()  — registers Teact bridge handlers, then starts polling or webhook.
+ * Rendering, in-place edits, polling, webhooks, callback answering and payments are all
+ * implemented here once; the actual HTTP client is a pluggable {@link TelegramDriver}:
+ *
+ * ```ts
+ * new TelegramAdapter()                                  // zero-dep fetch driver
+ * new TelegramAdapter({ driver: grammyDriver() })        // grammY
+ * new TelegramAdapter({ driver: gramioDriver() })        // GramIO
+ * ```
  */
 export class TelegramAdapter implements Adapter {
   readonly name = 'telegram';
-  private bot: Bot | null = null;
-  private httpServer: Server | null = null;
-  private listeners = new Map<string, Set<EventHandler>>();
-  private bridgeRegistered = false;
-  // A <Notification> rendered in response to a callback query is stashed here (keyed by
-  // String(chatId) so concurrent chats don't clobber each other) and flushed as the answer
-  // to that query after the render completes — see the callback_query:data bridge handler.
-  private pendingNotifications = new Map<string, { text: string; showAlert?: boolean }>();
-  // The Telegram method last used for each chat's tracked message. Editing text onto a
-  // photo (or vice-versa) is impossible, so canEdit() consults this to fall back to send.
-  private lastMethod = new Map<string, SendMethod>();
+  readonly driver: TelegramDriver;
+  /** The bot's own user, available after `connect()`. */
+  me: TgUser | null = null;
 
-  /** Register a handler for a given event (e.g. `'message'`, `'callback_query'`). */
+  private readonly config: TelegramAdapterConfig;
+  private readonly _api: TelegramApi;
+  private connected = false;
+  private bridged = false;
+  private poller: Poller | null = null;
+  private server: WebhookServer | null = null;
+  private listeners = new Map<string, Set<EventHandler | ((update: TgUpdate) => unknown)>>();
+  // A <Notification> rendered in response to a callback query is stashed here (keyed by chat)
+  // and flushed as that query's answer once the render finishes.
+  private pendingNotifications = new Map<string, { text: string; showAlert?: boolean }>();
+  // What we last rendered into each message — drives edit-vs-send and skips no-op edits.
+  private rendered = new BoundedMap<string, { payload: TelegramSendPayload; signature: string }>(10_000);
+
+  constructor(config: TelegramAdapterConfig = {}) {
+    this.config = config;
+    this.driver = config.driver ?? fetchDriver();
+    this._api = createTelegramApi((method, params) => this.driver.call(method, params));
+  }
+
+  /** Framework-agnostic Bot API access: `adapter.api.sendMessage({ chat_id, text })`. */
+  get api(): TelegramApi {
+    return this._api;
+  }
+
+  /**
+   * Register a handler. Engine events receive a `BotContext`: `'message'`, `'callback_query'`,
+   * `'event'` (any other chat-bound update). Raw listeners receive the Telegram `Update`:
+   * `'update'` (every update) or `'update:<type>'` (e.g. `'update:inline_query'`).
+   */
   on(event: string, handler: EventHandler): void {
     if (!this.listeners.has(event)) this.listeners.set(event, new Set());
     this.listeners.get(event)!.add(handler);
@@ -61,447 +139,312 @@ export class TelegramAdapter implements Adapter {
     this.listeners.get(event)?.delete(handler);
   }
 
-  private async emit(event: string, ctx: BotContext): Promise<void> {
-    for (const handler of this.listeners.get(event) ?? []) {
-      await handler(ctx);
+  private async emit(event: string, payload: any): Promise<void> {
+    for (const handler of this.listeners.get(event) ?? []) await (handler as any)(payload);
+  }
+
+  /** Create the client and fetch the bot's identity. Does not start receiving updates. */
+  async connect(config: { token?: string } = {}): Promise<void> {
+    if (this.connected) return;
+    const token = this.config.token || config.token || undefined;
+    this.me = await this.driver.init(token);
+    this.connected = true;
+  }
+
+  /** Register framework-native middleware (grammY / GramIO drivers only). */
+  use(...middleware: unknown[]): void {
+    if (!this.driver.use) {
+      throw new Error(`[telegram] The "${this.driver.name}" driver doesn't support native middleware. Use grammyDriver() or gramioDriver().`);
     }
+    this.driver.use(...middleware);
   }
 
-  /** Step 1 — create the Grammy Bot with auto-retry. Does NOT start polling. */
-  async connect(config: TelegramAdapterConfig): Promise<void> {
-    if (!config.token) throw new Error('TELEGRAM_BOT_TOKEN is required');
-    this.bot = new Bot(config.token);
-    this.bot.api.config.use(autoRetry({ maxRetryAttempts: 3, maxDelaySeconds: 10 }));
-    this.bot.catch((err) => {
-      const ctx = err.ctx;
-      const e = err.error;
-      const chatId = ctx?.chat?.id ?? 'unknown';
-      if (e instanceof GrammyError) {
-        console.error(`[telegram] API error in chat ${chatId}: ${e.description} (${e.error_code})`);
-      } else if (e instanceof HttpError) {
-        console.error(`[telegram] Network error in chat ${chatId}: ${e.message}`);
-      } else {
-        console.error(`[telegram] Unexpected error in chat ${chatId}:`, e);
+  /** The underlying client (grammY / GramIO `Bot`), when the driver has one. */
+  getBot<T = any>(): T {
+    if (!this.driver.native) throw new Error(`[telegram] The "${this.driver.name}" driver has no native bot instance.`);
+    return this.driver.native as T;
+  }
+
+  /** Wire the driver's update stream into Teact. Idempotent. */
+  private bridge(): void {
+    if (this.bridged) return;
+    if (!this.connected) throw new Error('[telegram] Adapter not connected — call connect() first.');
+    this.bridged = true;
+    this.driver.onUpdate((update, native) => this.dispatch(update, native));
+  }
+
+  /** Process one raw update (also usable directly, e.g. from a custom webhook route). */
+  async handleUpdate(update: TgUpdate): Promise<void> {
+    this.bridge();
+    await this.driver.handleUpdate(update);
+  }
+
+  private async dispatch(update: TgUpdate, native?: unknown): Promise<void> {
+    const kind = Object.keys(update).find((k) => k !== 'update_id') ?? 'unknown';
+    // Raw-update listeners (`adapter.on('update', …)` / `adapter.on('update:inline_query', …)`).
+    await this.emit('update', update);
+    await this.emit(`update:${kind}`, update);
+
+    if (update.pre_checkout_query) {
+      await this.answerPreCheckout(update.pre_checkout_query);
+    }
+
+    const ctx = this.mapUpdate(update, kind, native);
+    if (!ctx) {
+      // No chat to render into (inline-mode / game buttons) — still stop the button spinner.
+      if (update.callback_query) {
+        await this.driver.call('answerCallbackQuery', { callback_query_id: update.callback_query.id }).catch(() => {});
       }
-    });
-  }
+      return;
+    }
 
-  /** Register Grammy middleware (call between connect() and listen()). */
-  use(...middlewares: any[]): void {
-    if (!this.bot) throw new Error('Adapter not connected — call connect() first');
-    for (const m of middlewares) this.bot.use(m);
-  }
+    if (kind === 'message') {
+      await this.emit('message', ctx);
+      return;
+    }
 
-  /** Wire grammY updates → Teact events. Idempotent; used by both polling and webhook. */
-  private registerBridge(): void {
-    if (!this.bot) throw new Error('Adapter not connected');
-    if (this.bridgeRegistered) return;
-    this.bridgeRegistered = true;
-
-    this.bot.on('message', async (ctx) => {
-      await this.emit('message', this.mapContext(ctx));
-    });
-
-    this.bot.on('callback_query:data', async (ctx) => {
-      const chatId = String(ctx.chat?.id ?? '');
-      this.pendingNotifications.delete(chatId);
-      // Render FIRST — a <Notification> in the render populates pendingNotifications —
-      // then answer the query with it (toast/alert), or an empty answer to stop the
-      // button's loading spinner. Awaited so it flushes before the isolate freezes on edge.
-      await this.emit('callback_query', this.mapContext(ctx));
-      const note = this.pendingNotifications.get(chatId);
-      this.pendingNotifications.delete(chatId);
+    if (kind === 'callback_query') {
+      const query = update.callback_query!;
+      const chatKey = ctx.chatId;
+      this.pendingNotifications.delete(chatKey);
+      // Remember what the tapped message is, so a fresh root can edit it in place.
+      if (query.message) {
+        const key = `${chatKey}:${query.message.message_id}`;
+        if (!this.rendered.has(key)) {
+          this.rendered.set(key, { payload: payloadFromMessage(query.message), signature: '' });
+        }
+      }
       try {
-        await ctx.answerCallbackQuery(note ? { text: note.text, show_alert: note.showAlert } : undefined);
-      } catch {
-        // Query may have expired (>15 min) — nothing actionable.
+        // Render first — a <Notification> in the render populates pendingNotifications —
+        // then answer with it (toast/alert), or with nothing to stop the button spinner.
+        await this.emit('callback_query', ctx);
+      } finally {
+        const note = this.pendingNotifications.get(chatKey);
+        this.pendingNotifications.delete(chatKey);
+        await this.driver
+          .call('answerCallbackQuery', {
+            callback_query_id: query.id,
+            ...(note ? { text: note.text, show_alert: note.showAlert } : {}),
+          })
+          .catch(() => { /* query expired (>15 min) or already answered — nothing to do */ });
       }
+      return;
+    }
+
+    await this.emit('event', ctx);
+  }
+
+  private async answerPreCheckout(query: NonNullable<TgUpdate['pre_checkout_query']>): Promise<void> {
+    let verdict: true | string = true;
+    try {
+      verdict = this.config.onPreCheckout ? await this.config.onPreCheckout(query) : true;
+    } catch (err) {
+      console.error('[telegram] onPreCheckout threw — declining the payment:', err);
+      verdict = 'Payment could not be processed. Please try again.';
+    }
+    await this.driver
+      .call('answerPreCheckoutQuery', {
+        pre_checkout_query_id: query.id,
+        ok: verdict === true,
+        ...(verdict === true ? {} : { error_message: verdict }),
+      })
+      .catch((err) => console.error('[telegram] answerPreCheckoutQuery failed:', err));
+  }
+
+  /** Normalize a raw update into a Teact `BotContext`, or `null` if it has no chat to render into. */
+  mapUpdate(update: TgUpdate, kind: string, native?: unknown): BotContext | null {
+    const base = { platform: 'telegram', raw: update, api: this._api, native, updateType: kind, botUsername: this.me?.username };
+    const toUser = (u?: TgUser) => ({
+      id: String(u?.id ?? ''),
+      username: u?.username,
+      firstName: u?.first_name,
+      lastName: u?.last_name,
+      isBot: u?.is_bot,
+      platform: 'telegram',
+    });
+    const fromMessage = (msg: TgMessage, from?: TgUser): BotContext => ({
+      ...base,
+      chatId: String(msg.chat.id),
+      userId: String(from?.id ?? msg.from?.id ?? msg.chat.id),
+      user: toUser(from ?? msg.from),
+      messageId: String(msg.message_id),
+      threadId: msg.is_topic_message ? msg.message_thread_id : undefined,
     });
 
-    this.bot.on('pre_checkout_query', async (ctx) => {
-      await ctx.answerPreCheckoutQuery(true);
-    });
+    switch (kind) {
+      case 'message':
+      case 'edited_message':
+      case 'channel_post':
+      case 'edited_channel_post': {
+        const msg = update[kind] as TgMessage;
+        // Only NEW user messages carry `text` (what useText/forms consume); edits and channel
+        // posts are events — read them from `raw` so an edit can't answer a form step.
+        return kind === 'message' ? { ...fromMessage(msg), text: msg.text } : fromMessage(msg);
+      }
+      case 'callback_query': {
+        const q = update.callback_query!;
+        // Inline-mode buttons (inline_message_id) and game buttons have no chat to render into.
+        if (!q.message || q.data == null) return null;
+        return { ...fromMessage(q.message, q.from), callbackData: q.data };
+      }
+      case 'poll_answer': {
+        const user = update.poll_answer!.user;
+        if (!user) return null;
+        return { ...base, chatId: String(user.id), userId: String(user.id), user: toUser(user) };
+      }
+      case 'pre_checkout_query':
+      case 'shipping_query': {
+        const from = update[kind]!.from;
+        return { ...base, chatId: String(from.id), userId: String(from.id), user: toUser(from) };
+      }
+      case 'my_chat_member':
+      case 'chat_member':
+      case 'chat_join_request': {
+        const u = update[kind]!;
+        return { ...base, chatId: String(u.chat.id), userId: String(u.from.id), user: toUser(u.from) };
+      }
+      case 'message_reaction': {
+        const r = update.message_reaction!;
+        return { ...base, chatId: String(r.chat.id), userId: String(r.user?.id ?? r.chat.id), user: toUser(r.user) };
+      }
+      default:
+        return null;
+    }
   }
 
   /**
    * A web-standard webhook handler: `(request: Request) => Promise<Response>`.
-   *
-   * This is the deploy-anywhere entry point — Cloudflare Workers, Vercel/Deno Edge,
-   * Bun.serve, or Node (via an adapter). Point your Telegram webhook at the URL that
-   * invokes this and the bot runs serverless (one update per request, no polling).
+   * Deploy anywhere — Cloudflare Workers, Vercel/Deno Edge, Bun.serve, Node.
    */
   webhookCallback(opts: { secretToken?: string } = {}): (request: Request) => Promise<Response> {
-    if (!this.bot) throw new Error('Adapter not connected — call connect() first');
-    this.registerBridge();
-    return webhookCallback(this.bot, 'std/http', {
-      secretToken: opts.secretToken,
-    }) as (request: Request) => Promise<Response>;
+    this.bridge();
+    return createWebhookHandler((update) => this.driver.handleUpdate(update), opts);
   }
 
-  /** Step 2 — register Teact bridge handlers, then start polling or webhook. */
+  /** Start receiving updates: long polling (default) or a self-hosted webhook server. */
   async listen(opts: ListenOptions = {}): Promise<void> {
-    if (!this.bot) throw new Error('Adapter not connected');
-
-    this.registerBridge();
+    this.bridge();
+    const allowed = this.config.allowedUpdates ?? DEFAULT_ALLOWED_UPDATES;
 
     if (opts.webhook) {
-      await this.startWebhook(opts.webhook);
-    } else if (opts.polling !== false) {
-      console.log('[telegram] Starting polling…');
-      this.bot.start({
-        onStart: (info) =>
-          console.log(`[telegram] Connected as @${info.username} (${info.first_name})`),
+      const cfg = opts.webhook;
+      const port = cfg.port ?? 3000;
+      const path = cfg.path ?? '/webhook';
+      const url = `${cfg.domain.replace(/\/+$/, '')}${path}`;
+      this.server = await serveWebhook(this.webhookCallback({ secretToken: cfg.secretToken }), port, path);
+      await this.driver.call('setWebhook', {
+        url,
+        secret_token: cfg.secretToken,
+        allowed_updates: allowed,
+        drop_pending_updates: this.config.dropPendingUpdates ?? false,
       });
+      console.log(`[telegram] Webhook listening on :${port}${path} → ${url}`);
+      return;
     }
+
+    if (opts.polling === false) return;
+    this.poller = new Poller(this.driver, (update) => this.driver.handleUpdate(update), {
+      allowedUpdates: allowed,
+      dropPendingUpdates: this.config.dropPendingUpdates,
+      concurrency: this.config.concurrency,
+    });
+    await this.poller.start();
+    console.log(`[telegram] Polling as @${this.me?.username ?? '?'} (driver: ${this.driver.name})`);
   }
 
-  /** Stop polling/webhook and disconnect the bot. */
+  /** Stop polling / the webhook server and release the client. */
   async disconnect(): Promise<void> {
-    if (this.httpServer) {
-      this.httpServer.close();
-      this.httpServer = null;
-    }
-    await this.bot?.stop();
-    this.bot = null;
+    await this.poller?.stop();
+    this.poller = null;
+    await this.server?.close();
+    this.server = null;
+    await this.driver.close?.();
+    this.connected = false;
     console.log('[telegram] Disconnected');
   }
 
-  // ---- Send / Edit / Buttons / Commands ----
+  // ---- Rendering ----
 
-  /**
-   * Send a rendered output tree to a Telegram chat.
-   *
-   * @param chatId - Target chat ID.
-   * @param output - Serialized component tree produced by the Teact renderer.
-   * @returns The `message_id` of the sent message, or `undefined`.
-   */
-  async send(chatId: string | number, output: OutputNode): Promise<number | undefined> {
-    if (!this.bot) throw new Error('Adapter not connected');
+  /** What a message *looks like* — identical renders produce identical signatures. */
+  private signatureOf(payload: TelegramSendPayload): string {
+    const { notification: _n, ...visible } = payload;
+    return JSON.stringify(visible);
+  }
+
+  private trackNotification(chatId: string | number, payload: TelegramSendPayload): void {
+    if (payload.notification) this.pendingNotifications.set(String(chatId), payload.notification);
+  }
+
+  /** Send a rendered output tree; resolves to the new message id. */
+  async send(chatId: string | number, output: OutputNode, opts: { threadId?: number } = {}): Promise<number | undefined> {
     const payload = serializeOutput(output);
-
-    const inlineMarkup = payload.keyboard
-      ? { inline_keyboard: payload.keyboard }
-      : undefined;
-
-    const removeKbd = payload.removeKeyboard
-      ? { remove_keyboard: true as const }
-      : undefined;
-
-    const replyKbd = payload.replyKeyboard
-      ? {
-          keyboard: payload.replyKeyboard.rows,
-          resize_keyboard: payload.replyKeyboard.resizeKeyboard ?? true,
-          one_time_keyboard: payload.replyKeyboard.oneTimeKeyboard,
-          input_field_placeholder: payload.replyKeyboard.placeholder,
-          is_persistent: payload.replyKeyboard.isPersistent,
-        }
-      : undefined;
-
-    const replyMarkup = removeKbd ?? replyKbd ?? inlineMarkup;
-    const captionOpts: Record<string, any> = {};
-    if (payload.parseMode) captionOpts.parse_mode = payload.parseMode;
-    if (replyMarkup) captionOpts.reply_markup = replyMarkup;
-
-    if (payload.notification) {
-      this.pendingNotifications.set(String(chatId), payload.notification);
+    this.trackNotification(chatId, payload);
+    const call = buildSendCall(payload, chatId, opts);
+    if (!call) {
+      if (payload.method === 'sendMessage' && payload.keyboard?.length) {
+        console.warn('[teact] A <Message> has buttons but no text — Telegram requires text to attach a keyboard, so nothing was sent.');
+      }
+      return undefined;
     }
-    // Remember what we're about to send so a later canEdit() can avoid editing text
-    // onto a media message (or vice-versa), which Telegram rejects.
-    this.lastMethod.set(String(chatId), payload.method);
-
-    switch (payload.method) {
-      case 'sendPhoto': {
-        if (payload.hasSpoiler) captionOpts.has_spoiler = true;
-        const msg = await this.bot.api.sendPhoto(chatId, payload.photo!, {
-          caption: payload.text || undefined,
-          ...captionOpts,
-        });
-        return msg.message_id;
-      }
-
-      case 'sendDocument': {
-        const msg = await this.bot.api.sendDocument(chatId, payload.document!, {
-          caption: payload.text || undefined,
-          ...captionOpts,
-        });
-        return msg.message_id;
-      }
-
-      case 'sendVideo': {
-        const opts: Record<string, any> = { ...captionOpts, caption: payload.text || undefined };
-        if (payload.width) opts.width = payload.width;
-        if (payload.height) opts.height = payload.height;
-        if (payload.duration) opts.duration = payload.duration;
-        if (payload.supportsStreaming) opts.supports_streaming = true;
-        if (payload.hasSpoiler) opts.has_spoiler = true;
-        const msg = await this.bot.api.sendVideo(chatId, payload.video!, opts);
-        return msg.message_id;
-      }
-
-      case 'sendAnimation': {
-        const opts: Record<string, any> = { ...captionOpts, caption: payload.text || undefined };
-        if (payload.width) opts.width = payload.width;
-        if (payload.height) opts.height = payload.height;
-        if (payload.duration) opts.duration = payload.duration;
-        if (payload.hasSpoiler) opts.has_spoiler = true;
-        const msg = await this.bot.api.sendAnimation(chatId, payload.animation!, opts);
-        return msg.message_id;
-      }
-
-      case 'sendVoice': {
-        const opts: Record<string, any> = { ...captionOpts, caption: payload.text || undefined };
-        if (payload.duration) opts.duration = payload.duration;
-        const msg = await this.bot.api.sendVoice(chatId, payload.voice!, opts);
-        return msg.message_id;
-      }
-
-      case 'sendAudio': {
-        const opts: Record<string, any> = { ...captionOpts, caption: payload.text || undefined };
-        if (payload.performer) opts.performer = payload.performer;
-        if (payload.title) opts.title = payload.title;
-        if (payload.duration) opts.duration = payload.duration;
-        const msg = await this.bot.api.sendAudio(chatId, payload.audio!, opts);
-        return msg.message_id;
-      }
-
-      case 'sendVideoNote': {
-        const opts: Record<string, any> = { ...captionOpts };
-        if (payload.duration) opts.duration = payload.duration;
-        if (payload.length) opts.length = payload.length;
-        const msg = await this.bot.api.sendVideoNote(chatId, payload.videoNote!, opts);
-        return msg.message_id;
-      }
-
-      case 'sendSticker': {
-        const opts: Record<string, any> = { ...captionOpts };
-        if (payload.emoji) opts.emoji = payload.emoji;
-        const msg = await this.bot.api.sendSticker(chatId, payload.sticker!, opts);
-        return msg.message_id;
-      }
-
-      case 'sendContact': {
-        const opts: Record<string, any> = {};
-        if (payload.lastName) opts.last_name = payload.lastName;
-        if (payload.vcard) opts.vcard = payload.vcard;
-        if (replyMarkup) opts.reply_markup = replyMarkup;
-        const msg = await this.bot.api.sendContact(chatId, payload.phoneNumber!, payload.firstName!, opts);
-        return msg.message_id;
-      }
-
-      case 'sendLocation': {
-        const opts: Record<string, any> = {};
-        if (payload.livePeriod) opts.live_period = payload.livePeriod;
-        if (payload.horizontalAccuracy) opts.horizontal_accuracy = payload.horizontalAccuracy;
-        if (payload.heading) opts.heading = payload.heading;
-        if (payload.proximityAlertRadius) opts.proximity_alert_radius = payload.proximityAlertRadius;
-        if (replyMarkup) opts.reply_markup = replyMarkup;
-        const msg = await this.bot.api.sendLocation(chatId, payload.latitude!, payload.longitude!, opts);
-        return msg.message_id;
-      }
-
-      case 'sendVenue': {
-        const opts: Record<string, any> = {};
-        if (payload.foursquareId) opts.foursquare_id = payload.foursquareId;
-        if (payload.foursquareType) opts.foursquare_type = payload.foursquareType;
-        if (payload.googlePlaceId) opts.google_place_id = payload.googlePlaceId;
-        if (payload.googlePlaceType) opts.google_place_type = payload.googlePlaceType;
-        if (replyMarkup) opts.reply_markup = replyMarkup;
-        const msg = await this.bot.api.sendVenue(
-          chatId, payload.latitude!, payload.longitude!,
-          payload.venueTitle!, payload.venueAddress!, opts,
-        );
-        return msg.message_id;
-      }
-
-      case 'sendMediaGroup': {
-        if (payload.mediaGroup && payload.mediaGroup.length > 0) {
-          const msgs = await this.bot.api.sendMediaGroup(chatId, payload.mediaGroup as any);
-          return msgs[0]?.message_id;
-        }
-        return undefined;
-      }
-
-      case 'sendPoll': {
-        const pollOpts: Record<string, any> = {};
-        if (payload.pollIsAnonymous != null) pollOpts.is_anonymous = payload.pollIsAnonymous;
-        if (payload.pollType) pollOpts.type = payload.pollType;
-        if (payload.pollAllowsMultipleAnswers) pollOpts.allows_multiple_answers = true;
-        if (payload.pollCorrectOptionId != null) pollOpts.correct_option_id = payload.pollCorrectOptionId;
-        if (payload.pollExplanation) pollOpts.explanation = payload.pollExplanation;
-        if (payload.pollExplanationParseMode) pollOpts.explanation_parse_mode = payload.pollExplanationParseMode;
-        if (payload.pollOpenPeriod) pollOpts.open_period = payload.pollOpenPeriod;
-        if (payload.pollIsClosed) pollOpts.is_closed = true;
-        if (replyMarkup) pollOpts.reply_markup = replyMarkup;
-        const options = (payload.pollOptions ?? []).map(text => ({ text }));
-        const msg = await this.bot.api.sendPoll(chatId, payload.pollQuestion!, options, pollOpts);
-        return msg.message_id;
-      }
-
-      default: {
-        const text = payload.text?.trim();
-        if (!text) {
-          if (replyMarkup) {
-            console.warn('[teact] A <Message> has buttons but no text — Telegram requires text to attach a keyboard, so nothing was sent.');
-          }
-          return undefined;
-        }
-
-        const msgOpts: Record<string, any> = {};
-        if (payload.parseMode) msgOpts.parse_mode = payload.parseMode;
-        if (payload.disablePreview) msgOpts.link_preview_options = { is_disabled: true };
-        if (replyMarkup) msgOpts.reply_markup = replyMarkup;
-
-        const msg = await this.bot.api.sendMessage(chatId, text, msgOpts);
-        return msg.message_id;
-      }
+    const result = await this.driver.call(call.method, call.params);
+    const msg = Array.isArray(result) ? result[0] : result;
+    const messageId: number | undefined = msg?.message_id;
+    if (messageId != null) {
+      this.rendered.set(`${chatId}:${messageId}`, { payload, signature: this.signatureOf(payload) });
     }
+    return messageId;
   }
 
   /**
-   * Whether a rendered tree can be applied as an in-place text edit.
-   * Used by the core engine to decide edit-vs-send without importing the serializer.
-   *
-   * A text edit is only valid when BOTH the new tree is a plain message AND the last
-   * message we sent to this chat was also a plain message — you cannot edit text onto
-   * a photo/media message (Telegram rejects it), so in that case we return false and
-   * the engine sends a fresh message instead.
+   * Whether `output` can replace message `messageId` in place: text ↔ text, or media ↔ media
+   * (photo/video/animation/document/audio via `editMessageMedia`). Reply keyboards, polls,
+   * stickers, locations and albums can't be edited — the engine sends a new message instead.
    */
-  canEdit(output: OutputNode, chatId?: string | number): boolean {
+  canEdit(output: OutputNode, chatId?: string | number, messageId?: number): boolean {
     const payload = serializeOutput(output);
-    if (payload.method !== 'sendMessage' || payload.replyKeyboard || payload.removeKeyboard) {
-      return false;
-    }
-    if (chatId != null) {
-      const key = String(chatId);
-      if (this.lastMethod.has(key) && this.lastMethod.get(key) !== 'sendMessage') return false;
-    }
-    return true;
+    if (payload.replyKeyboard || payload.removeKeyboard) return false;
+    const kind = messageKind(payload.method);
+    if (kind === 'other') return false;
+    if (chatId == null || messageId == null) return kind === 'text';
+    const prev = this.rendered.get(`${chatId}:${messageId}`);
+    return (prev ? messageKind(prev.payload.method) : 'text') === kind;
   }
 
-  /**
-   * Edit an existing message's text and inline keyboard.
-   *
-   * @param chatId - Target chat ID.
-   * @param messageId - ID of the message to edit.
-   * @param output - New rendered output tree.
-   */
+  /** Edit an existing message in place. No-op edits are skipped without an API call. */
   async edit(chatId: string | number, messageId: number, output: OutputNode): Promise<void> {
-    if (!this.bot) throw new Error('Adapter not connected');
     const payload = serializeOutput(output);
-
-    const replyMarkup = payload.keyboard
-      ? { inline_keyboard: payload.keyboard }
-      : { inline_keyboard: [] as any[] };
-
-    const text = payload.text?.trim();
-    if (!text) return;
-
-    const editOpts: Record<string, any> = { reply_markup: replyMarkup };
-    if (payload.parseMode) editOpts.parse_mode = payload.parseMode;
-
+    this.trackNotification(chatId, payload);
+    const key = `${chatId}:${messageId}`;
+    const prev = this.rendered.get(key);
+    const call = buildEditCall(payload, prev?.payload, chatId, messageId);
+    if (!call) throw new Error(`[telegram] Can't edit message ${messageId} into a ${payload.method} in place.`);
+    const signature = this.signatureOf(payload);
+    if (prev?.signature === signature) return;
     try {
-      await this.bot.api.editMessageText(chatId, messageId, text, editOpts);
-      this.lastMethod.set(String(chatId), 'sendMessage');
-    } catch (err: any) {
-      const msg = err?.message || err?.description || '';
-      if (msg.includes('message is not modified')) return;
-      throw err;
+      await this.driver.call(call.method, call.params);
+    } catch (err) {
+      if (!isNotModifiedError(err)) throw err;
     }
+    this.rendered.set(key, { payload, signature });
   }
 
   /** Remove all inline keyboard buttons from a message. */
   async clearButtons(chatId: string | number, messageId: number): Promise<void> {
-    if (!this.bot) throw new Error('Adapter not connected');
     try {
-      await this.bot.api.editMessageReplyMarkup(chatId, messageId, {
+      await this.driver.call('editMessageReplyMarkup', {
+        chat_id: chatId,
+        message_id: messageId,
         reply_markup: { inline_keyboard: [] },
       });
+      const prev = this.rendered.get(`${chatId}:${messageId}`);
+      if (prev) this.rendered.set(`${chatId}:${messageId}`, { payload: { ...prev.payload, keyboard: undefined }, signature: '' });
     } catch {
-      // Ignore if message has no buttons or is not modifiable
+      // Message has no buttons or can't be modified anymore — nothing to clear.
     }
   }
 
   /** Register bot commands with Telegram's command menu. */
   async setCommands(commands: { command: string; description: string }[]): Promise<void> {
-    if (!this.bot) throw new Error('Adapter not connected');
-    await this.bot.api.setMyCommands(commands);
-  }
-
-  /** Access the raw grammY Bot instance for advanced usage (plugins, middleware). */
-  getBot(): Bot {
-    if (!this.bot) throw new Error('Adapter not connected');
-    return this.bot;
-  }
-
-  // ---- Private ----
-
-  private async startWebhook(cfg: WebhookConfig): Promise<void> {
-    if (!this.bot) throw new Error('Adapter not connected');
-    const port = cfg.port ?? 3000;
-    const path = cfg.path ?? '/webhook';
-    const url = `${cfg.domain.replace(/\/+$/, '')}${path}`;
-    const bot = this.bot;
-
-    await bot.init();
-    await bot.api.setWebhook(url, {
-      secret_token: cfg.secretToken,
-    });
-
-    this.httpServer = createServer(async (req, res) => {
-      if (req.method === 'POST' && req.url === path) {
-        if (cfg.secretToken) {
-          const token = req.headers['x-telegram-bot-api-secret-token'];
-          if (token !== cfg.secretToken) { res.writeHead(401).end(); return; }
-        }
-        let body = '';
-        for await (const chunk of req) body += chunk;
-        try {
-          await bot.handleUpdate(JSON.parse(body));
-        } catch (e) {
-          console.error('[telegram] Webhook update error:', e);
-        }
-        res.writeHead(200).end('OK');
-      } else {
-        res.writeHead(404).end();
-      }
-    });
-
-    await new Promise<void>((resolve, reject) => {
-      this.httpServer!.once('error', (err: NodeJS.ErrnoException) => {
-        if (err.code === 'EADDRINUSE') {
-          reject(new Error(`[telegram] Port ${port} is already in use. Choose a different webhook port.`));
-        } else {
-          reject(err);
-        }
-      });
-      this.httpServer!.listen(port, () => {
-        console.log(`[telegram] Webhook listening on :${port}${path}`);
-        console.log(`[telegram] Webhook URL: ${url}`);
-        resolve();
-      });
-    });
-  }
-
-  private mapContext(ctx: GrammyContext): BotContext {
-    const chatId = String(ctx.chat?.id ?? '');
-    const from = ctx.from;
-    return {
-      chatId,
-      userId: String(from?.id ?? ''),
-      user: {
-        id: String(from?.id ?? ''),
-        username: from?.username,
-        firstName: from?.first_name,
-        lastName: from?.last_name,
-        isBot: from?.is_bot,
-        platform: 'telegram',
-      },
-      platform: 'telegram',
-      messageId: String(ctx.message?.message_id ?? ctx.callbackQuery?.message?.message_id ?? ''),
-      text: ctx.message?.text,
-      callbackData: ctx.callbackQuery?.data,
-      botUsername: ctx.me?.username,
-      raw: ctx,
-    };
+    await this.driver.call('setMyCommands', { commands });
   }
 }

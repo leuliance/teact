@@ -34,6 +34,32 @@ They are identical. Use whichever you prefer:
 - `@teactjs/react` -- if you want to be explicit about the source package
 - `@teactjs/core` -- if you want everything (runtime + components) from one import
 
+## Formatting
+
+`<Bold>`, `<Italic>`, `<Underline>`, `<Strike>`, `<Spoiler>`, `<Code language>`, `<Link href>`,
+`<Mention userId>`, `<Quote expandable>` — rendered as Telegram HTML with user text escaped
+automatically.
+
+```tsx
+<Message>
+  Hi <Mention userId={user.id}>{user.firstName}</Mention>! Your code is <Spoiler>4242</Spoiler>.
+  Read the <Link href="https://teact-docs.vercel.app">docs</Link>.
+</Message>
+```
+
+## Pagination & confirm dialogs
+
+```tsx
+const pager = usePagination(products, { pageSize: 5 });
+<Message text={pager.items.map((p) => p.name).join("\n")}>
+  <InlineKeyboard>
+    <Pagination page={pager.page} pageCount={pager.pageCount} onChange={pager.goTo} />
+  </InlineKeyboard>
+</Message>
+
+<Confirm text="Delete your account?" destructive onConfirm={remove} onCancel={back} />
+```
+
 ## See Also
 
 - [`@teactjs/react`](../react) for the full component catalog

@@ -1,6 +1,7 @@
 import React, { useState, useContext, useCallback, useMemo, createContext } from 'react';
 import i18next, { type i18n as I18nextInstance } from 'i18next';
 import { initReactI18next, useTranslation, I18nextProvider } from 'react-i18next';
+import { RuntimeContext } from './context';
 
 /** Result of {@link createI18n}: a React `Provider` and the underlying i18next `instance`. */
 export interface I18nInstance {
@@ -16,6 +17,35 @@ export interface I18nConfig {
   resources: Record<string, { translation: Record<string, any> }>;
   /** Locale to fall back to when a key is missing. Defaults to `defaultLocale`. */
   fallbackLocale?: string;
+  /**
+   * Pick the initial locale from the user's Telegram app language (`language_code`) when
+   * it's one of `resources`. @default true
+   */
+  detectLocale?: boolean;
+  /**
+   * Session key the chosen locale is persisted under, so it survives restarts and
+   * `/start`. Set `false` to keep it in memory only. @default 'locale'
+   */
+  sessionKey?: string | false;
+}
+
+/** The user's Telegram language from whatever update this is (`from.language_code`). */
+function updateLanguage(raw: any): string | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  for (const value of Object.values(raw)) {
+    const v = value as any;
+    const code = v?.from?.language_code ?? v?.user?.language_code;
+    if (typeof code === 'string') return code;
+  }
+  return undefined;
+}
+
+/** Match `pt-br` → `pt-br` or `pt` against the available locales. */
+function matchLocale(code: string | undefined, available: string[]): string | undefined {
+  if (!code) return undefined;
+  const lower = code.toLowerCase();
+  return available.find((l) => l.toLowerCase() === lower)
+    ?? available.find((l) => l.toLowerCase() === lower.split('-')[0]);
 }
 
 interface LocaleContextValue {
@@ -53,12 +83,25 @@ export function createI18n(config: I18nConfig): I18nInstance {
     interpolation: { escapeValue: false },
   });
 
+  const available = Object.keys(config.resources);
+  const sessionKey = config.sessionKey ?? 'locale';
+
   function Provider({ children }: { children: React.ReactNode }): React.ReactElement {
-    const [locale, setLocaleState] = useState(config.defaultLocale);
+    const runtime = useContext(RuntimeContext);
+    const stored = sessionKey && runtime ? runtime.session[sessionKey] : undefined;
+    const detected = config.detectLocale === false ? undefined : matchLocale(updateLanguage(runtime?.botCtx.raw), available);
+    const [locale, setLocaleState] = useState<string>(
+      (typeof stored === 'string' && available.includes(stored) ? stored : undefined) ?? detected ?? config.defaultLocale,
+    );
 
     const setLocale = useCallback((lng: string) => {
+      if (!available.includes(lng)) {
+        console.warn(`[teact] setLocale("${lng}"): no such locale. Available: ${available.join(', ')}`);
+        return;
+      }
       setLocaleState(lng);
-    }, []);
+      if (sessionKey && runtime) runtime.updateSession({ [sessionKey]: lng });
+    }, [runtime]);
 
     const ctxValue = useMemo<LocaleContextValue>(
       () => ({ locale, setLocale }),

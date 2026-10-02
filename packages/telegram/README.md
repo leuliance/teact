@@ -1,14 +1,28 @@
 # @teactjs/telegram
 
-Telegram adapter for Teact, powered by [grammY](https://grammy.dev). Handles communication between the Teact runtime and the Telegram Bot API.
+The Telegram adapter for Teact — **framework-agnostic**.
+
+Rendering, in-place edits, polling, webhooks, callback answering, payments and
+conversations are implemented once in `TelegramAdapter`. The HTTP client underneath is a
+pluggable **driver**:
+
+| Driver | Import | Dependencies | Use it when… |
+|--------|--------|--------------|--------------|
+| `fetchDriver()` *(default)* | `@teactjs/telegram` | none | You want the smallest footprint, or you deploy to the edge |
+| `grammyDriver()` | `@teactjs/telegram/grammy` | `grammy` | You already use grammY or want its plugin ecosystem |
+| `gramioDriver()` | `@teactjs/telegram/gramio` | `gramio` | You already use GramIO or want its plugins/hooks |
+
+Your components, hooks and tests are identical on every driver.
 
 ## Install
 
 ```bash
 bun add @teactjs/telegram
+# optional — only if you use that driver:
+bun add grammy   # or: bun add gramio
 ```
 
-## Basic Setup
+## Basic setup
 
 ```ts
 import { createBot } from "@teactjs/core";
@@ -16,96 +30,195 @@ import { TelegramAdapter } from "@teactjs/telegram";
 
 const bot = createBot({
   component: App,
-  adapter: new TelegramAdapter(),
-  token: process.env.TELEGRAM_BOT_TOKEN,
+  adapter: new TelegramAdapter(), // reads TELEGRAM_BOT_TOKEN
 });
 
 await bot.start();
 ```
 
-## Polling (Development)
-
-The default mode. The adapter long-polls the Telegram API for updates.
+## Choosing a driver
 
 ```ts
-const bot = createBot({
-  component: App,
-  adapter: new TelegramAdapter(),
-  token: process.env.TELEGRAM_BOT_TOKEN,
-  mode: "polling",
+import { TelegramAdapter, fetchDriver } from "@teactjs/telegram";
+import { grammyDriver } from "@teactjs/telegram/grammy";
+import { gramioDriver } from "@teactjs/telegram/gramio";
+
+new TelegramAdapter();                                                   // fetch (default)
+new TelegramAdapter({ driver: fetchDriver({ apiRoot: "http://localhost:8081" }) }); // local Bot API server
+new TelegramAdapter({ driver: grammyDriver() });                         // grammY
+new TelegramAdapter({ driver: gramioDriver() });                         // GramIO
+```
+
+### Bring your own grammY / GramIO bot
+
+Updates flow through the framework's own middleware **first**, then into Teact — so
+existing plugins (sessions, rate limiters, i18n, logging, `bot.command(...)`) keep working:
+
+```ts
+import { Bot } from "grammy";
+import { limit } from "@grammyjs/ratelimiter";
+import { grammyDriver } from "@teactjs/telegram/grammy";
+
+const grammy = new Bot(process.env.TELEGRAM_BOT_TOKEN!);
+grammy.use(limit());
+grammy.command("ping", (ctx) => ctx.reply("pong")); // handled by grammY, never reaches Teact
+
+createBot({ component: App, adapter: new TelegramAdapter({ driver: grammyDriver(grammy) }) });
+```
+
+```ts
+import { Bot } from "gramio";
+import { gramioDriver } from "@teactjs/telegram/gramio";
+
+const gramio = new Bot(process.env.TELEGRAM_BOT_TOKEN!).extend(myPlugin);
+createBot({ component: App, adapter: new TelegramAdapter({ driver: gramioDriver(gramio) }) });
+```
+
+### Writing a driver
+
+A driver is five functions — see `TelegramDriver`:
+
+```ts
+const myDriver: TelegramDriver = {
+  name: "my-client",
+  init: async (token) => client.getMe(),                     // → bot user
+  call: (method, params) => client.request(method, params),  // any Bot API method
+  onUpdate: (sink) => { onUpdateSink = sink },               // where updates must go
+  handleUpdate: (update) => onUpdateSink(update),            // webhook / polling entry
+};
+```
+
+## The Bot API, the same everywhere
+
+Every driver exposes the Bot API with its native snake_case params:
+
+```ts
+await bot.api.sendMessage({ chat_id: 123, text: "Hi" });
+await bot.api.call("setMessageReaction", { chat_id, message_id, reaction: [{ type: "emoji", emoji: "👍" }] });
+
+// in components:
+const { api, chatId } = useTelegram();
+await api.sendDice({ chat_id: chatId });
+```
+
+Failures throw `TelegramApiError` (`errorCode`, `description`, `parameters`) regardless of
+driver — `isForbiddenError(err)` detects users who blocked the bot.
+
+## Polling (development)
+
+The default. Long-polls `getUpdates`, deletes any webhook first, processes chats
+concurrently (one chat is always sequential), retries network blips with backoff, and stops
+promptly on `bot.stop()`.
+
+```ts
+new TelegramAdapter({
+  allowedUpdates: ["message", "callback_query", "poll_answer"], // default: a sensible set
+  dropPendingUpdates: true,                                      // skip the backlog on boot
+  concurrency: 100,
 });
 ```
 
-## Webhook (Production)
+## Webhook (production)
 
-For production, use webhooks. The adapter starts an HTTP server and registers the webhook URL with Telegram.
+Self-hosted server (Bun.serve on Bun, `node:http` elsewhere):
 
 ```ts
-const bot = createBot({
+createBot({
   component: App,
   adapter: new TelegramAdapter(),
-  token: process.env.TELEGRAM_BOT_TOKEN,
   mode: "webhook",
-  webhook: {
-    domain: "https://my-bot.example.com",
-    port: 3000,          // default: 3000
-    path: "/webhook",    // default: "/webhook"
-    secretToken: "s3cr3t", // optional, validates X-Telegram-Bot-Api-Secret-Token header
-  },
+  webhook: { domain: "https://my-bot.example.com", port: 3000, path: "/webhook", secretToken: "s3cr3t" },
 });
 ```
 
-## Adapter API
+Serverless / edge (Cloudflare Workers, Vercel, Deno, Netlify):
 
-The adapter implements the Teact adapter interface:
+```ts
+export default {
+  fetch: (req: Request, env: Env) => bot.fetch(req, { token: env.TELEGRAM_BOT_TOKEN, secretToken: env.WEBHOOK_SECRET }),
+};
+```
 
-| Method | Description |
-|--------|-------------|
-| `connect({ token })` | Initializes the grammY bot instance |
-| `listen({ polling?, webhook? })` | Starts polling or webhook server |
-| `send(chatId, output)` | Serializes an `OutputNode` tree and sends it via Telegram |
-| `edit(chatId, messageId, output)` | Edits an existing message |
-| `clearButtons(chatId, messageId)` | Removes inline keyboard from a message |
-| `setCommands(commands)` | Registers bot commands with Telegram |
-| `use(...middlewares)` | Adds grammY middleware to the bot instance |
-| `disconnect()` | Stops polling or webhook server |
-| `getBot()` | Returns the underlying grammY `Bot` instance |
+Wrong secret → 401. Malformed body → 400. A crash while handling an update is logged and
+still answered with 200 — otherwise Telegram redelivers the same update forever.
 
-## Conversations Plugin
+## Rendering behavior
 
-For imperative multi-step conversation flows:
+- **Edits in place**: text ↔ text via `editMessageText`; photo/video/animation/document/audio
+  via `editMessageMedia` (or `editMessageCaption` when only the caption changed). Anything
+  else (polls, stickers, reply keyboards, albums) is sent as a new message.
+- **No-op renders are free**: a re-render identical to what's on screen makes no API call.
+- **`<Notification>`** inside a render becomes the callback query's toast/alert. Every
+  button tap is answered, so spinners never hang.
+- **Limits**: message text is clamped to 4096 visible chars and captions to 1024 (generated
+  `<b>`/`<i>` markup doesn't count and is never cut mid-tag); callback data over 64 bytes is
+  aliased automatically.
+- **Forum topics**: replies go to the topic the user wrote in.
+
+## Payments
+
+`pre_checkout_query` is answered automatically (approve). Decide yourself:
+
+```ts
+new TelegramAdapter({
+  onPreCheckout: async (q) => (await stockAvailable(q.invoice_payload)) ? true : "Sold out, sorry!",
+});
+```
+
+## Conversations plugin
+
+Imperative, `await`-style flows — on every driver:
 
 ```ts
 import { conversationsPlugin, defineConversation } from "@teactjs/telegram";
 
-defineConversation("onboarding", async (convo) => {
-  const name = await convo.prompt("What's your name?");
-  await convo.send(`Welcome, ${name}!`);
+defineConversation("onboarding", {
+  command: "onboard",
+  handler: async (c) => {
+    const name = await c.prompt("What's your name?", { validate: (v) => v.length > 1 || "Too short" });
+    const plan = await c.ask("Pick a plan", [[{ text: "Free", value: "free" }, { text: "Pro", value: "pro" }]]);
+    await c.stream(llm.stream(`Write a welcome for ${name} on ${plan}`)); // live-edited message
+  },
 });
 
-const bot = createBot({
-  plugins: [conversationsPlugin()],
-  // ...
-});
+createBot({ plugins: [conversationsPlugin()], /* … */ });
+// start it from a button too: <Button text="Onboard" conversation="onboarding" />
 ```
 
-The `Conversation` object provides: `prompt`, `send`, `wait`, `ask`, `stream`, `replyWith*` methods, `requestContact`, `requestLocation`, and access to `chatId`, `api`, `chat`, `raw`.
+The `Conversation` object provides `prompt`, `wait`, `ask`, `send`, `stream`, `waitFor(filter)`,
+`replyWith*`, `requestContact`, `requestLocation`, plus `chatId`, `api` and `chat`.
+Typing a command (e.g. `/start`) cancels the conversation; idle conversations time out
+after an hour (`timeoutMs`). Conversations live in memory — on serverless, use the
+`useConversation`/`useForm` hooks instead.
 
-## Stream Plugin
+> `streamPlugin()` is deprecated and does nothing: streaming is built in.
 
-Enables streaming text updates (used with `useStream` in the runtime):
+## Inline mode
 
 ```ts
-import { streamPlugin } from "@teactjs/telegram";
+import { inlineQueryPlugin, inlineArticle } from "@teactjs/telegram";
 
-const bot = createBot({
-  plugins: [streamPlugin()],
-  // ...
-});
+plugins: [
+  inlineQueryPlugin(async ({ query }) =>
+    (await search(query)).map((p) => inlineArticle({ id: p.id, title: p.name, text: p.summary })),
+  ),
+];
 ```
 
-## See Also
+Enable inline mode with @BotFather (`/setinline`). Return `{ results, nextOffset }` to paginate.
 
-- [`@teactjs/core`](../core) for the barrel import
-- [`@teactjs/runtime`](../runtime) for bot engine docs
-- [grammY documentation](https://grammy.dev)
+## Adapter API
+
+| Member | Description |
+|--------|-------------|
+| `api` | Framework-agnostic Bot API (`api.sendMessage({...})`, `api.call(method, params)`) |
+| `me` | The bot's own user, after `connect()` |
+| `driver` | The active driver |
+| `connect({ token })` | Initializes the driver (`getMe`) |
+| `listen({ polling?, webhook? })` | Starts polling or the webhook server |
+| `webhookCallback({ secretToken })` | Web-standard `(Request) => Response` handler |
+| `handleUpdate(update)` | Feed one raw update in (custom HTTP routes, queues) |
+| `on('update' \| 'update:<type>', fn)` | Observe raw updates (e.g. `'update:inline_query'`) |
+| `use(...middleware)` | Register grammY/GramIO middleware (those drivers only) |
+| `getBot()` | The underlying grammY/GramIO `Bot` |
+| `disconnect()` | Stops polling / the webhook server |

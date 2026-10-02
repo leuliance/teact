@@ -5,7 +5,6 @@
     "": {
       "name": "teact-monorepo",
       "dependencies": {
-        "grammy": "^1.35.0",
         "i18next": "^26.0.3",
         "react": "^19.0.0",
         "react-i18next": "^17.0.2",
@@ -17,12 +16,14 @@
         "@types/bun": "latest",
         "@types/react": "^19.0.0",
         "@types/react-reconciler": "^0.33.0",
+        "gramio": "^0.15.1",
+        "grammy": "^1.46.0",
         "typescript": "^5.7.0",
       },
     },
     "examples/showcase-bot": {
       "name": "showcase-bot",
-      "version": "0.1.1-alpha.0",
+      "version": "0.1.1-alpha.1",
       "dependencies": {
         "@tanstack/react-query": "^5.95.2",
         "@teactjs/core": "workspace:*",
@@ -42,7 +43,7 @@
     },
     "packages/cli": {
       "name": "@teactjs/cli",
-      "version": "0.2.0-alpha.0",
+      "version": "0.2.0-alpha.1",
       "bin": {
         "teact": "dist/bin.js",
       },
@@ -56,7 +57,7 @@
     },
     "packages/core": {
       "name": "@teactjs/core",
-      "version": "0.2.0-alpha.0",
+      "version": "0.2.0-alpha.1",
       "dependencies": {
         "i18next": "^26.0.3",
         "react-i18next": "^17.0.2",
@@ -68,7 +69,7 @@
     },
     "packages/create-teact": {
       "name": "create-teact",
-      "version": "0.2.0-alpha.0",
+      "version": "0.2.0-alpha.1",
       "bin": {
         "create-teact": "index.ts",
       },
@@ -78,7 +79,7 @@
     },
     "packages/plugin-sdk": {
       "name": "@teactjs/plugin-sdk",
-      "version": "0.2.0-alpha.0",
+      "version": "0.2.0-alpha.1",
       "peerDependencies": {
         "@teactjs/core": "^0.2.0-alpha.0",
         "react": "^18.0.0 || ^19.0.0",
@@ -86,7 +87,7 @@
     },
     "packages/storage": {
       "name": "@teactjs/storage",
-      "version": "0.2.0-alpha.0",
+      "version": "0.2.0-alpha.1",
       "peerDependencies": {
         "@teactjs/core": "^0.2.0-alpha.0",
         "react": "^18.0.0 || ^19.0.0",
@@ -94,21 +95,25 @@
     },
     "packages/telegram": {
       "name": "@teactjs/telegram",
-      "version": "0.2.0-alpha.0",
-      "dependencies": {
-        "@grammyjs/auto-retry": "^2.0.2",
-        "@grammyjs/conversations": "^2.1.1",
-        "@grammyjs/stream": "^1.0.1",
-        "grammy": "^1.35.0",
+      "version": "0.2.0-alpha.1",
+      "devDependencies": {
+        "gramio": "^0.15.1",
+        "grammy": "^1.46.0",
       },
       "peerDependencies": {
-        "@teactjs/core": "^0.2.0-alpha.0",
+        "@teactjs/core": "^0.2.0-alpha.1",
+        "gramio": ">=0.4.0",
+        "grammy": "^1.30.0",
         "react": "^18.0.0 || ^19.0.0",
       },
+      "optionalPeers": [
+        "gramio",
+        "grammy",
+      ],
     },
     "packages/testing": {
       "name": "@teactjs/testing",
-      "version": "0.2.0-alpha.0",
+      "version": "0.2.0-alpha.1",
       "peerDependencies": {
         "@teactjs/core": "^0.1.0-alpha.14",
         "react": "^18.0.0 || ^19.0.0",
@@ -116,7 +121,7 @@
     },
     "packages/ui": {
       "name": "@teactjs/ui",
-      "version": "0.2.0-alpha.0",
+      "version": "0.2.0-alpha.1",
       "peerDependencies": {
         "@teactjs/core": "^0.2.0-alpha.0",
         "react": "^18.0.0 || ^19.0.0",
@@ -222,13 +227,21 @@
 
     "@esbuild/win32-x64": ["@esbuild/win32-x64@0.25.12", "", { "os": "win32", "cpu": "x64" }, "sha512-alJC0uCZpTFrSL0CCDjcgleBXPnCrEAhTBILpeAp7M/OFgoqtAetfBzX0xM00MUsVVPpVjlPuMbREqnZCXaTnA=="],
 
-    "@grammyjs/auto-retry": ["@grammyjs/auto-retry@2.0.2", "", { "dependencies": { "debug": "^4.3.4" }, "peerDependencies": { "grammy": "^1.10.0" } }, "sha512-b4A4p5jlYDiQtW0c0FXYe11WMkYoiW+5rvOaDMCOk1h7Pu2SDl7B7gmFF8cthWCx2+M2nWLOsBxAgbBG4kKWYg=="],
+    "@gramio/callback-data": ["@gramio/callback-data@0.2.0", "", {}, "sha512-hNyFlJz0ydPEFHnul3K9p0vx0rNejGjM2KvAFCaIS6mXGayn2jfNpYPAYuLf0ycR+5FExGKd7t5MYZ5LMENGZg=="],
 
-    "@grammyjs/conversations": ["@grammyjs/conversations@2.1.1", "", { "peerDependencies": { "grammy": "^1.20.1" } }, "sha512-hoxqwSkaXDeU7mzXulpk3A4Cmd6UZO3HU4aPoITX5ekSHK7ZcUEmMl7RhKKkqw3z6zVbbAShQreJoVV5/dDSLA=="],
+    "@gramio/composer": ["@gramio/composer@0.5.0", "", {}, "sha512-CP8DxNzDmVl2uO/L2VtjYycLi6jrPkZvTJoN/qVtct2Ms0oUKlKFgnNidH/i2R41HUow2fU0tlcGb1LR4NPHtg=="],
 
-    "@grammyjs/stream": ["@grammyjs/stream@1.1.0", "", { "dependencies": { "abort-controller": "^3.0.0" }, "peerDependencies": { "grammy": "^1.39.0" } }, "sha512-xaVjR5dg68Ef/my0O0gSB57OxZObdmfTd0WsjkVVP1NjW02RAkR7LNCA0QwZQSO++R5CHPdDcmOrG+JVkJguRQ=="],
+    "@gramio/contexts": ["@gramio/contexts@0.12.0", "", { "peerDependencies": { "@gramio/types": "^10.3.1", "inspectable": "^3.0.1" } }, "sha512-CKk/85sq6vMjbZ7iDILg5HkRu77CW6QZUtN4tDrKH71VgTS9Jjax5g+PWDlr/bNnOERicWTCZzLLq1t/ZxbtjQ=="],
 
-    "@grammyjs/types": ["@grammyjs/types@3.28.0", "", {}, "sha512-4JvXCdxRZHCje0M4gHzLwtB4bLno3WD28xd8CNfk4POWIu73BFnSvGeW6OQ5gPem4eYTEwkD9yDaXssixl6tMQ=="],
+    "@gramio/files": ["@gramio/files@0.8.1", "", { "dependencies": { "@gramio/types": "^10.3.1" } }, "sha512-9VMvJdP1v6mB9NZt1hlRZBvy2ZoMFQay5/RqJOZNn8SuZX9ChrqUCbXXOKPgB/bTFdZAnCsuxeQNiBBgPzJ48g=="],
+
+    "@gramio/format": ["@gramio/format@0.12.1", "", { "dependencies": { "@gramio/types": "^10.3.1" }, "peerDependencies": { "marked": "^15.0.11", "node-html-parser": ">=6.0.0" }, "optionalPeers": ["marked", "node-html-parser"] }, "sha512-TPLnvgaUGsTE2VfKgQfLJmJdtc/n7GC6At0Z+Lrwx4cKzojXtJ0AMxts+hzSF1ZL4rM4XFNrw01qxdu0p50IWQ=="],
+
+    "@gramio/keyboards": ["@gramio/keyboards@1.5.0", "", { "dependencies": { "@gramio/types": ">=10.3.1" } }, "sha512-Rtqm6KX4XqJgAfLHaP379vd7/VnLSi1TeulPpV/LQolTRZOWHhVtZKZqIhJHNxbFhvIGEPjbZy6KKkiG9ywL9A=="],
+
+    "@gramio/types": ["@gramio/types@10.3.1", "", {}, "sha512-K4q9QRMSpHc+B73Vxvf/Xhcbw4VlCoWH2fCUcUWT378yGvpo1i89CqOysj1ZEr4u4LdefPKxVF6b6JDVw9TYDA=="],
+
+    "@grammyjs/types": ["@grammyjs/types@5.0.0", "", {}, "sha512-iq1Qrq1iPKkB8yAa0qSuIURMZOCuqTY5pWy5gHpCeL1oQ+GPadGhw/cDTVE8waJwuCzacUzuIjRv1sESvk7u7A=="],
 
     "@inquirer/external-editor": ["@inquirer/external-editor@1.0.3", "", { "dependencies": { "chardet": "^2.1.1", "iconv-lite": "^0.7.0" }, "peerDependencies": { "@types/node": ">=18" }, "optionalPeers": ["@types/node"] }, "sha512-RWbSrDiYmO4LbejWY7ttpxczuwQyZLBUyygsA9Nsv95hpzUWwnNTVQmAq3xuh7vNwCp07UTmE5i11XAEExx4RA=="],
 
@@ -380,7 +393,9 @@
 
     "graceful-fs": ["graceful-fs@4.2.11", "", {}, "sha512-RbJ5/jmFcNNCcDV5o9eTnBLJ/HszWV0P73bc+Ff4nS/rJj+YaS6IGyiOL0VoBYX+l1Wrl3k63h/KrH+nhJ0XvQ=="],
 
-    "grammy": ["grammy@1.44.0", "", { "dependencies": { "@grammyjs/types": "3.28.0", "abort-controller": "^3.0.0", "debug": "^4.4.3", "node-fetch": "^2.7.0" } }, "sha512-gGVykS5+c5f1tPV97LuU6IDRMawE2NzpwM9pNz58HQ35IZXDnYL3VOLvNzYognPSeBIOSzQXRu5w96V0aY8y8A=="],
+    "gramio": ["gramio@0.15.1", "", { "dependencies": { "@gramio/callback-data": "^0.2.0", "@gramio/composer": "^0.5.0", "@gramio/contexts": "^0.12.0", "@gramio/files": "^0.8.1", "@gramio/format": "^0.12.1", "@gramio/keyboards": "^1.5.0", "@gramio/types": "^10.3.1", "debug": "^4.4.3" } }, "sha512-xk0+dg5z6UfKL4qleuSPzN8i+3u1GSoZEGQcbcpY/4lMEO2DW/ZHxAkuNI4nG6Tfgxx1yYU7cWtSX97uAMhLHQ=="],
+
+    "grammy": ["grammy@1.46.0", "", { "dependencies": { "@grammyjs/types": "5.0.0", "abort-controller": "^3.0.0", "debug": "^4.4.3", "node-fetch": "^2.7.0" } }, "sha512-/8Qw+iisrUdOMk+p2mjEHouMm/BBdBEN1DHh16wiTpRUZkxDG3PxexdjCvR+wvK3LWPdrEvnQbdrwpU954sPhg=="],
 
     "html-parse-stringify": ["html-parse-stringify@3.0.1", "", { "dependencies": { "void-elements": "3.1.0" } }, "sha512-KknJ50kTInJ7qIScF3jeaFRpMpE8/lfiTdzf/twXyPBLAGrLRTmkz3AdTnKeh40X8k9L2fdYwEp/42WGXIRGcg=="],
 
@@ -391,6 +406,8 @@
     "iconv-lite": ["iconv-lite@0.7.2", "", { "dependencies": { "safer-buffer": ">= 2.1.2 < 3.0.0" } }, "sha512-im9DjEDQ55s9fL4EYzOAv0yMqmMBSZp6G0VvFyTMPKWxiSBHUj9NW/qqLmXUwXrrM7AvqSlTCfvqRb0cM8yYqw=="],
 
     "ignore": ["ignore@5.3.2", "", {}, "sha512-hsBTNUqQTDwkWtcdYI2i06Y/nUBEsNEDJKjWdigLvegy8kDuJAS8uRlpkkcQpyEXL0Z/pjDy5HBmMjRCJ2gq+g=="],
+
+    "inspectable": ["inspectable@3.0.2", "", {}, "sha512-XHygPjNXXe1TWQLlVdCYLejUklsGGo+XWS3Cn/RlkvnhkbZqcQxoXPrSh7Via5aATYJUMWVnrD5CbW2c+BtKMA=="],
 
     "is-extglob": ["is-extglob@2.1.1", "", {}, "sha512-SbKbANkN603Vi4jEZv49LeVJMn4yGwsbzZworEoyEiutsN3nJYdbO36zfhGJ6QEDpOZIFkDtnq5JRxmvl3jsoQ=="],
 

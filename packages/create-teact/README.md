@@ -41,7 +41,7 @@ pnpm create teact my-bot
 |---------|----------------|
 | Storage | `storagePlugin`, Settings page with `useStorage` |
 | Conversations | `conversationsPlugin`; full component tour in Showcase when enabled |
-| Streaming | `streamPlugin`, StreamDemo with `useStream` |
+| Streaming | StreamDemo page with `useStream` (built in, no plugin needed) |
 | Auth | `authPlugin`, guarded secret routes + login flow (Showcase) |
 | i18n | Locale JSON, `LanguagePage`, `createI18n` |
 | Payments | `StorePage` with `useInvoice`, `PAYMENT_PROVIDER_TOKEN` in `.env` |

@@ -1,21 +1,21 @@
-import React, { Suspense } from 'react';
+import React, { Suspense, useMemo, useReducer } from 'react';
 import type { FunctionComponent, ReactNode } from 'react';
-import { createRoot, type TeactRoot, type OutputNode, type BotContext, type SessionStore, type Middleware, type Adapter } from '../renderer';
+import { createRoot, type TeactRoot, type OutputNode, type BotContext, type SessionStore, type SessionData, type Middleware, type Adapter, type PlatformApi } from '../renderer';
 import { CallbackRegistryCtx, ErrorBoundary, type CallbackMap } from '../renderer';
-
-/** Minimal internal Suspense fallback — a raw host element so core never imports @teactjs/ui. */
-const InternalSuspenseFallback = () =>
-  React.createElement('tg-message', { text: '⏳ Loading…' });
 import { RuntimeContext, type RuntimeContextValue } from './context';
 import { ServicesCtx, type ServiceMap } from './services';
 import { MemorySessionStore } from './session';
 import { compose } from './middleware';
-import { RouterProvider, CommitModeCtx, type RouterConfig, type NavigateMode, type CommitModeRef } from './router';
+import { RouterProvider, CommitModeCtx, type RouterConfig, type CommitModeRef } from './router';
 import type { TeactPlugin } from './plugin';
 import type { TeactConfig } from './config';
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+
+/** Minimal internal Suspense fallback — a raw host element so core never imports @teactjs/ui. */
+const InternalSuspenseFallback = () =>
+  React.createElement('tg-message', { text: '⏳ Loading…' });
 
 // Filesystem is only available on Node/Bun. Serverless/edge (Cloudflare Workers,
 // Deno Deploy, Vercel Edge) has none — every fs call below is guarded so it can't
@@ -30,18 +30,36 @@ const HAS_FS = (() => {
 
 // ---- .env auto-loader ----
 
+/** Parse a .env file body. Supports comments, `export KEY=…`, quotes and inline `#` comments. */
+export function parseEnv(content: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const line of content.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eq = trimmed.indexOf('=');
+    if (eq === -1) continue;
+    const key = trimmed.slice(0, eq).replace(/^export\s+/, '').trim();
+    let value = trimmed.slice(eq + 1).trim();
+    const quote = value[0];
+    if ((quote === '"' || quote === "'") && value.indexOf(quote, 1) !== -1) {
+      value = value.slice(1, value.indexOf(quote, 1));
+      if (quote === '"') value = value.replace(/\\n/g, '\n');
+    } else {
+      // Unquoted: strip an inline comment (" #…").
+      const hash = value.search(/\s#/);
+      if (hash !== -1) value = value.slice(0, hash).trim();
+    }
+    if (key) out[key] = value;
+  }
+  return out;
+}
+
 function loadEnvFile(): void {
   if (!HAS_FS) return;
   try {
-    const content = readFileSync('.env', 'utf-8');
-    for (const line of content.split('\n')) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('#')) continue;
-      const eq = trimmed.indexOf('=');
-      if (eq === -1) continue;
-      const key = trimmed.slice(0, eq).trim();
-      const value = trimmed.slice(eq + 1).trim().replace(/^["']|["']$/g, '');
-      if (!process.env[key]) process.env[key] = value;
+    const parsed = parseEnv(readFileSync('.env', 'utf-8'));
+    for (const [key, value] of Object.entries(parsed)) {
+      if (process.env[key] === undefined) process.env[key] = value;
     }
   } catch {}
 }
@@ -70,20 +88,17 @@ async function loadTeactConfig(): Promise<TeactConfig> {
 }
 
 // ---- HMR-safe global instance ----
-// When vite-node --watch re-executes the file, stop the previous bot first.
+// When the dev server re-executes the entry file, stop the previous bot first.
 
 const GLOBAL_KEY = '__teact_bot_instance__';
+const SIGNALS_KEY = '__teact_signals_installed__';
 
-async function cleanupPreviousInstance(): Promise<void> {
+async function cleanupPreviousInstance(current: unknown): Promise<void> {
   const prev = (globalThis as any)[GLOBAL_KEY];
-  if (prev && typeof prev.stop === 'function') {
+  if (prev && prev !== current && typeof prev.stop === 'function') {
     console.log('[teact] Hot-reloading — stopping previous instance…');
     try { await prev.stop(); } catch {}
   }
-}
-
-function registerGlobalInstance(instance: any): void {
-  (globalThis as any)[GLOBAL_KEY] = instance;
 }
 
 // ---- Types ----
@@ -108,6 +123,8 @@ export interface ReplyOptions {
   buttons?: ReplyButton[][];
   /** Custom reply keyboard rows. */
   replyKeyboard?: ReplyKeyboardButton[][];
+  /** Parse mode for `text` (e.g. `'HTML'`). */
+  parseMode?: 'HTML' | 'Markdown' | 'MarkdownV2';
 }
 
 /** Context object passed to command handlers defined in `commands`. */
@@ -117,6 +134,8 @@ export interface CommandContext {
   chatId: string;
   user: { id: string; username?: string; firstName?: string };
   platform: string;
+  /** Platform API (e.g. `api.sendMessage({ chat_id, text })`), if the adapter provides one. */
+  api?: PlatformApi;
   raw: any;
 }
 
@@ -138,6 +157,8 @@ export interface CommandDef {
   route?: string;
   /** Resolve deep-link parameters (e.g. `/start payload`) into a route path. */
   deepLink?: (args: string[]) => string;
+  /** Hide from the platform's command menu (still works when typed). */
+  hidden?: boolean;
 }
 
 /** Webhook server configuration for production deployments. */
@@ -147,6 +168,9 @@ export interface WebhookConfig {
   path?: string;
   secretToken?: string;
 }
+
+/** Where an error reported to `onError` came from. */
+export type BotErrorSource = 'render' | 'handler' | 'command' | 'send' | 'middleware' | 'plugin';
 
 /**
  * Options for {@link createBot}.
@@ -168,13 +192,27 @@ export interface CreateBotOptions {
   mode?: 'polling' | 'webhook';
   /** Webhook configuration — overrides teact.config */
   webhook?: WebhookConfig;
-  session?: { store?: SessionStore; ttl?: number };
+  session?: {
+    store?: SessionStore;
+    /** TTL for the default in-memory store, in ms. */
+    ttl?: number;
+    /**
+     * Derive the session key from an update. Defaults to one session per chat. Use
+     * `(ctx) => \`${ctx.chatId}:${ctx.userId}\`` for per-user sessions in groups.
+     */
+    getKey?: (ctx: BotContext) => string;
+  };
   /** Additional middleware — merged with teact.config middleware */
   middleware?: Middleware[];
   /** Additional plugins — merged with teact.config plugins */
   plugins?: TeactPlugin[];
   /** Bot commands (stays in the React/app layer, not in config) */
   commands?: Record<string, CommandDef>;
+  /**
+   * Central error hook — render crashes, failing click handlers, commands, failed sends.
+   * Use it to report to Sentry & co. Defaults to `console.error`.
+   */
+  onError?: (error: unknown, info: { source: BotErrorSource; ctx?: BotContext }) => void;
   /** Experimental feature flags for opt-in features. */
   experimental?: Record<string, unknown>;
   /**
@@ -192,9 +230,12 @@ interface ChatRoot {
   root: TeactRoot;
   handlers: CallbackMap;
   chatId: string;
+  threadId?: number;
   lastMessageId?: number;
   commitQueue: Promise<void>;
   commitMode: CommitModeRef;
+  /** The runtime (session, botCtx) of the update currently being processed. */
+  runtime: { current: RuntimeContextValue };
   /** Set when a render threw; the next update rebuilds a fresh root to recover. */
   errored?: boolean;
   /**
@@ -215,10 +256,31 @@ interface CommandInfo {
 /** Callback-data prefix used to encode "navigate to this route" buttons. */
 export const ROUTE_PREFIX = '__route:';
 
+/** Prefix for callback data shortened to fit Telegram's 64-byte limit. */
+const ALIAS_PREFIX = '__h:';
+const MAX_CALLBACK_BYTES = 64;
+
 /** Safety timeout for awaiting a render commit; see renderForChat for why it's generous. */
 const COMMIT_BACKSTOP_MS = 10_000;
 
-function buildMessageNode(text: string, buttons?: ReplyButton[][], replyKeyboard?: ReplyKeyboardButton[][]): OutputNode {
+/** Telegram's command-name rule; other platforms are at least as permissive. */
+const COMMAND_NAME_RE = /^[a-z0-9_]{1,32}$/;
+
+const utf8 = new TextEncoder();
+
+/** Deterministic short hash (FNV-1a, 2×32-bit) — stable across restarts. */
+function shortHash(s: string): string {
+  let h1 = 0x811c9dc5, h2 = 0x01000193;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 16777619);
+    h2 = Math.imul(h2 ^ c, 2246822519);
+  }
+  return (h1 >>> 0).toString(36) + (h2 >>> 0).toString(36);
+}
+
+function buildMessageNode(text: string, opts: ReplyOptions = {}): OutputNode {
+  const { buttons, replyKeyboard, parseMode } = opts;
   const children: OutputNode[] = [];
   if (buttons?.length) {
     const rows: OutputNode[] = buttons.map(row => ({
@@ -229,7 +291,7 @@ function buildMessageNode(text: string, buttons?: ReplyButton[][], replyKeyboard
         props: {
           text: btn.text,
           url: btn.url,
-          callbackData: btn.route ? `${ROUTE_PREFIX}${btn.route}` : btn.text,
+          callbackData: btn.url ? undefined : btn.route ? `${ROUTE_PREFIX}${btn.route}` : btn.text,
         },
         children: [],
       })),
@@ -248,7 +310,47 @@ function buildMessageNode(text: string, buttons?: ReplyButton[][], replyKeyboard
     }));
     children.push({ type: 'tg-reply-keyboard', props: { resizeKeyboard: true }, children: rows });
   }
-  return { type: 'tg-message', props: { text }, children };
+  return { type: 'tg-message', props: { text, parseMode }, children };
+}
+
+function cloneTree(node: OutputNode): OutputNode {
+  return { type: node.type, props: node.props, children: node.children.map(cloneTree) };
+}
+
+/** Parse `/cmd@bot arg1 arg2` → `{ name, mention, args }` (or null if not a command). */
+function parseCommand(text: string | undefined): { name: string; mention?: string; args: string[] } | null {
+  if (!text?.startsWith('/')) return null;
+  const [head, ...args] = text.trim().slice(1).split(/\s+/);
+  if (!head) return null;
+  const [name, mention] = head.split('@');
+  return { name: name.toLowerCase(), mention, args: args.filter(Boolean) };
+}
+
+/**
+ * Provides the runtime context and re-renders consumers when the session changes —
+ * so `setSession()` called from an effect or async callback updates the UI too.
+ */
+function RuntimeBridge({ value, current, children }: {
+  value: RuntimeContextValue;
+  /** The chat's live runtime — click handlers from an earlier render write through it. */
+  current: { current: RuntimeContextValue };
+  children?: ReactNode;
+}) {
+  const [version, bump] = useReducer((n: number) => n + 1, 0);
+  const ctxValue = useMemo<RuntimeContextValue>(
+    () => ({
+      ...value,
+      updateSession(patch) {
+        // Always write into the CURRENT update's session: a button handler captured this
+        // function during the previous render, but runs during the next update.
+        current.current.updateSession(patch);
+        bump();
+      },
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [value, version],
+  );
+  return React.createElement(RuntimeContext.Provider, { value: ctxValue }, children);
 }
 
 // ---- createBot ----
@@ -257,10 +359,11 @@ function buildMessageNode(text: string, buttons?: ReplyButton[][], replyKeyboard
  * Create and configure a Teact bot instance.
  *
  * Provide either a `component` (single-page) or a `router` (multi-page) for the UI.
- * Call `.start()` on the returned object to connect and begin processing updates.
+ * Call `.start()` on the returned object to connect and begin processing updates,
+ * or use `.fetch(request)` as a serverless webhook handler.
  *
  * @param options - Bot configuration including adapter, component/router, commands, and plugins.
- * @returns A bot instance with `start()` and `stop()` methods.
+ * @returns A bot instance with `start()`, `stop()`, `fetch()` and `send()`.
  *
  * @example
  * const bot = createBot({
@@ -278,6 +381,9 @@ export function createBot(options: CreateBotOptions) {
   if (!options.component && !options.router) {
     throw new Error('[teact] Provide either `component` or `router` in createBot options.');
   }
+  if (!options.adapter) {
+    throw new Error('[teact] createBot needs an `adapter`, e.g. `adapter: new TelegramAdapter()` from @teactjs/telegram.');
+  }
 
   const adapter = options.adapter;
   const debugMode = options.debug ?? false;
@@ -290,18 +396,30 @@ export function createBot(options: CreateBotOptions) {
     if (debugMode) console.log(`[teact:debug ${new Date().toISOString()}]`, ...args);
   }
 
+  function reportError(error: unknown, source: BotErrorSource, ctx?: BotContext) {
+    if (options.onError) {
+      try { options.onError(error, { source, ctx }); return; }
+      catch (hookErr) { console.error('[teact] onError hook threw:', hookErr); }
+    }
+    const where = ctx ? ` (chat ${ctx.chatId})` : '';
+    console.error(`[teact] ${source} error${where}:`, error);
+  }
+
   const chatRoots = new Map<string, ChatRoot>();
   // Serializes updates per chat: a chat's next update waits for its previous one to
   // finish rendering + sending. Without this, two rapid messages/callbacks for the same
   // chat interleave and race on the shared ChatRoot (commitSignal, commitMode, handlers).
   const chatLocks = new Map<string, Promise<void>>();
+  // Long callback data → short alias, per chat (bounded). Survives root resets.
+  const callbackAliases = new Map<string, Map<string, string>>();
   let warnedMemoryStoreOnEdge = false;
   let disposed = false;
+  let listenersWired = false;
   let initPromise: Promise<void> | null = null;
   let webhookFn: ((request: Request) => Promise<Response>) | null = null;
 
   // These are mutable — they get merged with teact.config during initialize()
-  let rawCommands: Record<string, CommandDef> = options.commands ?? {};
+  let rawCommands: Record<string, CommandDef> = {};
   let plugins: TeactPlugin[] = [];
   let userMiddleware: Middleware[] = [];
   let pluginMiddleware: Middleware[] = [];
@@ -309,8 +427,13 @@ export function createBot(options: CreateBotOptions) {
   let sessionStore: SessionStore = new MemorySessionStore(options.session?.ttl);
   let loadedConfig: TeactConfig = {};
 
+  const chatKeyOf = (ctx: { platform: string; chatId: string; threadId?: number }) =>
+    `${ctx.platform}:${ctx.chatId}${ctx.threadId != null ? `:${ctx.threadId}` : ''}`;
+  const sessionKeyOf = (ctx: BotContext) =>
+    options.session?.getKey?.(ctx) ?? `${ctx.platform}:${ctx.chatId}`;
+
   function resetChatRoot(ctx: BotContext) {
-    const chatKey = `${ctx.platform}:${ctx.chatId}`;
+    const chatKey = chatKeyOf(ctx);
     const existing = chatRoots.get(chatKey);
     if (existing) {
       existing.root.unmount();
@@ -318,15 +441,33 @@ export function createBot(options: CreateBotOptions) {
     }
   }
 
+  /** Replace callback data over the platform limit with a short, stable alias. */
+  function shortenCallbackData(chatKey: string, node: OutputNode): void {
+    if (node.type === 'tg-button' && typeof node.props.callbackData === 'string') {
+      const data: string = node.props.callbackData;
+      if (utf8.encode(data).length > MAX_CALLBACK_BYTES) {
+        const alias = `${ALIAS_PREFIX}${shortHash(data)}`;
+        let map = callbackAliases.get(chatKey);
+        if (!map) callbackAliases.set(chatKey, (map = new Map()));
+        map.delete(alias);
+        map.set(alias, data);
+        if (map.size > 1000) map.delete(map.keys().next().value as string);
+        node.props = { ...node.props, callbackData: alias };
+      }
+    }
+    for (const child of node.children) shortenCallbackData(chatKey, child);
+  }
+
   function buildCommandContext(botCtx: BotContext, args: string[]): CommandContext {
     return {
       args,
       reply: async (text: string, opts?: ReplyOptions) => {
-        await adapter.send(Number(botCtx.chatId), buildMessageNode(text, opts?.buttons, opts?.replyKeyboard));
+        await adapter.send(botCtx.chatId, buildMessageNode(text, opts), { threadId: botCtx.threadId });
       },
       chatId: botCtx.chatId,
       user: botCtx.user,
       platform: botCtx.platform,
+      api: botCtx.api,
       raw: botCtx.raw,
     };
   }
@@ -338,7 +479,7 @@ export function createBot(options: CreateBotOptions) {
    * where the isolate freezes once the Response resolves).
    */
   function handleUpdate(botCtx: BotContext): Promise<void> {
-    const chatKey = `${botCtx.platform}:${botCtx.chatId}`;
+    const chatKey = chatKeyOf(botCtx);
     const prev = chatLocks.get(chatKey) ?? Promise.resolve();
     const tail = prev.then(() => processUpdate(botCtx));
     chatLocks.set(chatKey, tail);
@@ -349,75 +490,109 @@ export function createBot(options: CreateBotOptions) {
     return tail;
   }
 
-  async function processUpdate(botCtx: BotContext): Promise<void> {
+  async function processUpdate(incoming: BotContext): Promise<void> {
+    if (disposed) return;
     const updateStart = Date.now();
+    const chatKey = chatKeyOf(incoming);
+
+    // Normalize: infer the update type and expand shortened callback data so middleware,
+    // plugins and handlers all see the original value.
+    let botCtx: BotContext = {
+      ...incoming,
+      updateType: incoming.updateType ?? (incoming.callbackData != null ? 'callback_query' : 'message'),
+    };
+    if (botCtx.callbackData?.startsWith(ALIAS_PREFIX)) {
+      const original = callbackAliases.get(chatKey)?.get(botCtx.callbackData);
+      if (original) botCtx = { ...botCtx, callbackData: original };
+    }
+
     debugLog('update received', {
       chatId: botCtx.chatId,
+      type: botCtx.updateType,
       text: botCtx.text,
       callbackData: botCtx.callbackData,
-      hasRaw: !!botCtx.raw,
     });
+
     try {
-      let commandInfo: CommandInfo | undefined;
+      const pipeline = compose([
+        ...pluginMiddleware,
+        ...userMiddleware,
+        async (ctx) => { await routeUpdate(ctx); },
+      ]);
+      await pipeline(botCtx, async () => {});
+      debugLog(`update processed in ${Date.now() - updateStart}ms`);
+    } catch (err) {
+      reportError(err, 'middleware', botCtx);
+    }
+  }
 
-      if (botCtx.callbackData?.startsWith('__convo:')) {
-        console.warn(
-          `[teact] Received conversation callback "${botCtx.callbackData}" but no conversationsPlugin is registered.\n` +
-          '  → Add conversationsPlugin() to your plugins array in teact.config.ts.',
-        );
-        return;
-      }
+  /** Final stage of the pipeline: commands, route buttons, then rendering. */
+  async function routeUpdate(botCtx: BotContext): Promise<void> {
+    let commandInfo: CommandInfo | undefined;
 
-      if (botCtx.callbackData?.startsWith(ROUTE_PREFIX)) {
-        const routePath = botCtx.callbackData.slice(ROUTE_PREFIX.length);
-        resetChatRoot(botCtx);
-        commandInfo = { name: '', args: [], initialRoute: routePath };
-      } else if (botCtx.text?.startsWith('/')) {
-        const [cmdPart, ...args] = botCtx.text.slice(1).split(/\s+/);
-        const cmdName = cmdPart.split('@')[0].toLowerCase();
-        const cmdDef = rawCommands[cmdName];
+    if (botCtx.callbackData?.startsWith('__convo:')) {
+      console.warn(
+        `[teact] Received conversation callback "${botCtx.callbackData}" but no conversationsPlugin handled it.\n` +
+        '  → Add conversationsPlugin() to your plugins (createBot({ plugins }) or teact.config.ts).',
+      );
+      return;
+    }
 
+    if (botCtx.updateType === 'callback_query' && botCtx.callbackData?.startsWith(ROUTE_PREFIX)) {
+      const routePath = botCtx.callbackData.slice(ROUTE_PREFIX.length);
+      resetChatRoot(botCtx);
+      commandInfo = { name: '', args: [], initialRoute: routePath };
+    } else if (botCtx.updateType === 'message') {
+      const cmd = parseCommand(botCtx.text);
+      if (cmd) {
+        // `/start@OtherBot` in a group is addressed to a different bot — not ours.
+        if (cmd.mention && botCtx.botUsername && cmd.mention.toLowerCase() !== botCtx.botUsername.toLowerCase()) {
+          debugLog('ignoring command for another bot', cmd);
+          return;
+        }
+        const cmdDef = rawCommands[cmd.name];
         if (cmdDef) {
           resetChatRoot(botCtx);
 
           if (cmdDef.handler != null) {
-            if (typeof cmdDef.handler === 'string') {
-              await adapter.send(Number(botCtx.chatId), buildMessageNode(cmdDef.handler));
-            } else {
-              await cmdDef.handler(buildCommandContext(botCtx, args));
+            try {
+              if (typeof cmdDef.handler === 'string') {
+                await adapter.send(botCtx.chatId, buildMessageNode(cmdDef.handler), { threadId: botCtx.threadId });
+              } else {
+                await cmdDef.handler(buildCommandContext(botCtx, cmd.args));
+              }
+            } catch (err) {
+              reportError(err, 'command', botCtx);
             }
             return;
           }
 
           let initialRoute: string | undefined;
-          if (cmdDef.deepLink && args.length > 0) {
-            initialRoute = cmdDef.deepLink(args);
+          if (cmdDef.deepLink && cmd.args.length > 0) {
+            try { initialRoute = cmdDef.deepLink(cmd.args); }
+            catch (err) { reportError(err, 'command', botCtx); }
           }
           initialRoute ??= cmdDef.route;
-          commandInfo = { name: cmdName, args, initialRoute };
+          commandInfo = { name: cmd.name, args: cmd.args, initialRoute };
         }
       }
-
-      debugLog('running middleware pipeline', { middlewareCount: pluginMiddleware.length + userMiddleware.length });
-      const pipeline = compose([
-        ...pluginMiddleware,
-        ...userMiddleware,
-        async (ctx) => renderForChat(ctx, commandInfo),
-      ]);
-      await pipeline(botCtx, async () => {});
-      debugLog(`update processed in ${Date.now() - updateStart}ms`);
-    } catch (err) {
-      console.error('[teact] Error handling update:', err);
-      debugLog('update failed', { error: (err as Error).message, stack: (err as Error).stack });
+    } else if (botCtx.updateType !== 'callback_query') {
+      // Other events (poll answers, edits, payments, membership…) only re-render a chat
+      // that already has a live UI — e.g. so useOn('poll_answer') fires. They must never
+      // spawn a fresh screen in a chat that didn't ask for one.
+      if (!chatRoots.has(chatKeyOf(botCtx))) return;
     }
+
+    await renderForChat(botCtx, commandInfo);
   }
 
   async function renderForChat(
     botCtx: BotContext,
     commandInfo?: CommandInfo,
   ): Promise<void> {
-    const chatKey = `${botCtx.platform}:${botCtx.chatId}`;
-    const session = (await sessionStore.get(chatKey)) ?? {};
+    const chatKey = chatKeyOf(botCtx);
+    const sessionKey = sessionKeyOf(botCtx);
+    const session: SessionData = (await sessionStore.get(sessionKey)) ?? {};
     let chatState = chatRoots.get(chatKey);
 
     // Recover from a previous render error: rebuild a fresh root so the chat isn't
@@ -426,11 +601,6 @@ export function createBot(options: CreateBotOptions) {
       chatState.root.unmount();
       chatRoots.delete(chatKey);
       chatState = undefined;
-    }
-
-    if (botCtx.callbackData && chatState) {
-      const handler = chatState.handlers.get(botCtx.callbackData);
-      if (handler) handler();
     }
 
     // Track the latest session write so we can await it before returning. On serverless
@@ -443,72 +613,63 @@ export function createBot(options: CreateBotOptions) {
       updateSession(patch) {
         Object.assign(session, patch);
         // Snapshot so later mutations of `session` don't leak into an in-flight write.
-        sessionWrite = Promise.resolve(sessionStore.set(chatKey, { ...session }));
+        sessionWrite = Promise.resolve(sessionStore.set(sessionKey, { ...session }))
+          .catch((err) => reportError(err, 'plugin', botCtx));
       },
       command: commandInfo ? { name: commandInfo.name, args: commandInfo.args } : null,
     };
 
     if (!chatState) {
       const handlers: CallbackMap = new Map();
-      const chatId = botCtx.chatId;
+      const { chatId, threadId } = botCtx;
       const commitMode: CommitModeRef = { current: 'replace' };
 
       const root = createRoot((tree: OutputNode) => {
         if (disposed) return;
         const cs = chatRoots.get(chatKey);
-        if (!cs) return;
+        if (!cs || cs.root !== root) return;
+        shortenCallbackData(chatKey, tree);
 
         cs.commitQueue = cs.commitQueue.then(async () => {
           if (disposed) return;
           const mode = cs.commitMode.current;
           cs.commitMode.current = 'replace';
+          const send = async () => {
+            const msgId = await adapter.send(chatId, tree, { threadId });
+            if (msgId) cs.lastMessageId = msgId;
+          };
 
           try {
             switch (mode) {
               case 'dismiss': {
-                if (cs.lastMessageId) {
-                  await adapter.clearButtons(Number(chatId), cs.lastMessageId);
-                }
+                // Only clears buttons — never turns into a surprise new message.
+                if (cs.lastMessageId) await adapter.clearButtons(chatId, cs.lastMessageId);
                 break;
               }
-              case 'push': {
-                const msgId = await adapter.send(Number(chatId), tree);
-                if (msgId) cs.lastMessageId = msgId;
+              case 'push':
+                await send();
                 break;
-              }
               case 'stack': {
-                if (cs.lastMessageId) {
-                  await adapter.clearButtons(Number(chatId), cs.lastMessageId);
-                }
-                const msgId = await adapter.send(Number(chatId), tree);
-                if (msgId) cs.lastMessageId = msgId;
+                if (cs.lastMessageId) await adapter.clearButtons(chatId, cs.lastMessageId);
+                await send();
                 break;
               }
               default: {
-                if (cs.lastMessageId && adapter.canEdit(tree, Number(chatId))) {
-                  await adapter.edit(Number(chatId), cs.lastMessageId, tree);
+                if (cs.lastMessageId && adapter.canEdit(tree, chatId, cs.lastMessageId)) {
+                  try {
+                    await adapter.edit(chatId, cs.lastMessageId, tree);
+                  } catch (err) {
+                    // The message may be gone or too old to edit — show the screen anew.
+                    debugLog('edit failed, sending instead', { error: (err as Error)?.message });
+                    await send();
+                  }
                 } else {
-                  const msgId = await adapter.send(Number(chatId), tree);
-                  if (msgId) cs.lastMessageId = msgId;
+                  await send();
                 }
-                break;
               }
             }
           } catch (err) {
-            if (disposed) return;
-            // 'dismiss' only clears buttons — a failure there must NOT turn into a
-            // surprise full message the user never expected. Only fall back to send
-            // for modes that were already trying to render a message.
-            if (mode === 'dismiss') {
-              console.error('[teact] Failed to dismiss keyboard:', err);
-              return;
-            }
-            try {
-              const msgId = await adapter.send(Number(chatId), tree);
-              if (msgId) cs.lastMessageId = msgId;
-            } catch (e) {
-              console.error('[teact] Send fallback failed:', e);
-            }
+            if (!disposed) reportError(err, 'send', botCtx);
           }
         });
 
@@ -516,12 +677,42 @@ export function createBot(options: CreateBotOptions) {
         cs.commitSignal?.();
       });
 
-      chatState = { root, handlers, chatId, lastMessageId: undefined, commitQueue: Promise.resolve(), commitMode };
+      chatState = {
+        root, handlers, chatId, threadId, lastMessageId: undefined,
+        commitQueue: Promise.resolve(), commitMode, runtime: { current: runtimeValue },
+      };
       chatRoots.set(chatKey, chatState);
     }
 
-    if (!botCtx.callbackData) {
+    chatState.runtime.current = runtimeValue;
+
+    if (botCtx.updateType === 'message') {
+      // A new user message → answer with a new message below it.
       chatState.lastMessageId = undefined;
+    } else if (botCtx.updateType === 'callback_query' && !chatState.lastMessageId && botCtx.messageId) {
+      // A button on a message we no longer track (route button, restart, error recovery):
+      // edit that very message in place instead of posting a new one.
+      const id = Number(botCtx.messageId);
+      if (Number.isFinite(id) && id > 0) chatState.lastMessageId = id;
+    }
+
+    // Dispatch the click BEFORE clearing handlers: the map holds the previous render's
+    // handlers, which is what the tapped button was rendered with.
+    if (botCtx.updateType === 'callback_query' && botCtx.callbackData) {
+      const handler = chatState.handlers.get(botCtx.callbackData);
+      if (handler) {
+        try {
+          // Async handlers are awaited so their work (and state updates) lands within this
+          // update — required on serverless. Sync handlers are NOT awaited, so their state
+          // updates batch with the render below into a single commit.
+          const result = handler();
+          if (result && typeof (result as Promise<void>).then === 'function') await result;
+        } catch (err) {
+          reportError(err, 'handler', botCtx);
+        }
+      } else {
+        debugLog('no handler for callback data', botCtx.callbackData);
+      }
     }
 
     chatState.handlers.clear();
@@ -545,11 +736,12 @@ export function createBot(options: CreateBotOptions) {
       rootElement = React.createElement(options.providers, null, rootElement);
     }
 
+    const errorChat = chatState.chatId;
     const wrappedElement = React.createElement(
       ErrorBoundary,
       {
         onError: (err: Error) => {
-          console.error(`[teact] Render error in chat ${chatState.chatId}:`, err);
+          reportError(err, 'render', { ...botCtx, chatId: errorChat });
           // Mark the root so the NEXT update rebuilds it fresh. Otherwise the
           // ErrorBoundary stays in its error state forever and sticks the chat.
           const cs = chatRoots.get(chatKey);
@@ -570,8 +762,8 @@ export function createBot(options: CreateBotOptions) {
         CallbackRegistryCtx.Provider,
         { value: { handlers: chatState.handlers } },
         React.createElement(
-          RuntimeContext.Provider,
-          { value: runtimeValue },
+          RuntimeBridge,
+          { value: runtimeValue, current: chatState.runtime },
           React.createElement(
             CommitModeCtx.Provider,
             { value: chatState.commitMode },
@@ -585,10 +777,9 @@ export function createBot(options: CreateBotOptions) {
 
     // The reconciler commits asynchronously (scheduleMicrotask), so we can't await
     // commitQueue immediately — the send task isn't appended until onCommit runs. Instead
-    // wait for onCommit to signal (send task queued), THEN await the queue for the actual
+    // wait for onCommit to signal (send task queued), THEN drain the queue for the actual
     // send/edit. Critical on serverless/edge: once bot.fetch() resolves its Response the
-    // isolate may freeze, so the send must complete before we return. A short timer guards
-    // against a render that bails out with no commit (nothing to send) so we never hang.
+    // isolate may freeze, so the send must complete before we return.
     const cs = chatState;
     let commitTimer: ReturnType<typeof setTimeout> | undefined;
     const committed = new Promise<void>((resolve) => {
@@ -597,7 +788,7 @@ export function createBot(options: CreateBotOptions) {
       // identities), so the root always commits and commitSignal always fires. This
       // timer just prevents a permanent hang in the pathological no-commit case
       // (e.g. disposed mid-render). It must be long enough never to cut off a real
-      // (possibly Suspense-delayed) commit — the previous 100ms value did exactly that.
+      // (possibly Suspense-delayed) commit.
       commitTimer = setTimeout(() => {
         debugLog('commit backstop fired — no commit observed', { chatId: botCtx.chatId });
         resolve();
@@ -607,19 +798,45 @@ export function createBot(options: CreateBotOptions) {
     await committed;
     if (commitTimer) clearTimeout(commitTimer);
     cs.commitSignal = undefined;
-    await cs.commitQueue;
+    // Drain: a commit can enqueue follow-up work (effects that set state synchronously,
+    // a click handler's late commit). Keep awaiting until the queue stops growing.
+    for (let i = 0; i < 10; i++) {
+      const queued = cs.commitQueue;
+      await queued;
+      await new Promise((r) => setTimeout(r, 0));
+      if (cs.commitQueue === queued) break;
+    }
     // Ensure any session write triggered by this render (or its onClick handler) is
     // durably persisted before we return — critical on serverless (see above).
     await sessionWrite;
   }
 
+  /** Validate + normalize command names (Telegram rejects the whole menu on one bad entry). */
+  function normalizeCommands(input: Record<string, CommandDef>): Record<string, CommandDef> {
+    const out: Record<string, CommandDef> = {};
+    for (const [rawName, def] of Object.entries(input)) {
+      const name = rawName.replace(/^\//, '').toLowerCase();
+      if (!COMMAND_NAME_RE.test(name)) {
+        console.warn(`[teact] Command "/${rawName}" is invalid — names must be 1–32 chars of a-z, 0-9 or _. Skipping it.`);
+        continue;
+      }
+      if (rawName !== name) {
+        console.warn(`[teact] Command "${rawName}" normalized to "/${name}".`);
+      }
+      out[name] = def;
+    }
+    return out;
+  }
+
   /**
    * One-time setup shared by start() (polling/webhook server) and fetch() (serverless):
    * load config, merge plugins, connect the adapter, run onStart, wire update handlers.
-   * Memoized so serverless cold-starts initialize exactly once.
+   * Memoized so serverless cold-starts initialize exactly once — but a failed attempt is
+   * NOT cached, so the next request retries instead of failing forever.
    */
-  async function initialize(opts?: { registerCommands?: boolean }): Promise<void> {
+  function initialize(opts?: { registerCommands?: boolean }): Promise<void> {
     if (initPromise) return initPromise;
+    disposed = false;
     initPromise = (async () => {
       // Auto-load teact.config.ts (fs-based; harmlessly returns {} on serverless/edge).
       loadedConfig = await loadTeactConfig();
@@ -642,82 +859,129 @@ export function createBot(options: CreateBotOptions) {
       userMiddleware = [...(loadedConfig.middleware ?? []), ...(options.middleware ?? [])];
 
       // Commands: co-located router `command:` entries first, then explicit createBot commands.
-      rawCommands = { ...(options.router?.commands ?? {}), ...(options.commands ?? {}) };
+      rawCommands = normalizeCommands({ ...(options.router?.commands ?? {}), ...(options.commands ?? {}) });
 
       if (options.session?.store) sessionStore = options.session.store;
       else if (loadedConfig.session?.store) sessionStore = loadedConfig.session.store;
+      else if (loadedConfig.session?.ttl && !options.session?.ttl) sessionStore = new MemorySessionStore(loadedConfig.session.ttl);
 
-      if (!resolvedToken) {
-        throw new Error('[teact] No bot token. Pass createBot({ token }), bot.fetch(req, { token }), or set TELEGRAM_BOT_TOKEN.');
-      }
       await adapter.connect({ token: resolvedToken });
 
       for (const plugin of plugins) {
         if (plugin.onStart) {
           try { await plugin.onStart(adapter); }
-          catch (err) { console.error(`[teact] Plugin "${plugin.name}" onStart failed:`, err); }
+          catch (err) { reportError(err, 'plugin'); console.error(`[teact] Plugin "${plugin.name}" onStart failed.`); }
         }
       }
 
       // Register the platform command menu (skipped on serverless by default — set it
       // once at deploy time instead of on every cold start).
       if (opts?.registerCommands !== false) {
-        const botCommands = Object.entries(rawCommands).map(([name, def]) => ({
-          command: name,
-          description: def.description,
-        }));
+        const botCommands = Object.entries(rawCommands)
+          .filter(([, def]) => !def.hidden)
+          .map(([name, def]) => ({ command: name, description: (def.description || name).slice(0, 256) }));
         if (botCommands.length > 0) {
           try {
             await adapter.setCommands(botCommands);
-            console.log(`[teact] Registered ${botCommands.length} command(s) with Telegram`);
+            console.log(`[teact] Registered ${botCommands.length} command(s)`);
           } catch (err) {
             console.warn('[teact] Could not set bot commands:', err);
           }
         }
       }
 
-      adapter.on('message', (ctx: BotContext) => handleUpdate(ctx));
-      adapter.on('callback_query', (ctx: BotContext) => handleUpdate(ctx));
+      if (!listenersWired) {
+        listenersWired = true;
+        adapter.on('message', (ctx: BotContext) => handleUpdate(ctx));
+        adapter.on('callback_query', (ctx: BotContext) => handleUpdate(ctx));
+        adapter.on('event', (ctx: BotContext) => handleUpdate(ctx));
+      }
     })();
+    initPromise.catch(() => { initPromise = null; });
     return initPromise;
   }
 
+  /**
+   * Render a React element once (outside any chat's live UI) into an output tree.
+   * Used by `bot.send()` for notifications/broadcasts.
+   */
+  async function renderStatic(element: React.ReactElement, chatId: string): Promise<OutputNode | null> {
+    let output: OutputNode | null = null;
+    let done!: () => void;
+    const committed = new Promise<void>((r) => { done = r; });
+    const root = createRoot((tree) => { output = tree; done(); });
+    const platform = adapter.name;
+    const botCtx: BotContext = {
+      chatId, userId: chatId, platform, updateType: 'broadcast',
+      user: { id: chatId, platform }, raw: null, api: adapter.api,
+    };
+    root.render(
+      React.createElement(ServicesCtx.Provider, { value: mergedServices },
+        React.createElement(CallbackRegistryCtx.Provider, { value: { handlers: new Map() } },
+          React.createElement(RuntimeContext.Provider, {
+            value: { botCtx, session: {}, updateSession() {}, command: null },
+          }, element))),
+    );
+    const timer = setTimeout(done, COMMIT_BACKSTOP_MS);
+    await committed;
+    clearTimeout(timer);
+    root.unmount();
+    return output;
+  }
+
   const botInstance = {
+    /** The adapter this bot runs on. */
+    adapter,
+
+    /** Platform API (when the adapter exposes one), e.g. `bot.api.sendMessage({ chat_id, text })`. */
+    get api(): PlatformApi | undefined {
+      return adapter.api;
+    },
+
     async start() {
-      // 0. Stop any previous instance (HMR / vite-node --watch)
-      await cleanupPreviousInstance();
-      registerGlobalInstance(botInstance);
+      // Stop any previous instance (HMR / dev-server re-run).
+      await cleanupPreviousInstance(botInstance);
+      (globalThis as any)[GLOBAL_KEY] = botInstance;
+      disposed = false;
 
-      if (!resolvedToken) {
-        console.error('[teact] No bot token found. Add TELEGRAM_BOT_TOKEN to your .env file.');
-        process.exit(1);
+      try {
+        await initialize({ registerCommands: true });
+      } catch (err) {
+        const msg = (err as Error)?.message ?? String(err);
+        console.error(`[teact] Failed to start: ${msg}`);
+        if (/token/i.test(msg) || (err as any)?.errorCode === 401) {
+          console.error('[teact] → Get a token from @BotFather and put TELEGRAM_BOT_TOKEN=... in your .env file.');
+        }
+        throw err;
       }
-
-      await initialize({ registerCommands: true });
 
       const mode = options.mode ?? loadedConfig.mode ?? 'polling';
       const webhook = options.webhook ?? loadedConfig.webhook;
+      if (mode === 'webhook' && !webhook) {
+        console.warn('[teact] mode is "webhook" but no webhook config was given — falling back to polling.');
+      }
       if (mode === 'webhook' && webhook) {
         await adapter.listen({ webhook });
       } else {
         await adapter.listen({ polling: true });
       }
 
-      // 5. Graceful shutdown
-      let stopping = false;
-      const shutdown = async () => {
-        if (stopping) return;
-        stopping = true;
-        console.log('\n[teact] Shutting down…');
-        await botInstance.stop();
-        process.exit(0);
-      };
-      process.once('SIGINT', shutdown);
-      process.once('SIGTERM', shutdown);
+      // Graceful shutdown — installed once per process; always stops the current instance.
+      if (typeof process !== 'undefined' && typeof process.once === 'function' && !(globalThis as any)[SIGNALS_KEY]) {
+        (globalThis as any)[SIGNALS_KEY] = true;
+        let stopping = false;
+        const shutdown = async () => {
+          if (stopping) return;
+          stopping = true;
+          console.log('\n[teact] Shutting down…');
+          try { await (globalThis as any)[GLOBAL_KEY]?.stop(); } finally { process.exit(0); }
+        };
+        process.once('SIGINT', shutdown);
+        process.once('SIGTERM', shutdown);
+      }
 
-      console.log(`[teact] Bot started (${mode})${debugMode ? ' [debug mode]' : ''}`);
+      console.log(`[teact] Bot started (${mode === 'webhook' && webhook ? 'webhook' : 'polling'})${debugMode ? ' [debug mode]' : ''}`);
       if (debugMode) {
-        console.log('[teact:debug] Debug mode enabled — verbose logging active');
         console.log('[teact:debug] Config:', {
           mode,
           commands: Object.keys(rawCommands),
@@ -728,6 +992,12 @@ export function createBot(options: CreateBotOptions) {
     },
 
     async stop() {
+      if (disposed) return;
+      // Let in-flight updates finish (bounded), so we don't cut off a half-sent reply.
+      await Promise.race([
+        Promise.allSettled([...chatLocks.values()]),
+        new Promise((r) => setTimeout(r, 5000)),
+      ]);
       disposed = true;
 
       for (const [, cs] of chatRoots) cs.root.unmount();
@@ -743,15 +1013,19 @@ export function createBot(options: CreateBotOptions) {
         }
       }
 
-      await adapter.disconnect();
+      try { await adapter.disconnect(); } catch (err) { console.error('[teact] Adapter disconnect failed:', err); }
+      // Allow a later start()/fetch() on this same instance to reconnect.
+      initPromise = null;
+      webhookFn = null;
+      if ((globalThis as any)[GLOBAL_KEY] === botInstance) (globalThis as any)[GLOBAL_KEY] = undefined;
       console.log('[teact] Bot stopped');
     },
 
     /**
      * Serverless / edge webhook entry: `(request) => Response`. Initializes the bot
-     * once (lazily) and processes a single Telegram update per request — no polling,
-     * no long-running server. Works on Cloudflare Workers, Vercel/Deno Edge,
-     * Bun.serve, Netlify, etc.
+     * once (lazily) and processes a single update per request — no polling, no
+     * long-running server. Works on Cloudflare Workers, Vercel/Deno Edge, Bun.serve,
+     * Netlify, etc.
      *
      * @example Cloudflare Worker (src/worker.ts)
      * export default {
@@ -761,7 +1035,13 @@ export function createBot(options: CreateBotOptions) {
      */
     async fetch(request: Request, opts?: { token?: string; secretToken?: string }): Promise<Response> {
       if (opts?.token) resolvedToken = opts.token;
-      await initialize({ registerCommands: false });
+      try {
+        await initialize({ registerCommands: false });
+      } catch (err) {
+        console.error('[teact] Initialization failed:', err);
+        // 500 → Telegram retries later, by which time a transient failure may have cleared.
+        return new Response('Bot initialization failed', { status: 500 });
+      }
       // The in-memory session store is per-isolate; on serverless each request may get
       // a fresh isolate, so sessions silently never persist. Warn once so this doesn't
       // masquerade as a working bot in production.
@@ -782,6 +1062,67 @@ export function createBot(options: CreateBotOptions) {
       return webhookFn(request);
     },
 
+    /**
+     * Proactively send a message to a chat — notifications, reminders, broadcasts.
+     * Accepts plain text or a JSX element (e.g. `<Message>` with `route` / `url` buttons).
+     * `onClick` handlers in such messages aren't wired (there's no live UI behind them);
+     * use `route` buttons to open a screen instead.
+     *
+     * @example
+     * await bot.send(chatId, 'Your order shipped! 📦');
+     * await bot.send(chatId, <Message text="New reply"><InlineKeyboard><Button text="Open" route="/inbox" /></InlineKeyboard></Message>);
+     */
+    async send(chatId: string | number, content: string | React.ReactElement, opts?: { threadId?: number }): Promise<number | undefined> {
+      await initialize({ registerCommands: false });
+      const id = String(chatId);
+      const tree = typeof content === 'string' ? buildMessageNode(content) : await renderStatic(content, id);
+      if (!tree) return undefined;
+      shortenCallbackData(`${adapter.name}:${id}`, tree);
+      return adapter.send(id, tree, opts);
+    },
+
+    /**
+     * Send the same message to many chats, paced under Telegram's broadcast limit
+     * (~30 messages/second). Failures (e.g. users who blocked the bot) are collected rather
+     * than thrown, so one bad chat never stops the run. JSX is rendered once.
+     *
+     * @example
+     * const report = await bot.broadcast(subscriberIds, <Message text="🎉 v2 is live!" />, {
+     *   onProgress: (done, total) => console.log(`${done}/${total}`),
+     * });
+     * await db.unsubscribe(report.failed.map((f) => f.chatId));
+     */
+    async broadcast(
+      chatIds: Iterable<string | number>,
+      content: string | React.ReactElement,
+      opts: { perSecond?: number; onProgress?: (done: number, total: number) => void; signal?: AbortSignal } = {},
+    ): Promise<{ sent: number; failed: { chatId: string; error: unknown }[] }> {
+      await initialize({ registerCommands: false });
+      const ids = [...chatIds].map(String);
+      const interval = 1000 / Math.max(1, Math.min(opts.perSecond ?? 25, 30));
+      const template = typeof content === 'string' ? buildMessageNode(content) : await renderStatic(content, ids[0] ?? '0');
+      const result = { sent: 0, failed: [] as { chatId: string; error: unknown }[] };
+      if (!template) return result;
+      let done = 0;
+      for (const id of ids) {
+        if (opts.signal?.aborted) break;
+        const started = Date.now();
+        try {
+          // Fresh node copies per chat: callback aliasing reassigns node props.
+          const tree = cloneTree(template);
+          shortenCallbackData(`${adapter.name}:${id}`, tree);
+          await adapter.send(id, tree);
+          result.sent++;
+        } catch (error) {
+          result.failed.push({ chatId: id, error });
+        }
+        opts.onProgress?.(++done, ids.length);
+        const wait = interval - (Date.now() - started);
+        if (wait > 0 && done < ids.length) await new Promise((r) => setTimeout(r, wait));
+      }
+      return result;
+    },
+
     _chatRoots: chatRoots,
     // Getter so callers see the store actually in use after initialize() may have
     // replaced the default with one from createBot({ session }) or teact.config.ts.
@@ -790,3 +1131,6 @@ export function createBot(options: CreateBotOptions) {
 
   return botInstance;
 }
+
+/** A bot instance returned by {@link createBot}. */
+export type TeactBot = ReturnType<typeof createBot>;

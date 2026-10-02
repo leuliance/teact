@@ -1,5 +1,5 @@
 import type { OutputNode } from '@teactjs/core';
-import type { InlineKeyboardButton as GrammyButton, KeyboardButton } from 'grammy/types';
+import type { InlineKeyboardButton, KeyboardButton } from './types';
 
 export type SendMethod =
   | 'sendMessage' | 'sendPhoto' | 'sendDocument'
@@ -28,7 +28,7 @@ export interface TelegramSendPayload {
   filename?: string;
   parseMode?: string;
   disablePreview?: boolean;
-  keyboard?: GrammyButton[][];
+  keyboard?: InlineKeyboardButton[][];
 
   video?: string;
   voice?: string;
@@ -89,15 +89,28 @@ export interface TelegramSendPayload {
 const MAX_MESSAGE_LEN = 4096;
 const MAX_CAPTION_LEN = 1024;
 
-/** A piece of accumulated text: `literal` = user content (escaped in HTML mode), `markup` = tags we emit. */
+/**
+ * A piece of accumulated text: `literal` = user content (escaped in HTML mode); otherwise
+ * it's text we emit ourselves — `tag` marks HTML markup (invisible once Telegram parses it).
+ */
 interface TextSegment {
   text: string;
   literal: boolean;
+  tag?: boolean;
 }
 
 /** Escape the five HTML entities Telegram's HTML parse mode cares about. */
 export function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function escapeAttr(s: string): string {
+  return escapeHtml(s).replace(/"/g, '&quot;');
+}
+
+function hasExplicitParseMode(node: OutputNode): boolean {
+  if (node.props?.parseMode) return true;
+  return node.children.some(hasExplicitParseMode);
 }
 
 function truncate(s: string, max: number, what: string): string {
@@ -110,6 +123,8 @@ export function serializeOutput(node: OutputNode): TelegramSendPayload {
   const result: TelegramSendPayload = { method: 'sendMessage', text: '' };
   const segments: TextSegment[] = [];
   walk(node, result, segments);
+  // HTML chosen implicitly by <Bold>/<Italic>/<Code> (rather than by the user's parseMode).
+  const autoHtml = segments.some((s) => s.tag) && !hasExplicitParseMode(node);
 
   // Assemble text now that the final parse mode is known. In HTML mode we escape the
   // literal (user-supplied) segments so `<`, `>`, `&` in user content can't break the
@@ -117,15 +132,24 @@ export function serializeOutput(node: OutputNode): TelegramSendPayload {
   // explicitly set a parse mode on the node, their own text is left verbatim (their
   // responsibility) — only formatting-component children are escaped.
   const isHtml = result.parseMode === 'HTML';
-  result.text = segments
-    .map((s) => (isHtml && s.literal ? escapeHtml(s.text) : s.text))
-    .join('');
-
-  // Clamp to Telegram limits (message text vs media caption) to avoid hard 400s.
   const isCaption = result.method !== 'sendMessage' && result.method !== 'sendPoll';
-  if (result.text) {
-    result.text = truncate(result.text, isCaption ? MAX_CAPTION_LEN : MAX_MESSAGE_LEN,
-      isCaption ? 'Caption' : 'Message text');
+  const max = isCaption ? MAX_CAPTION_LEN : MAX_MESSAGE_LEN;
+  const what = isCaption ? 'Caption' : 'Message text';
+
+  // Telegram's limits count the *visible* text (after entity parsing), so markup tags we
+  // generated don't count. If the visible text is too long, we must not cut through an
+  // HTML tag (that would produce invalid markup and a hard 400) — instead drop our
+  // generated formatting and send truncated plain text.
+  const visibleLen = segments.reduce((n, s) => n + (s.tag ? 0 : s.text.length), 0);
+  if (visibleLen > max && autoHtml && isHtml) {
+    result.parseMode = undefined;
+    result.text = truncate(segments.filter((s) => !s.tag).map((s) => s.text).join(''), max, what);
+  } else {
+    result.text = segments
+      .map((s) => (isHtml && s.literal ? escapeHtml(s.text) : s.text))
+      .join('');
+    // Clamp to Telegram limits (message text vs media caption) to avoid hard 400s.
+    if (result.text && visibleLen > max) result.text = truncate(result.text, max, what);
   }
 
   validate(result);
@@ -167,6 +191,7 @@ function walk(node: OutputNode, out: TelegramSendPayload, segs: TextSegment[]): 
   if ((node.props as { __hidden?: boolean }).__hidden) return;
   const lit = (text: string) => { if (text) segs.push({ text, literal: true }); };
   const raw = (text: string) => segs.push({ text, literal: false });
+  const tag = (text: string) => segs.push({ text, literal: false, tag: true });
 
   switch (node.type) {
     case 'tg-message': {
@@ -188,30 +213,48 @@ function walk(node: OutputNode, out: TelegramSendPayload, segs: TextSegment[]): 
 
     case 'tg-bold': {
       out.parseMode = out.parseMode || 'HTML';
-      raw('<b>');
+      tag('<b>');
       for (const c of node.children) walk(c, out, segs);
-      raw('</b>');
+      tag('</b>');
       break;
     }
 
     case 'tg-italic': {
       out.parseMode = out.parseMode || 'HTML';
-      raw('<i>');
+      tag('<i>');
       for (const c of node.children) walk(c, out, segs);
-      raw('</i>');
+      tag('</i>');
+      break;
+    }
+
+    case 'tg-underline':
+    case 'tg-strike':
+    case 'tg-spoiler':
+    case 'tg-quote':
+    case 'tg-link': {
+      out.parseMode = out.parseMode || 'HTML';
+      const [open, close] =
+        node.type === 'tg-underline' ? ['<u>', '</u>']
+        : node.type === 'tg-strike' ? ['<s>', '</s>']
+        : node.type === 'tg-spoiler' ? ['<tg-spoiler>', '</tg-spoiler>']
+        : node.type === 'tg-quote' ? [node.props.expandable ? '<blockquote expandable>' : '<blockquote>', '</blockquote>']
+        : [`<a href="${escapeAttr(String(node.props.href ?? ''))}">`, '</a>'];
+      tag(open);
+      for (const c of node.children) walk(c, out, segs);
+      tag(close);
       break;
     }
 
     case 'tg-code': {
       out.parseMode = out.parseMode || 'HTML';
       if (node.props.language) {
-        raw(`<pre><code class="language-${escapeHtml(String(node.props.language))}">`);
+        tag(`<pre><code class="language-${escapeAttr(String(node.props.language))}">`);
         for (const c of node.children) walk(c, out, segs);
-        raw('</code></pre>');
+        tag('</code></pre>');
       } else {
-        raw('<code>');
+        tag('<code>');
         for (const c of node.children) walk(c, out, segs);
-        raw('</code>');
+        tag('</code>');
       }
       break;
     }
@@ -223,7 +266,7 @@ function walk(node: OutputNode, out: TelegramSendPayload, segs: TextSegment[]): 
 
     case 'tg-button-row': {
       if (!out.keyboard) out.keyboard = [];
-      const row: GrammyButton[] = [];
+      const row: InlineKeyboardButton[] = [];
       for (const c of node.children) {
         const btn = makeButton(c);
         if (btn) row.push(btn);
@@ -487,7 +530,7 @@ function walk(node: OutputNode, out: TelegramSendPayload, segs: TextSegment[]): 
   }
 }
 
-function makeButton(node: OutputNode): GrammyButton | null {
+function makeButton(node: OutputNode): InlineKeyboardButton | null {
   if (node.type !== 'tg-button') return null;
   const text = node.props.text;
   if (!text) return null;
