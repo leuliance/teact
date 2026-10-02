@@ -30,6 +30,7 @@ export function renderBot(
     userId: 'test-user',
     user: { id: 'test-user', firstName: 'Test', platform: 'mock' },
     platform: 'mock',
+    updateType: 'message',
     raw: {},
     ...initialCtx,
   };

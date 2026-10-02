@@ -222,8 +222,16 @@ export function useConversation(config?: StepsConfig | UseConversationOptions): 
     setLastError(null);
   }, []);
 
+  // A slot is free when nothing is active OR the active key was already answered — the
+  // latter happens when React finishes a render pass with stale `answers` right after a
+  // render-phase setAnswers, re-activating the step that was just answered.
+  function canActivate(key: string): boolean {
+    const cur = activeKeyRef.current;
+    return (!cur || cur in answers) && !(key in answers);
+  }
+
   function activateText(key: string) {
-    if (!activeKeyRef.current && !(key in answers)) {
+    if (canActivate(key)) {
       activeKeyRef.current = key;
       waitModeRef.current = 'text';
       processedMsgIdRef.current = msgId;
@@ -231,7 +239,7 @@ export function useConversation(config?: StepsConfig | UseConversationOptions): 
   }
 
   function buildAsk(key: string, questionText: string, options: AskOption[][]): React.ReactElement {
-    if (!activeKeyRef.current && !(key in answers)) {
+    if (canActivate(key)) {
       activeKeyRef.current = key;
       waitModeRef.current = 'callback';
       processedMsgIdRef.current = msgId;
