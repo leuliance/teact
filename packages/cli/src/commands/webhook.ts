@@ -1,16 +1,6 @@
 import { resolve } from 'path';
 import { existsSync, readFileSync } from 'fs';
-import { heading, log, error, success, findProjectRoot } from '../utils';
-
-function readEnvVar(projectRoot: string, name: string): string | undefined {
-  if (process.env[name]) return process.env[name];
-  const envPath = resolve(projectRoot, '.env');
-  if (existsSync(envPath)) {
-    const m = readFileSync(envPath, 'utf-8').match(new RegExp(`^\\s*${name}\\s*=\\s*(.+)\\s*$`, 'm'));
-    if (m) return m[1].trim().replace(/^["']|["']$/g, '');
-  }
-  return undefined;
-}
+import { heading, log, error, success, findProjectRoot, readEnvVar } from '../utils';
 
 async function callApi(token: string, method: string, body?: Record<string, unknown>) {
   const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {

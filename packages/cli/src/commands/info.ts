@@ -1,7 +1,7 @@
 import * as p from '@clack/prompts';
 import { existsSync, readFileSync } from 'fs';
 import { resolve } from 'path';
-import { findProjectRoot } from '../utils';
+import { findProjectRoot, readEnvVar } from '../utils';
 
 export async function infoCommand(): Promise<void> {
   p.intro('Teact Project Info');
@@ -20,8 +20,7 @@ export async function infoCommand(): Promise<void> {
   if (root) {
     const envPath = resolve(root, '.env');
     const hasEnv = existsSync(envPath);
-    const envContent = hasEnv ? readFileSync(envPath, 'utf-8') : '';
-    const hasToken = hasEnv && envContent.includes('TELEGRAM_BOT_TOKEN=') && !!envContent.match(/TELEGRAM_BOT_TOKEN=\S+/);
+    const hasToken = !!readEnvVar(root, 'TELEGRAM_BOT_TOKEN');
 
     p.log.info(`Project:    ${root}`);
     p.log.info(`.env:       ${hasEnv ? 'found' : 'missing'}`);

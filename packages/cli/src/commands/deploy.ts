@@ -54,7 +54,13 @@ export async function deployCommand(target: string | undefined, opts: DeployOpti
   heading('Deploy to Cloudflare Workers');
 
   const pkg = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf-8'));
-  const name = (pkg.name ?? 'teact-bot').replace(/[^a-z0-9-]/g, '-');
+  // Workers names: lowercase a-z0-9 and dashes, no leading/trailing dash (e.g. "@me/My_Bot" → "me-my-bot").
+  const name = String(pkg.name ?? 'teact-bot')
+    .toLowerCase()
+    .replace(/^@/, '')
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 63) || 'teact-bot';
 
   // Warn if the bot isn't exported from the entry (worker.ts imports it from ./index)
   const entryFile = ['src/index.ts', 'src/index.tsx'].map((f) => resolve(root, f)).find(existsSync);

@@ -1,5 +1,5 @@
-import { existsSync } from 'fs';
-import { resolve } from 'path';
+import { existsSync, readFileSync } from 'fs';
+import { dirname, resolve } from 'path';
 
 export function parseArgs(args: string[]): { positional: string[]; flags: Record<string, string | boolean> } {
   const positional: string[] = [];
@@ -28,8 +28,10 @@ export function parseArgs(args: string[]): { positional: string[]; flags: Record
 }
 
 export function findProjectRoot(from = process.cwd()): string | null {
-  let dir = from;
-  while (dir !== '/') {
+  let dir = resolve(from);
+  // Walk up until the filesystem root. Compare against the parent rather than '/', which
+  // never matches on Windows (resolve('C:\\', '..') === 'C:\\') and would loop forever.
+  for (;;) {
     if (existsSync(resolve(dir, 'teact.config.ts')) || existsSync(resolve(dir, 'teact.config.js'))) {
       return dir;
     }
@@ -43,9 +45,10 @@ export function findProjectRoot(from = process.cwd()): string | null {
         }
       } catch {}
     }
-    dir = resolve(dir, '..');
+    const parent = dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
   }
-  return null;
 }
 
 const COLORS = {
@@ -78,4 +81,17 @@ export function error(message: string): void {
 
 export function heading(message: string): void {
   console.log(`\n${COLORS.bold}${COLORS.magenta}${message}${COLORS.reset}\n`);
+}
+
+/**
+ * Read a variable from the process environment or the project's `.env` (quotes stripped,
+ * `export KEY=` supported). Returns undefined when unset or empty.
+ */
+export function readEnvVar(projectRoot: string, name: string): string | undefined {
+  if (process.env[name]) return process.env[name];
+  const envPath = resolve(projectRoot, '.env');
+  if (!existsSync(envPath)) return undefined;
+  const m = readFileSync(envPath, 'utf-8').match(new RegExp(`^\\s*(?:export\\s+)?${name}\\s*=\\s*(.*?)\\s*$`, 'm'));
+  const value = m?.[1]?.replace(/^(["'])(.*)\1$/, '$2').trim();
+  return value || undefined;
 }

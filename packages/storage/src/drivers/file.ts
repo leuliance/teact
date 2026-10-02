@@ -26,7 +26,8 @@ const HAS_FS = (() => {
  * `StorageDriver` (KV, Redis, Postgres) instead.
  */
 export class FileDriver implements StorageDriver {
-  private data: Record<string, any> = {};
+  // A Map, not a plain object: keys like '__proto__' / 'constructor' must be ordinary keys.
+  private data = new Map<string, any>();
   private path: string;
   private warnedNoFs = false;
 
@@ -44,14 +45,20 @@ export class FileDriver implements StorageDriver {
   }
 
   private load() {
+    if (!existsSync(this.path)) return;
     try {
-      if (existsSync(this.path)) {
-        this.data = JSON.parse(readFileSync(this.path, 'utf-8'));
+      const parsed = JSON.parse(readFileSync(this.path, 'utf-8'));
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new Error('expected a JSON object at the top level');
       }
+      this.data = new Map(Object.entries(parsed));
     } catch (err) {
-      // A corrupt/truncated file would otherwise silently reset the store — surface it.
-      console.error(`[teact/storage] Could not read "${this.path}" (starting empty):`, err);
-      this.data = {};
+      // Never overwrite an unreadable store — the next write would destroy every chat's
+      // data for good. Move it aside so it can be inspected/recovered, then start empty.
+      const backup = `${this.path}.corrupt-${Date.now()}`;
+      try { renameSync(this.path, backup); } catch {}
+      console.error(`[teact/storage] Could not read "${this.path}" — moved it to "${backup}" and started empty:`, err);
+      this.data = new Map();
     }
   }
 
@@ -67,7 +74,7 @@ export class FileDriver implements StorageDriver {
     try {
       mkdirSync(dirname(this.path), { recursive: true });
       const tmp = `${this.path}.${(typeof process !== 'undefined' && process.pid) || 0}.tmp`;
-      writeFileSync(tmp, JSON.stringify(this.data, null, 2));
+      writeFileSync(tmp, JSON.stringify(Object.fromEntries(this.data), null, 2));
       renameSync(tmp, this.path); // atomic on the same filesystem
     } catch (err) {
       console.error('[teact/storage] Failed to write:', err);
@@ -75,29 +82,28 @@ export class FileDriver implements StorageDriver {
   }
 
   get<T>(key: string): T | undefined {
-    return this.data[key];
+    return this.data.get(key);
   }
 
   set<T>(key: string, value: T): void {
-    this.data[key] = value;
+    this.data.set(key, value);
     this.flush();
   }
 
   delete(key: string): void {
-    delete this.data[key];
-    this.flush();
+    if (this.data.delete(key)) this.flush();
   }
 
   has(key: string): boolean {
-    return key in this.data;
+    return this.data.has(key);
   }
 
   clear(): void {
-    this.data = {};
+    this.data.clear();
     this.flush();
   }
 
   keys(): string[] {
-    return Object.keys(this.data);
+    return [...this.data.keys()];
   }
 }

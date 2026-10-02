@@ -87,6 +87,9 @@ export function createBuildConfig(
           ...EXTERNAL_DEPS,
           /^node:/,
         ],
+        // Always emit dist/index.js (what `teact start` and generated scripts run),
+        // whatever the entry is called and whether or not package.json has "type":"module".
+        output: { entryFileNames: 'index.js', format: 'es' },
       },
     },
   };
