@@ -17,6 +17,7 @@ export const KNOWN_HOST_TYPES = new Set([
   'tg-media-group', 'tg-media-photo', 'tg-media-video',
   'tg-reply-keyboard', 'tg-reply-row', 'tg-reply-button', 'tg-reply-keyboard-remove',
   'tg-notification', 'tg-poll',
+  'tg-underline', 'tg-strike', 'tg-spoiler', 'tg-link', 'tg-quote',
 ]);
 
 let currentUpdatePriority: number = DefaultEventPriority;

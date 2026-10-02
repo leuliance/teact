@@ -313,6 +313,10 @@ function buildMessageNode(text: string, opts: ReplyOptions = {}): OutputNode {
   return { type: 'tg-message', props: { text, parseMode }, children };
 }
 
+function cloneTree(node: OutputNode): OutputNode {
+  return { type: node.type, props: node.props, children: node.children.map(cloneTree) };
+}
+
 /** Parse `/cmd@bot arg1 arg2` → `{ name, mention, args }` (or null if not a command). */
 function parseCommand(text: string | undefined): { name: string; mention?: string; args: string[] } | null {
   if (!text?.startsWith('/')) return null;
@@ -1075,6 +1079,48 @@ export function createBot(options: CreateBotOptions) {
       if (!tree) return undefined;
       shortenCallbackData(`${adapter.name}:${id}`, tree);
       return adapter.send(id, tree, opts);
+    },
+
+    /**
+     * Send the same message to many chats, paced under Telegram's broadcast limit
+     * (~30 messages/second). Failures (e.g. users who blocked the bot) are collected rather
+     * than thrown, so one bad chat never stops the run. JSX is rendered once.
+     *
+     * @example
+     * const report = await bot.broadcast(subscriberIds, <Message text="🎉 v2 is live!" />, {
+     *   onProgress: (done, total) => console.log(`${done}/${total}`),
+     * });
+     * await db.unsubscribe(report.failed.map((f) => f.chatId));
+     */
+    async broadcast(
+      chatIds: Iterable<string | number>,
+      content: string | React.ReactElement,
+      opts: { perSecond?: number; onProgress?: (done: number, total: number) => void; signal?: AbortSignal } = {},
+    ): Promise<{ sent: number; failed: { chatId: string; error: unknown }[] }> {
+      await initialize({ registerCommands: false });
+      const ids = [...chatIds].map(String);
+      const interval = 1000 / Math.max(1, Math.min(opts.perSecond ?? 25, 30));
+      const template = typeof content === 'string' ? buildMessageNode(content) : await renderStatic(content, ids[0] ?? '0');
+      const result = { sent: 0, failed: [] as { chatId: string; error: unknown }[] };
+      if (!template) return result;
+      let done = 0;
+      for (const id of ids) {
+        if (opts.signal?.aborted) break;
+        const started = Date.now();
+        try {
+          // Fresh node copies per chat: callback aliasing reassigns node props.
+          const tree = cloneTree(template);
+          shortenCallbackData(`${adapter.name}:${id}`, tree);
+          await adapter.send(id, tree);
+          result.sent++;
+        } catch (error) {
+          result.failed.push({ chatId: id, error });
+        }
+        opts.onProgress?.(++done, ids.length);
+        const wait = interval - (Date.now() - started);
+        if (wait > 0 && done < ids.length) await new Promise((r) => setTimeout(r, wait));
+      }
+      return result;
     },
 
     _chatRoots: chatRoots,

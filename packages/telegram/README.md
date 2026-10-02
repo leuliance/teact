@@ -193,6 +193,20 @@ after an hour (`timeoutMs`). Conversations live in memory — on serverless, use
 
 > `streamPlugin()` is deprecated and does nothing: streaming is built in.
 
+## Inline mode
+
+```ts
+import { inlineQueryPlugin, inlineArticle } from "@teactjs/telegram";
+
+plugins: [
+  inlineQueryPlugin(async ({ query }) =>
+    (await search(query)).map((p) => inlineArticle({ id: p.id, title: p.name, text: p.summary })),
+  ),
+];
+```
+
+Enable inline mode with @BotFather (`/setinline`). Return `{ results, nextOffset }` to paginate.
+
 ## Adapter API
 
 | Member | Description |

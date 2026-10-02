@@ -227,6 +227,24 @@ function walk(node: OutputNode, out: TelegramSendPayload, segs: TextSegment[]): 
       break;
     }
 
+    case 'tg-underline':
+    case 'tg-strike':
+    case 'tg-spoiler':
+    case 'tg-quote':
+    case 'tg-link': {
+      out.parseMode = out.parseMode || 'HTML';
+      const [open, close] =
+        node.type === 'tg-underline' ? ['<u>', '</u>']
+        : node.type === 'tg-strike' ? ['<s>', '</s>']
+        : node.type === 'tg-spoiler' ? ['<tg-spoiler>', '</tg-spoiler>']
+        : node.type === 'tg-quote' ? [node.props.expandable ? '<blockquote expandable>' : '<blockquote>', '</blockquote>']
+        : [`<a href="${escapeAttr(String(node.props.href ?? ''))}">`, '</a>'];
+      tag(open);
+      for (const c of node.children) walk(c, out, segs);
+      tag(close);
+      break;
+    }
+
     case 'tg-code': {
       out.parseMode = out.parseMode || 'HTML';
       if (node.props.language) {

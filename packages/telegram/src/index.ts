@@ -41,3 +41,6 @@ export type {
   Validator,
 } from './conversations';
 export { streamPlugin } from './stream';
+
+export { inlineQueryPlugin, inlineArticle, inlinePhoto } from './inline';
+export type { InlineQuery, InlineResult, InlineAnswer, InlineQueryPluginOptions } from './inline';

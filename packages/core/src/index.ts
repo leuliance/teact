@@ -36,7 +36,14 @@ export type { UseQueryOptions, UseQueryResult, UseMutationOptions, UseMutationRe
 export { createBot, ROUTE_PREFIX } from './runtime';
 export type { CreateBotOptions, CommandContext, CommandDef, ReplyOptions, ReplyButton, ReplyKeyboardButton, WebhookConfig, TeactBot, BotErrorSource } from './runtime';
 
-export { MemorySessionStore } from './runtime';
+export { MemorySessionStore, kvSessionStore } from './runtime';
+export type { KVSessionStoreOptions } from './runtime';
+
+export { rateLimitPlugin, loggerPlugin } from './runtime';
+export type { RateLimitOptions, LoggerOptions } from './runtime';
+
+export { useChatAction, useInterval, useDeepLink } from './runtime';
+export type { ChatAction, DeepLink } from './runtime';
 export { compose, commandMiddleware } from './runtime';
 
 export { createRouter, useNavigate, useParams, useRoute, redirect } from './runtime';

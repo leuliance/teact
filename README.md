@@ -182,7 +182,9 @@ expect(t.lastMessage?.text).toBe("Count: 1");
 - **Events** — subscribe to any Telegram update with `useOn` and `useEventData`
 - **Framework-agnostic Telegram layer** — zero-dep fetch, grammY or GramIO drivers
 - **Smart rendering** — edits in place (including photos/videos), skips no-op edits, answers every button tap, respects Telegram limits
-- **Proactive messages** — `bot.send(chatId, <Message …/>)` for notifications and broadcasts
+- **Proactive messages** — `bot.send(chatId, <Message …/>)` and flood-safe `bot.broadcast(ids, …)`
+- **Batteries-included plugins** — `rateLimitPlugin`, `loggerPlugin`, `authPlugin`, `inlineQueryPlugin`, `kvSessionStore` (Redis / Cloudflare KV), `storagePlugin`
+- **Rich formatting & widgets** — `<Spoiler>`, `<Link>`, `<Mention>`, `<Quote>`, `<Pagination>`, `<Confirm>`, plus `useChatAction`, `useInterval`, `useDeepLink`
 - **Testing utilities** — `createTestBot` (send/click like a user), `MockAdapter`, `renderBot`
 - **CLI** for scaffolding, a dev server with HMR, production builds, and code generation
 
