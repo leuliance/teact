@@ -21,6 +21,14 @@
 - Media messages are edited in place; identical re-renders make no API call; forum topics
   are supported; long callback data is aliased automatically; `useStream` gains `error`/`stop()`.
 - Middleware can `return false` to stop processing.
+- Plugins: `rateLimitPlugin`, `loggerPlugin`, `inlineQueryPlugin` (inline mode), and
+  `kvSessionStore` for durable sessions on Cloudflare KV / Redis / any async KV.
+- `bot.broadcast(ids, content)` — paced under Telegram's flood limit, collects failures.
+- Hooks: `useChatAction` ("typing…"), `useInterval`, `useDeepLink`.
+- UI: `<Underline>`, `<Strike>`, `<Spoiler>`, `<Link>`, `<Mention>`, `<Quote>`, `<Pagination>` +
+  `usePagination`, `<Confirm>`; async `onClick`.
+- i18n locale persists in the session and is auto-detected from the user's Telegram language;
+  `useQuery` caches per chat by default (`scope: 'global'` to share).
 
 ### Breaking changes & migration
 - `grammy` is no longer a dependency of `@teactjs/telegram`. To keep using grammY:

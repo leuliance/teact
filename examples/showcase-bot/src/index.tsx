@@ -1,6 +1,6 @@
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createBot, createRouter, createI18n, redirect, authPlugin } from '@teactjs/core';
+import { createBot, createRouter, createI18n, redirect, authPlugin, rateLimitPlugin } from '@teactjs/core';
 import type { Middleware, CommandDef } from '@teactjs/core';
 import { TelegramAdapter, conversationsPlugin } from '@teactjs/telegram';
 import { storagePlugin } from '@teactjs/storage';
@@ -143,6 +143,7 @@ export const bot = createBot({
   plugins: [
     storagePlugin({ driver: 'file', path: '.teact/storage.json' }),
     conversationsPlugin(),
+    rateLimitPlugin({ limit: 5, windowMs: 2000, onLimited: () => 'Easy there! ⏳' }),
     authPlugin({ admins: [] }),
     analyticsPlugin({ verbose: true }),
   ],
