@@ -14,6 +14,7 @@ export type {
   SessionStore,
   Middleware,
   Adapter,
+  PlatformApi,
   WebhookConfig,
   ListenOptions,
 } from './types';

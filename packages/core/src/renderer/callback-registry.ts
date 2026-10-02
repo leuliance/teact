@@ -1,6 +1,7 @@
 import React from 'react';
 
-export type CallbackHandler = () => void;
+/** A button click handler. Async handlers are awaited before the update finishes. */
+export type CallbackHandler = () => void | Promise<void>;
 export type CallbackMap = Map<string, CallbackHandler>;
 
 /**

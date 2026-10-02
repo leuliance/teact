@@ -11,10 +11,11 @@ export type TelegramEvent =
   | 'message' | 'text' | 'photo' | 'video' | 'audio' | 'voice'
   | 'document' | 'sticker' | 'contact' | 'location' | 'venue'
   | 'animation' | 'video_note' | 'poll' | 'poll_answer'
-  | 'callback_query' | 'inline_query'
+  | 'callback_query' | 'inline_query' | 'chosen_inline_result'
   | 'new_chat_members' | 'left_chat_member'
   | 'dice' | 'game' | 'web_app_data'
-  | 'successful_payment' | 'pre_checkout_query';
+  | 'successful_payment' | 'pre_checkout_query' | 'shipping_query'
+  | 'edited_message' | 'my_chat_member' | 'chat_member' | 'message_reaction';
 
 /** Context object passed to `useOn` handlers with navigation and reply helpers. */
 export interface EventContext {
@@ -23,13 +24,15 @@ export interface EventContext {
   userId: string;
   user: { id: string; username?: string; firstName?: string };
   reply: (text: string) => Promise<void>;
+  /** The raw platform update. */
   raw: any;
 }
 
 type EventHandler = (data: any, ctx: EventContext) => void;
 
 function extractEventData(event: TelegramEvent, raw: any): any {
-  const msg = raw?.message;
+  if (!raw || typeof raw !== 'object') return null;
+  const msg = raw.message;
   switch (event) {
     case 'message':          return msg ?? null;
     case 'text':             return msg?.text ? msg : null;
@@ -44,18 +47,27 @@ function extractEventData(event: TelegramEvent, raw: any): any {
     case 'venue':            return msg?.venue ?? null;
     case 'animation':        return msg?.animation ?? null;
     case 'video_note':       return msg?.video_note ?? null;
-    case 'poll':             return msg?.poll ?? raw?.poll ?? null;
-    case 'poll_answer':      return raw?.poll_answer ?? null;
-    case 'callback_query':   return raw?.callbackQuery ?? null;
-    case 'inline_query':     return raw?.inlineQuery ?? null;
+    case 'poll':             return msg?.poll ?? raw.poll ?? null;
     case 'new_chat_members': return msg?.new_chat_members ?? null;
     case 'left_chat_member': return msg?.left_chat_member ?? null;
     case 'dice':             return msg?.dice ?? null;
     case 'game':             return msg?.game ?? null;
-    case 'web_app_data':         return msg?.web_app_data ?? null;
-    case 'successful_payment':   return msg?.successful_payment ?? null;
-    case 'pre_checkout_query':   return raw?.preCheckoutQuery ?? raw?.update?.pre_checkout_query ?? null;
-    default:                     return null;
+    case 'web_app_data':     return msg?.web_app_data ?? null;
+    case 'successful_payment': return msg?.successful_payment ?? null;
+    // Update-level kinds map 1:1 onto the raw update's fields.
+    case 'poll_answer':
+    case 'callback_query':
+    case 'inline_query':
+    case 'chosen_inline_result':
+    case 'pre_checkout_query':
+    case 'shipping_query':
+    case 'edited_message':
+    case 'my_chat_member':
+    case 'chat_member':
+    case 'message_reaction':
+      return raw[event] ?? null;
+    default:
+      return null;
   }
 }
 
@@ -86,7 +98,7 @@ export function useOn(event: TelegramEvent, handler: EventHandler): void {
 
   useEffect(() => {
     if (!raw) return;
-    const updateId = raw.update?.update_id ?? raw.message?.message_id ?? raw.callbackQuery?.id;
+    const updateId = raw.update_id ?? raw.message?.message_id ?? raw.callback_query?.id;
     if (!updateId) return;
     const key = `${event}:${updateId}`;
     if (lastProcessedRef.current === key) return;
@@ -96,7 +108,14 @@ export function useOn(event: TelegramEvent, handler: EventHandler): void {
       chatId: bot.chatId,
       userId: bot.userId,
       user: bot.user,
-      reply: async (text: string) => { await raw.reply?.(text); },
+      reply: async (text: string) => {
+        if (!bot.api) throw new Error('[teact] reply() needs an adapter that provides an API.');
+        await bot.api.call('sendMessage', {
+          chat_id: bot.chatId,
+          text,
+          ...(bot.threadId != null ? { message_thread_id: bot.threadId } : {}),
+        });
+      },
       raw,
     };
 

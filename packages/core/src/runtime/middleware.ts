@@ -6,7 +6,8 @@ import type { BotContext, Middleware } from '../renderer';
  * Unlike Koa-style middleware, `next()` is called automatically if
  * the middleware function completes without calling it. This means
  * simple middleware (loggers, analytics) don't need to remember to
- * call `next()` — the framework handles it.
+ * call `next()` — the framework handles it. Return `false` to stop
+ * the chain on purpose (e.g. a rate limiter dropping an update).
  *
  * @param middlewares - Ordered list of middleware to chain.
  * @returns A single middleware that runs the chain in order.
@@ -15,9 +16,12 @@ import type { BotContext, Middleware } from '../renderer';
  * const logger: Middleware = async (ctx) => {
  *   console.log(ctx.text);  // no need to call next() — it's automatic
  * };
+ * const banned: Middleware = (ctx) => {
+ *   if (blocklist.has(ctx.userId)) return false;  // stop here
+ * };
  */
 export function compose(middlewares: Middleware[]): Middleware {
-  return async (ctx, next) => {
+  return async (ctx, next): Promise<void> => {
     let index = -1;
     async function dispatch(i: number): Promise<void> {
       if (i <= index) throw new Error('next() called multiple times');
@@ -28,8 +32,8 @@ export function compose(middlewares: Middleware[]): Middleware {
       }
       const fn = middlewares[i];
       let nextCalled = false;
-      await fn(ctx, () => { nextCalled = true; return dispatch(i + 1); });
-      if (!nextCalled) await dispatch(i + 1);
+      const result = await fn(ctx, () => { nextCalled = true; return dispatch(i + 1); });
+      if (!nextCalled && result !== false) await dispatch(i + 1);
     }
     await dispatch(0);
   };
@@ -46,10 +50,10 @@ export function commandMiddleware(
 ): Middleware {
   return async (ctx, next) => {
     if (ctx.text?.startsWith('/')) {
-      const parts = ctx.text.slice(1).split(/\s+/);
+      const parts = ctx.text.trim().slice(1).split(/\s+/);
       const cmd = parts[0].toLowerCase().split('@')[0];
       const handler = commands.get(cmd);
-      if (handler) { await handler(ctx, parts.slice(1)); return; }
+      if (handler) { await handler(ctx, parts.slice(1).filter(Boolean)); return false; }
     }
     await next();
   };

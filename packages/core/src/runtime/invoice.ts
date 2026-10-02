@@ -147,9 +147,13 @@ export function useInvoice(config: InvoiceConfig): InvoiceResult {
   });
 
   const send = useCallback(async () => {
-    const raw = bot.raw;
-    if (!raw?.api) return;
+    const api = bot.api;
     const c = configRef.current;
+    if (!api) {
+      setStatus('failed');
+      setError('No platform API available — useInvoice needs an adapter that provides one (e.g. TelegramAdapter).');
+      return;
+    }
     if (!c.providerToken && c.currency !== 'XTR') {
       setStatus('failed');
       setError('Missing providerToken. Get one from @BotFather → Payments, or use currency "XTR" for Telegram Stars.');
@@ -157,7 +161,15 @@ export function useInvoice(config: InvoiceConfig): InvoiceResult {
     }
     setStatus('pending');
     try {
-      const opts: Record<string, any> = {};
+      const opts: Record<string, any> = {
+        chat_id: bot.chatId,
+        title: c.title,
+        description: c.description,
+        payload: c.payload,
+        currency: c.currency,
+        prices: c.prices.map(p => ({ label: p.label, amount: p.amount })),
+      };
+      if (bot.threadId != null) opts.message_thread_id = bot.threadId;
       if (c.providerToken) opts.provider_token = c.providerToken;
       if (c.photoUrl) opts.photo_url = c.photoUrl;
       if (c.photoWidth) opts.photo_width = c.photoWidth;
@@ -175,19 +187,14 @@ export function useInvoice(config: InvoiceConfig): InvoiceResult {
       if (c.startParameter) opts.start_parameter = c.startParameter;
       if (c.providerData) opts.provider_data = c.providerData;
       if (c.protectContent) opts.protect_content = true;
-      await raw.api.sendInvoice(
-        Number(bot.chatId), c.title, c.description, c.payload,
-        c.currency,
-        c.prices.map(p => ({ label: p.label, amount: p.amount })),
-        opts,
-      );
+      await api.call('sendInvoice', opts);
     } catch (err: any) {
       const msg = err?.message ?? err?.description ?? String(err);
       setStatus('failed');
       setError(msg);
       console.error('[teact] Invoice send failed:', err);
     }
-  }, [bot.chatId, bot.raw]);
+  }, [bot.chatId, bot.threadId, bot.api]);
 
   return { send, status, receipt, error };
 }

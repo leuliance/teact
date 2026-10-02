@@ -168,7 +168,7 @@ describe('useEventData', () => {
     }
 
     const cbQuery = { id: 'cb1', data: 'action' };
-    const botCtx = makeBotCtx({ raw: { callbackQuery: cbQuery } });
+    const botCtx = makeBotCtx({ raw: { update_id: 7, callback_query: cbQuery } });
     let output: OutputNode | null = null;
     const root = createRoot((tree) => { output = tree; });
     root.render(wrapWithProviders(React.createElement(TestComp), botCtx));
