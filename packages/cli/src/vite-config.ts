@@ -12,10 +12,10 @@ const TEACT_PACKAGES = [
 ];
 
 const EXTERNAL_DEPS = [
+  // Optional Telegram drivers — only loaded when the app imports
+  // @teactjs/telegram/grammy or @teactjs/telegram/gramio.
   'grammy',
-  '@grammyjs/conversations',
-  '@grammyjs/stream',
-  '@grammyjs/auto-retry',
+  'gramio',
   '@tanstack/react-query',
 ];
 
