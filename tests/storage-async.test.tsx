@@ -61,6 +61,18 @@ describe('CachedDriver', () => {
     await c.flush(); // error consumed
   });
 
+  test('clear() only removes hydrated prefixes, never the whole backend', async () => {
+    const backend = new MemoryAsyncDriver();
+    await backend.set('mock:1:a', 1);
+    await backend.set('mock:2:a', 2);
+    const c = new CachedDriver(backend);
+    await c.hydrate('mock:1:');
+    c.clear();
+    await c.flush();
+    expect(await backend.keys()).toEqual(['mock:2:a']);
+    expect(c.get<any>('mock:1:a')).toBeUndefined();
+  });
+
   test('isAsyncDriver tells drivers apart', () => {
     expect(isAsyncDriver(new MemoryAsyncDriver())).toBe(true);
     expect(isAsyncDriver(new MemoryDriver())).toBe(false);
