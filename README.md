@@ -162,9 +162,16 @@ bot.start();
 | [`@teactjs/ui`](./packages/ui) | UI components (`Message`, `Button`, `Photo`, `Poll`, …) — start here for imports |
 | [`@teactjs/telegram`](./packages/telegram) | Telegram adapter powered by grammY — polling and webhook support, plus `conversationsPlugin`/`streamPlugin` |
 | [`@teactjs/plugin-sdk`](./packages/plugin-sdk) | `definePlugin` — author your own plugins with services/DI, providers, and lifecycle |
-| [`@teactjs/storage`](./packages/storage) | Persistent storage plugin with file and memory drivers (bring your own for KV/Redis/DB) |
+| [`@teactjs/storage`](./packages/storage) | Persistent storage plugin — memory/file drivers, async database drivers, `createSessionStore` |
+| [`@teactjs/redis`](./packages/redis) | Redis storage + sessions — ioredis, node-redis, Bun Redis, Upstash (edge) |
+| [`@teactjs/postgres`](./packages/postgres) | Postgres storage + sessions — pg, postgres.js, Neon (edge), PGlite |
+| [`@teactjs/sqlite`](./packages/sqlite) | SQLite storage + sessions — bun:sqlite, better-sqlite3 (synchronous) |
+| [`@teactjs/mongodb`](./packages/mongodb) | MongoDB storage + sessions with TTL indexes |
+| [`@teactjs/cloudflare`](./packages/cloudflare) | Cloudflare KV and D1 storage + sessions for Workers |
+| [`@teactjs/i18n`](./packages/i18n) | `i18nPlugin`, UI strings for 19 locales, `<LanguagePicker />`, Intl formatting |
+| [`@teactjs/plugins`](./packages/plugins) | Rate limit, logger, maintenance, chat filter, ignore-old, error reporter, analytics, feature flags, broadcast |
 | [`@teactjs/testing`](./packages/testing) | Test utilities — `MockAdapter`, `renderBot` |
-| [`@teactjs/cli`](./packages/cli) | CLI (`teact`) — `dev`, `build`, `start`, `deploy`, `webhook`, `generate`, `doctor`, `routes`, `typecheck` |
+| [`@teactjs/cli`](./packages/cli) | CLI (`teact`) — `dev`, `build`, `start`, `add`, `deploy`, `webhook`, `generate`, `doctor`, `routes`, `typecheck` |
 | [`create-teact`](./packages/create-teact) | Interactive project scaffolder (`bun create teact`) |
 
 > The 0.2.0 rewrite folded the old `@teactjs/react`, `@teactjs/runtime`, and `@teactjs/renderer`
