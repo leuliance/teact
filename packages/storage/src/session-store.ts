@@ -29,7 +29,10 @@ export function createSessionStore(driver: AnyStorageDriver, opts: CreateSession
   }
   return {
     async get(key) { return driver.get<SessionData>(prefix + key) ?? null; },
-    async set(key, data) { driver.set(prefix + key, data); },
+    // Sync drivers that accept a third argument (e.g. SqliteDriver) get the ttl too.
+    async set(key, data) {
+      (driver.set as (k: string, v: unknown, o?: { ttl?: number }) => void)(prefix + key, data, ttl ? { ttl } : undefined);
+    },
     async delete(key) { driver.delete(prefix + key); },
   };
 }

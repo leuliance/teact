@@ -1,0 +1,36 @@
+{
+  "name": "@teactjs/sqlite",
+  "version": "0.2.0-alpha.1",
+  "description": "SQLite storage driver, session store and plugin for Teact — bun:sqlite and better-sqlite3",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/sqlite/src/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/sqlite/src/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "bun build ./src/index.ts --outdir ./dist --format esm --target bun --external react --external react/jsx-runtime --external react/jsx-dev-runtime --external @teactjs/core --external @teactjs/storage --external @teactjs/plugin-sdk --external bun:sqlite --external better-sqlite3 && tsc --emitDeclarationOnly --outDir dist --declaration --project tsconfig.build.json"
+  },
+  "dependencies": {},
+  "peerDependencies": {
+    "react": "^18.0.0 || ^19.0.0",
+    "@teactjs/core": "^0.2.0-alpha.1",
+    "@teactjs/storage": "^0.2.0-alpha.1",
+    "@teactjs/plugin-sdk": "^0.2.0-alpha.1",
+    "better-sqlite3": ">=9.0.0"
+  },
+  "peerDependenciesMeta": {
+    "better-sqlite3": {
+      "optional": true
+    }
+  },
+  "keywords": ["teact", "telegram", "bot", "sqlite", "storage", "session"],
+  "license": "MIT"
+}
