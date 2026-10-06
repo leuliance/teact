@@ -1,0 +1,53 @@
+{
+  "name": "@teactjs/redis",
+  "version": "0.2.0-alpha.1",
+  "description": "Redis storage driver, session store and plugin for Teact \u2014 ioredis, node-redis, Bun RedisClient and Upstash (edge)",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/redis/src/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/redis/src/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "keywords": [
+    "teact",
+    "telegram",
+    "bot",
+    "storage",
+    "redis",
+    "ioredis",
+    "upstash",
+    "bun"
+  ],
+  "scripts": {
+    "build": "bun build ./src/index.ts --outdir ./dist --format esm --target bun --external react --external react/jsx-runtime --external react/jsx-dev-runtime --external @teactjs/core --external @teactjs/storage --external @teactjs/plugin-sdk --external ioredis --external redis --external @upstash/redis && tsc --emitDeclarationOnly --outDir dist --declaration --project tsconfig.build.json"
+  },
+  "dependencies": {},
+  "peerDependencies": {
+    "react": "^18.0.0 || ^19.0.0",
+    "@teactjs/core": "^0.2.0-alpha.1",
+    "@teactjs/storage": "^0.2.0-alpha.1",
+    "@teactjs/plugin-sdk": "^0.2.0-alpha.1",
+    "ioredis": "^5.0.0",
+    "redis": "^4.0.0 || ^5.0.0",
+    "@upstash/redis": "^1.0.0"
+  },
+  "peerDependenciesMeta": {
+    "ioredis": {
+      "optional": true
+    },
+    "redis": {
+      "optional": true
+    },
+    "@upstash/redis": {
+      "optional": true
+    }
+  },
+  "license": "MIT"
+}

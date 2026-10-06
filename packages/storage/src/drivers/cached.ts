@@ -12,11 +12,13 @@ export class CachedDriver implements StorageDriver {
   private cache = new Map<string, unknown>();
   private pending = new Set<Promise<void>>();
   private errors: unknown[] = [];
+  private prefixes = new Set<string>();
 
   constructor(readonly backend: AsyncStorageDriver) {}
 
   /** Replace the cached entries under `prefix` with fresh ones from the backend. */
   async hydrate(prefix: string): Promise<void> {
+    this.prefixes.add(prefix);
     const entries = this.backend.entries
       ? await this.backend.entries(prefix)
       : await loadEntries(this.backend, prefix);
@@ -61,9 +63,15 @@ export class CachedDriver implements StorageDriver {
     return this.cache.has(key);
   }
 
+  /**
+   * Clear every hydrated prefix (the current chat's keys plus any `preload` prefixes).
+   * Never wipes the whole backend — other chats' data lives there too.
+   */
   clear(): void {
-    this.cache.clear();
-    this.track(this.backend.clear());
+    for (const prefix of this.prefixes) {
+      for (const key of [...this.cache.keys()]) if (key.startsWith(prefix)) this.cache.delete(key);
+      this.track(this.backend.clear(prefix));
+    }
   }
 
   /** Keys currently in the cache (only hydrated prefixes). */
