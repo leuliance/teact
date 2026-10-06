@@ -1,0 +1,32 @@
+import type { TeactMessages } from './en';
+
+/** Built-in Italian strings. */
+export const it: TeactMessages = {
+  yes: "Sì",
+  no: "No",
+  ok: "OK",
+  back: "Indietro",
+  next: "Avanti",
+  previous: "Precedente",
+  cancel: "Annulla",
+  done: "Fatto",
+  confirm: "Conferma",
+  close: "Chiudi",
+  save: "Salva",
+  edit: "Modifica",
+  delete: "Elimina",
+  skip: "Salta",
+  loading: "Caricamento…",
+  error: "Qualcosa è andato storto.",
+  tryAgain: "Riprova",
+  menu: "Menu",
+  settings: "Impostazioni",
+  language: "Lingua",
+  help: "Aiuto",
+  search: "Cerca",
+  pageOf: "Pagina {{page}} di {{total}}",
+  selectLanguage: "Scegli la tua lingua",
+  languageChanged: "Lingua impostata su {{language}}.",
+  noResults: "Nessun risultato.",
+  areYouSure: "Sei sicuro?",
+};

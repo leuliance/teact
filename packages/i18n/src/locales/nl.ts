@@ -1,0 +1,32 @@
+import type { TeactMessages } from './en';
+
+/** Built-in Dutch strings. */
+export const nl: TeactMessages = {
+  yes: "Ja",
+  no: "Nee",
+  ok: "OK",
+  back: "Terug",
+  next: "Volgende",
+  previous: "Vorige",
+  cancel: "Annuleren",
+  done: "Klaar",
+  confirm: "Bevestigen",
+  close: "Sluiten",
+  save: "Opslaan",
+  edit: "Bewerken",
+  delete: "Verwijderen",
+  skip: "Overslaan",
+  loading: "Laden…",
+  error: "Er is iets misgegaan.",
+  tryAgain: "Opnieuw proberen",
+  menu: "Menu",
+  settings: "Instellingen",
+  language: "Taal",
+  help: "Help",
+  search: "Zoeken",
+  pageOf: "Pagina {{page}} van {{total}}",
+  selectLanguage: "Kies je taal",
+  languageChanged: "Taal gewijzigd naar {{language}}.",
+  noResults: "Niets gevonden.",
+  areYouSure: "Weet je het zeker?",
+};

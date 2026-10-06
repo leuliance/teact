@@ -1,0 +1,32 @@
+import type { TeactMessages } from './en';
+
+/** Built-in Hindi strings. */
+export const hi: TeactMessages = {
+  yes: "हाँ",
+  no: "नहीं",
+  ok: "ठीक है",
+  back: "वापस",
+  next: "आगे",
+  previous: "पिछला",
+  cancel: "रद्द करें",
+  done: "हो गया",
+  confirm: "पुष्टि करें",
+  close: "बंद करें",
+  save: "सहेजें",
+  edit: "संपादित करें",
+  delete: "हटाएँ",
+  skip: "छोड़ें",
+  loading: "लोड हो रहा है…",
+  error: "कुछ गलत हो गया।",
+  tryAgain: "फिर से कोशिश करें",
+  menu: "मेनू",
+  settings: "सेटिंग्स",
+  language: "भाषा",
+  help: "सहायता",
+  search: "खोजें",
+  pageOf: "पृष्ठ {{page}} / {{total}}",
+  selectLanguage: "अपनी भाषा चुनें",
+  languageChanged: "भाषा बदलकर {{language}} कर दी गई है।",
+  noResults: "कुछ नहीं मिला।",
+  areYouSure: "क्या आपको यकीन है?",
+};

@@ -1,0 +1,32 @@
+import type { TeactMessages } from './en';
+
+/** Built-in French strings. */
+export const fr: TeactMessages = {
+  yes: "Oui",
+  no: "Non",
+  ok: "OK",
+  back: "Retour",
+  next: "Suivant",
+  previous: "Précédent",
+  cancel: "Annuler",
+  done: "Terminé",
+  confirm: "Confirmer",
+  close: "Fermer",
+  save: "Enregistrer",
+  edit: "Modifier",
+  delete: "Supprimer",
+  skip: "Passer",
+  loading: "Chargement…",
+  error: "Une erreur s’est produite.",
+  tryAgain: "Réessayer",
+  menu: "Menu",
+  settings: "Paramètres",
+  language: "Langue",
+  help: "Aide",
+  search: "Rechercher",
+  pageOf: "Page {{page}} sur {{total}}",
+  selectLanguage: "Choisissez votre langue",
+  languageChanged: "Langue définie sur {{language}}.",
+  noResults: "Aucun résultat.",
+  areYouSure: "Êtes-vous sûr ?",
+};

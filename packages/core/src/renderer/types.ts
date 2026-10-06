@@ -11,6 +11,8 @@ export interface User {
   firstName?: string;
   lastName?: string;
   isBot?: boolean;
+  /** IETF language tag reported by the platform (Telegram `language_code`), e.g. `en` or `pt-br`. */
+  languageCode?: string;
   platform: string;
 }
 

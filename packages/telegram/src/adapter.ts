@@ -494,6 +494,7 @@ export class TelegramAdapter implements Adapter {
         firstName: from?.first_name,
         lastName: from?.last_name,
         isBot: from?.is_bot,
+        languageCode: from?.language_code,
         platform: 'telegram',
       },
       platform: 'telegram',

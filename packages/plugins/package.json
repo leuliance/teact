@@ -1,0 +1,33 @@
+{
+  "name": "@teactjs/plugins",
+  "version": "0.2.0-alpha.1",
+  "description": "Production plugins for Teact — rate limiting, logging, maintenance mode, chat filters, error reporting, analytics, feature flags and broadcasting",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/plugins/src/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/plugins/src/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "bun build ./src/index.ts --outdir ./dist --format esm --target bun --external react --external react/jsx-runtime --external react/jsx-dev-runtime --external @teactjs/core --external @teactjs/storage && tsc --emitDeclarationOnly --outDir dist --declaration --project tsconfig.build.json"
+  },
+  "dependencies": {},
+  "peerDependencies": {
+    "react": "^18.0.0 || ^19.0.0",
+    "@teactjs/core": "^0.2.0-alpha.1",
+    "@teactjs/storage": "^0.2.0-alpha.1"
+  },
+  "peerDependenciesMeta": {
+    "@teactjs/storage": {
+      "optional": true
+    }
+  },
+  "license": "MIT"
+}

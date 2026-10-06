@@ -1,0 +1,32 @@
+import type { TeactMessages } from './en';
+
+/** Built-in Polish strings. */
+export const pl: TeactMessages = {
+  yes: "Tak",
+  no: "Nie",
+  ok: "OK",
+  back: "Wstecz",
+  next: "Dalej",
+  previous: "Poprzednia",
+  cancel: "Anuluj",
+  done: "Gotowe",
+  confirm: "Potwierdź",
+  close: "Zamknij",
+  save: "Zapisz",
+  edit: "Edytuj",
+  delete: "Usuń",
+  skip: "Pomiń",
+  loading: "Ładowanie…",
+  error: "Coś poszło nie tak.",
+  tryAgain: "Spróbuj ponownie",
+  menu: "Menu",
+  settings: "Ustawienia",
+  language: "Język",
+  help: "Pomoc",
+  search: "Szukaj",
+  pageOf: "Strona {{page}} z {{total}}",
+  selectLanguage: "Wybierz język",
+  languageChanged: "Zmieniono język na: {{language}}.",
+  noResults: "Nic nie znaleziono.",
+  areYouSure: "Czy na pewno?",
+};

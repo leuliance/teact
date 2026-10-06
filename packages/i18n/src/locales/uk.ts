@@ -1,0 +1,32 @@
+import type { TeactMessages } from './en';
+
+/** Built-in Ukrainian strings. */
+export const uk: TeactMessages = {
+  yes: "Так",
+  no: "Ні",
+  ok: "OK",
+  back: "Назад",
+  next: "Далі",
+  previous: "Попередня",
+  cancel: "Скасувати",
+  done: "Готово",
+  confirm: "Підтвердити",
+  close: "Закрити",
+  save: "Зберегти",
+  edit: "Редагувати",
+  delete: "Видалити",
+  skip: "Пропустити",
+  loading: "Завантаження…",
+  error: "Щось пішло не так.",
+  tryAgain: "Спробувати ще раз",
+  menu: "Меню",
+  settings: "Налаштування",
+  language: "Мова",
+  help: "Довідка",
+  search: "Пошук",
+  pageOf: "Сторінка {{page}} з {{total}}",
+  selectLanguage: "Оберіть мову",
+  languageChanged: "Мову змінено: {{language}}.",
+  noResults: "Нічого не знайдено.",
+  areYouSure: "Ви впевнені?",
+};

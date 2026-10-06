@@ -1,0 +1,32 @@
+import type { TeactMessages } from './en';
+
+/** Built-in Indonesian strings. */
+export const id: TeactMessages = {
+  yes: "Ya",
+  no: "Tidak",
+  ok: "OK",
+  back: "Kembali",
+  next: "Berikutnya",
+  previous: "Sebelumnya",
+  cancel: "Batal",
+  done: "Selesai",
+  confirm: "Konfirmasi",
+  close: "Tutup",
+  save: "Simpan",
+  edit: "Ubah",
+  delete: "Hapus",
+  skip: "Lewati",
+  loading: "Memuat…",
+  error: "Terjadi kesalahan.",
+  tryAgain: "Coba lagi",
+  menu: "Menu",
+  settings: "Pengaturan",
+  language: "Bahasa",
+  help: "Bantuan",
+  search: "Cari",
+  pageOf: "Halaman {{page}} dari {{total}}",
+  selectLanguage: "Pilih bahasa Anda",
+  languageChanged: "Bahasa diubah ke {{language}}.",
+  noResults: "Tidak ada hasil.",
+  areYouSure: "Apakah Anda yakin?",
+};

@@ -3,7 +3,7 @@ export type { CreateBotOptions, CommandContext, CommandDef, ReplyOptions, ReplyB
 
 export { MemorySessionStore } from './session';
 
-export { compose, commandMiddleware } from './middleware';
+export { compose, commandMiddleware, halt, isHalted } from './middleware';
 
 export { createRouter, useNavigate, useParams, useRoute, redirect } from './router';
 export type { RouterConfig, NavigateOptions, NavigateMode, BeforeLoadContext, RouteGuard, GuardRedirect, GuardComponent, GuardReply, GuardReplyOptions, GuardButton, RouteValue, CreateRouterOptions, PathParams, RouteCommand, ResolvedRouteCommand } from './router';
@@ -61,8 +61,17 @@ export type { ChatInfo, TelegramAccess, MediaSenders } from './media-hooks';
 export { useOn, useEventData } from './event-hooks';
 export type { TelegramEvent, EventContext } from './event-hooks';
 
-export { createI18n, useLocale } from './i18n';
-export type { I18nConfig } from './i18n';
+export {
+  createI18n,
+  useLocale,
+  detectLocale,
+  normalizeLocale,
+  getUserLanguageCode,
+  localeCallbackData,
+  LOCALE_SESSION_KEY,
+  LOCALE_CALLBACK_PREFIX,
+} from './i18n';
+export type { I18nConfig, I18nInstance, I18nLocaleResource } from './i18n';
 
 export { useInvoice } from './invoice';
 export type { InvoiceConfig, InvoiceResult, LabeledPrice, SuccessfulPayment } from './invoice';

@@ -1,0 +1,32 @@
+import type { TeactMessages } from './en';
+
+/** Built-in Portuguese (Brazilian wording) strings. */
+export const pt: TeactMessages = {
+  yes: "Sim",
+  no: "Não",
+  ok: "OK",
+  back: "Voltar",
+  next: "Próximo",
+  previous: "Anterior",
+  cancel: "Cancelar",
+  done: "Concluído",
+  confirm: "Confirmar",
+  close: "Fechar",
+  save: "Salvar",
+  edit: "Editar",
+  delete: "Excluir",
+  skip: "Pular",
+  loading: "Carregando…",
+  error: "Algo deu errado.",
+  tryAgain: "Tentar novamente",
+  menu: "Menu",
+  settings: "Configurações",
+  language: "Idioma",
+  help: "Ajuda",
+  search: "Buscar",
+  pageOf: "Página {{page}} de {{total}}",
+  selectLanguage: "Escolha seu idioma",
+  languageChanged: "Idioma alterado para {{language}}.",
+  noResults: "Nada encontrado.",
+  areYouSure: "Tem certeza?",
+};

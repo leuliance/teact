@@ -359,6 +359,7 @@ export function createBot(options: CreateBotOptions) {
     });
     try {
       let commandInfo: CommandInfo | undefined;
+      let finalStep: (() => Promise<void>) | undefined;
 
       if (botCtx.callbackData?.startsWith('__convo:')) {
         console.warn(
@@ -381,20 +382,24 @@ export function createBot(options: CreateBotOptions) {
           resetChatRoot(botCtx);
 
           if (cmdDef.handler != null) {
-            if (typeof cmdDef.handler === 'string') {
-              await adapter.send(Number(botCtx.chatId), buildMessageNode(cmdDef.handler));
-            } else {
-              await cmdDef.handler(buildCommandContext(botCtx, args));
+            const handler = cmdDef.handler;
+            // Handler commands still go through middleware (rate limits, maintenance,
+            // logging, error reporting…); the handler replaces the render step.
+            finalStep = async () => {
+              if (typeof handler === 'string') {
+                await adapter.send(Number(botCtx.chatId), buildMessageNode(handler));
+              } else {
+                await handler(buildCommandContext(botCtx, args));
+              }
+            };
+          } else {
+            let initialRoute: string | undefined;
+            if (cmdDef.deepLink && args.length > 0) {
+              initialRoute = cmdDef.deepLink(args);
             }
-            return;
+            initialRoute ??= cmdDef.route;
+            commandInfo = { name: cmdName, args, initialRoute };
           }
-
-          let initialRoute: string | undefined;
-          if (cmdDef.deepLink && args.length > 0) {
-            initialRoute = cmdDef.deepLink(args);
-          }
-          initialRoute ??= cmdDef.route;
-          commandInfo = { name: cmdName, args, initialRoute };
         }
       }
 
@@ -402,7 +407,7 @@ export function createBot(options: CreateBotOptions) {
       const pipeline = compose([
         ...pluginMiddleware,
         ...userMiddleware,
-        async (ctx) => renderForChat(ctx, commandInfo),
+        async (ctx) => (finalStep ? finalStep() : renderForChat(ctx, commandInfo)),
       ]);
       await pipeline(botCtx, async () => {});
       debugLog(`update processed in ${Date.now() - updateStart}ms`);

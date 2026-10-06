@@ -1,0 +1,32 @@
+import type { TeactMessages } from './en';
+
+/** Built-in Russian strings. */
+export const ru: TeactMessages = {
+  yes: "Да",
+  no: "Нет",
+  ok: "ОК",
+  back: "Назад",
+  next: "Далее",
+  previous: "Предыдущая",
+  cancel: "Отмена",
+  done: "Готово",
+  confirm: "Подтвердить",
+  close: "Закрыть",
+  save: "Сохранить",
+  edit: "Изменить",
+  delete: "Удалить",
+  skip: "Пропустить",
+  loading: "Загрузка…",
+  error: "Что-то пошло не так.",
+  tryAgain: "Повторить попытку",
+  menu: "Меню",
+  settings: "Настройки",
+  language: "Язык",
+  help: "Помощь",
+  search: "Поиск",
+  pageOf: "Страница {{page}} из {{total}}",
+  selectLanguage: "Выберите язык",
+  languageChanged: "Язык изменён: {{language}}.",
+  noResults: "Ничего не найдено.",
+  areYouSure: "Вы уверены?",
+};

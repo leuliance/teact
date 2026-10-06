@@ -1,0 +1,32 @@
+import type { TeactMessages } from './en';
+
+/** Built-in Swahili strings. */
+export const sw: TeactMessages = {
+  yes: "Ndiyo",
+  no: "Hapana",
+  ok: "Sawa",
+  back: "Rudi",
+  next: "Inayofuata",
+  previous: "Iliyotangulia",
+  cancel: "Ghairi",
+  done: "Imekamilika",
+  confirm: "Thibitisha",
+  close: "Funga",
+  save: "Hifadhi",
+  edit: "Hariri",
+  delete: "Futa",
+  skip: "Ruka",
+  loading: "Inapakia…",
+  error: "Hitilafu imetokea.",
+  tryAgain: "Jaribu tena",
+  menu: "Menyu",
+  settings: "Mipangilio",
+  language: "Lugha",
+  help: "Msaada",
+  search: "Tafuta",
+  pageOf: "Ukurasa {{page}} kati ya {{total}}",
+  selectLanguage: "Chagua lugha yako",
+  languageChanged: "Lugha imebadilishwa kuwa {{language}}.",
+  noResults: "Hakuna kilichopatikana.",
+  areYouSure: "Una uhakika?",
+};
