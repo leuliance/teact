@@ -9,6 +9,13 @@ const TEACT_PACKAGES = [
   '@teactjs/telegram',
   '@teactjs/storage',
   '@teactjs/testing',
+  '@teactjs/redis',
+  '@teactjs/postgres',
+  '@teactjs/sqlite',
+  '@teactjs/mongodb',
+  '@teactjs/cloudflare',
+  '@teactjs/i18n',
+  '@teactjs/plugins',
 ];
 
 const EXTERNAL_DEPS = [
