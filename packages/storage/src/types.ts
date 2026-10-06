@@ -60,7 +60,7 @@ export interface StoragePluginOptions {
    *
    * // Custom driver (community or your own)
    * import { RedisDriver } from '@teactjs/redis';
-   * storagePlugin({ driver: new RedisDriver({ url: 'redis://localhost:6379' }) })
+   * storagePlugin({ driver: new RedisDriver({ client: new Redis(process.env.REDIS_URL) }) })
    */
   driver?: 'memory' | 'file' | StorageDriver | AsyncStorageDriver;
   /** File path (only for built-in 'file' driver). */

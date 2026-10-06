@@ -87,7 +87,7 @@ Flood protection for messages **and** button presses.
 | `prefix` | `'teact:ratelimit:'` | Storage key prefix |
 
 ```ts
-rateLimit({ window: 60_000, limit: 20, key: "chat", storage: new RedisDriver({ url }) })
+rateLimit({ window: 60_000, limit: 20, key: "chat", storage: new RedisDriver({ client: redis }) })
 ```
 
 ## `logger(options)`
@@ -177,7 +177,7 @@ custom events; forwards everything to an optional `track(event)` sink.
 ```ts
 const stats = analytics({
   track: (e) => posthog.capture({ distinctId: e.userId, event: e.name, properties: e.properties }),
-  storage: new RedisDriver({ url }), // optional
+  storage: new RedisDriver({ client: redis }), // optional
 });
 
 await stats.getStats();

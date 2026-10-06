@@ -52,7 +52,7 @@ interface FixedRecord { count: number; notified?: boolean }
  *
  * // Shared across instances (horizontal scaling):
  * import { RedisDriver } from '@teactjs/redis';
- * rateLimit({ window: 60_000, limit: 20, key: 'chat', storage: new RedisDriver({ url }) })
+ * rateLimit({ window: 60_000, limit: 20, key: 'chat', storage: new RedisDriver({ client: redis }) })
  */
 export function rateLimit(options: RateLimitOptions = {}): TeactPlugin {
   const windowMs = options.window ?? 1000;

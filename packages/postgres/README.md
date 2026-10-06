@@ -121,7 +121,10 @@ createBot({ plugins: [storagePlugin({ driver: pg }), postgresPlugin({ driver: pg
 
 function Leaderboard() {
   const pg = usePostgres();
-  const { data } = useQuery("top", () => pg.query("SELECT name, points FROM scores ORDER BY points DESC LIMIT 10"));
+  const { data } = useQuery({
+    key: "top",
+    fn: () => pg.query("SELECT name, points FROM scores ORDER BY points DESC LIMIT 10"),
+  });
   // ...
 }
 ```
