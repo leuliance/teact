@@ -10,5 +10,10 @@ export {
   TEMPLATE_SELECT_OPTIONS,
   FEATURE_SELECT_OPTIONS,
   SHOWCASE_DEFAULT_FEATURES,
+  DB_SELECT_OPTIONS,
+  withDatabase,
+  databaseOf,
+  normalizeDatabase,
   type TemplateId,
+  type DatabaseId,
 } from './generate';

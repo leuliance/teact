@@ -28,10 +28,11 @@ teact create my-bot
 |------|-------------|
 | `-t, --template <type>` | Template: `starter`, `showcase`, `counter`, `empty` (aliases: `router` → `starter`, `full` → `showcase`) |
 | `-f, --features <list>` | Comma-separated features: `storage`, `conversations`, `streaming`, `auth`, `i18n`, `payments` |
+| `--db <driver>` | Storage backend (implies `storage`): `file` (default), `memory`, `sqlite`, `redis`, `postgres` |
 | `--pm <manager>` | Package manager: `bun`, `npm`, `pnpm` |
 | `--no-install` | Skip dependency installation |
 
-In interactive mode (TTY), the CLI prompts for template, feature plugins, and package manager if flags are omitted. Dependency install streams output to your terminal.
+In interactive mode (TTY), the CLI prompts for template, feature plugins, storage backend (when Storage is picked), and package manager if flags are omitted. Dependency install streams output to your terminal.
 
 **Templates:**
 
@@ -42,37 +43,63 @@ In interactive mode (TTY), the CLI prompts for template, feature plugins, and pa
 
 ### `teact dev`
 
-Start the development server with HMR (powered by Vite and vite-node).
+Run the bot and reload it when files change. Under Bun this runs `bun --watch` on your entry
+(the process restarts on each change, so timers, sockets and the previous poller never leak;
+`.env` is loaded by Bun). Projects with a `vite.config.*` (or `--vite`) use vite-node instead.
 
 ```bash
 teact dev
-teact dev -e src/bot.tsx
+teact dev --hot --clear
+teact dev --vite -e src/bot.tsx
 ```
-
-**Flags:**
 
 | Flag | Description |
 |------|-------------|
 | `-e, --entry <file>` | Custom entry file (default: auto-detected) |
+| `--hot` | Reload in-process with `bun --hot` (faster, but module side effects such as intervals or signal listeners survive reloads) |
+| `--vite` | Use the vite-node pipeline |
+| `--clear` | Clear the terminal on every reload |
 
 ### `teact build`
 
-Build the bot for production.
+Bundle the bot into `dist/index.js` with `Bun.build` (Vite with `--vite` or a `vite.config.*`).
+`@teactjs/*` packages are bundled; other dependencies stay external and load from `node_modules`
+(so there is a single React instance).
 
 ```bash
 teact build
-teact build --no-minify --no-sourcemap
+teact build --target node --no-minify --no-sourcemap
+teact build --standalone   # also bundle deps (grammY and DB clients stay external)
 ```
-
-**Flags:**
 
 | Flag | Description |
 |------|-------------|
 | `-e, --entry <file>` | Custom entry file |
+| `--target <bun\|node>` | Runtime to target (default `bun`) |
+| `--standalone` | Bundle dependencies too |
+| `--vite` | Build with Vite |
 | `--no-minify` | Disable minification |
 | `--no-sourcemap` | Disable source maps |
 
-Output is written to `dist/`.
+Run the result with `teact start`.
+
+### `teact add <name...>`
+
+Install an integration with your package manager (detected from the lockfile) and wire it into
+`createBot({ plugins: [...] })` in your entry. If the file has an unexpected shape, nothing is
+edited and the snippet is printed instead. Run `teact add` with no arguments to list everything.
+
+```bash
+teact add redis --client ioredis      # ioredis | redis | upstash | bun
+teact add postgres --client neon      # pg | postgres | neon | pglite
+teact add sqlite rate-limit logger
+teact add mongodb --dry-run
+```
+
+### `teact routes`
+
+List the routes declared with `createRouter()` under `src/`, with their component, co-located
+command and guard (static analysis, nothing is executed). `--json` prints machine-readable output.
 
 ### `teact generate <type> <name>` (alias: `teact g`)
 
@@ -100,7 +127,10 @@ Check your environment and project configuration for common issues.
 teact doctor
 ```
 
-Validates Bun/Node versions, dependencies, TypeScript config, and project structure.
+Runs all checks in parallel: Bun version, project files, `TELEGRAM_BOT_TOKEN` validity (`getMe`,
+3s timeout), webhook status (warns when a webhook would swallow polling updates), `WEBHOOK_SECRET`
+for webhook/edge deploys, duplicate React copies, mismatched `@teactjs/*` versions and missing
+database client libraries. Use `--offline` to skip the network checks. Colors honour `NO_COLOR`.
 
 ## See Also
 

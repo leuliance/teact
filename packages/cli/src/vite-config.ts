@@ -2,7 +2,7 @@ import { resolve, join } from 'path';
 import { existsSync } from 'fs';
 import type { InlineConfig } from 'vite';
 
-const TEACT_PACKAGES = [
+export const TEACT_PACKAGES = [
   '@teactjs/core',
   '@teactjs/ui',
   '@teactjs/plugin-sdk',
@@ -18,7 +18,7 @@ const TEACT_PACKAGES = [
   '@teactjs/plugins',
 ];
 
-const EXTERNAL_DEPS = [
+export const EXTERNAL_DEPS = [
   'grammy',
   '@grammyjs/conversations',
   '@grammyjs/stream',

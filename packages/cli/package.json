@@ -20,7 +20,7 @@
   ],
   "scripts": {
     "prebuild": "rm -rf src/lib && cp -R ../create-teact/lib src/lib",
-    "build": "rm -rf dist && bun build ./src/bin.ts ./src/index.ts --outdir ./dist --format esm --target bun --external vite --external vite-node --external esbuild --external commander --external @clack/prompts && mkdir -p dist/assets && cp -R src/lib/assets/. dist/assets/ && tsc --emitDeclarationOnly --outDir dist --declaration --project tsconfig.build.json",
+    "build": "rm -rf dist && bun build ./src/bin.ts ./src/index.ts --outdir ./dist --splitting --format esm --target bun --external vite --external vite-node --external esbuild --external commander --external @clack/prompts && mkdir -p dist/assets && cp -R src/lib/assets/. dist/assets/ && tsc --emitDeclarationOnly --outDir dist --declaration --project tsconfig.build.json",
     "prepack": "bun run build"
   },
   "dependencies": {

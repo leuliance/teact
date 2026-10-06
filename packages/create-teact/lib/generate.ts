@@ -36,6 +36,83 @@ export const FEATURE_SELECT_OPTIONS = [
   { value: 'payments', label: 'Payments', hint: 'Telegram invoices with useInvoice' },
 ] as const;
 
+export type DatabaseId = 'memory' | 'file' | 'sqlite' | 'redis' | 'postgres';
+
+/** Storage backends offered when the `storage` feature is selected. */
+export const DB_SELECT_OPTIONS = [
+  { value: 'file', label: 'File (JSON)', hint: 'zero setup, survives restarts — default' },
+  { value: 'memory', label: 'Memory', hint: 'lost on restart; good for tests' },
+  { value: 'sqlite', label: 'SQLite', hint: '@teactjs/sqlite (bun:sqlite, no server)' },
+  { value: 'redis', label: 'Redis', hint: '@teactjs/redis + ioredis (REDIS_URL)' },
+  { value: 'postgres', label: 'Postgres', hint: '@teactjs/postgres + postgres.js (DATABASE_URL)' },
+] as const;
+
+const DB_IDS: readonly DatabaseId[] = ['memory', 'file', 'sqlite', 'redis', 'postgres'];
+
+export function normalizeDatabase(db: string | undefined): DatabaseId {
+  return DB_IDS.includes(db as DatabaseId) ? (db as DatabaseId) : 'file';
+}
+
+/**
+ * Select a storage backend. Encoded as a `db:<id>` feature so it flows through every
+ * generator; implies the `storage` feature. `file` (the default) adds nothing.
+ */
+export function withDatabase(features: string[], db: string | undefined): string[] {
+  const id = normalizeDatabase(db);
+  const rest = features.filter((f) => !f.startsWith('db:'));
+  if (!db) return rest;
+  const set = new Set([...rest, 'storage']);
+  if (id !== 'file') set.add(`db:${id}`);
+  return [...set];
+}
+
+/** The storage backend chosen in `features` (`file` when none). */
+export function databaseOf(features: string[]): DatabaseId {
+  return normalizeDatabase(features.find((f) => f.startsWith('db:'))?.slice(3));
+}
+
+interface DbWiring {
+  imports: string[];
+  setup: string[];
+  driver: string;
+  deps: Record<string, string>;
+  env: string[];
+}
+
+function dbWiring(db: DatabaseId): DbWiring {
+  switch (db) {
+    case 'memory':
+      return { imports: [], setup: [], driver: "storagePlugin({ driver: 'memory' })", deps: {}, env: [] };
+    case 'sqlite':
+      return {
+        imports: [`import { SqliteDriver } from '@teactjs/sqlite';`],
+        setup: [`const db = new SqliteDriver({ path: '.teact/bot.db' });`],
+        driver: 'storagePlugin({ driver: db })',
+        deps: { '@teactjs/sqlite': TEACT_PEER_VERSION },
+        env: [],
+      };
+    case 'redis':
+      return {
+        imports: [`import Redis from 'ioredis';`, `import { RedisDriver } from '@teactjs/redis';`],
+        setup: [`const db = new RedisDriver({ client: new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379') });`],
+        driver: 'storagePlugin({ driver: db })',
+        deps: { '@teactjs/redis': TEACT_PEER_VERSION, ioredis: '^5.4.0' },
+        env: ['REDIS_URL=redis://localhost:6379'],
+      };
+    case 'postgres':
+      return {
+        imports: [`import postgres from 'postgres';`, `import { PostgresDriver } from '@teactjs/postgres';`],
+        setup: [`const db = new PostgresDriver({ client: postgres(process.env.DATABASE_URL!) });`],
+        driver: 'storagePlugin({ driver: db })',
+        deps: { '@teactjs/postgres': TEACT_PEER_VERSION, postgres: '^3.4.0' },
+        env: ['DATABASE_URL=postgres://localhost:5432/bot'],
+      };
+    case 'file':
+    default:
+      return { imports: [], setup: [], driver: "storagePlugin({ driver: 'file', path: '.teact/storage.json' })", deps: {}, env: [] };
+  }
+}
+
 /** Always merged into scaffold features (not shown in the plugin picker). */
 const BUILTIN_FEATURES = ['i18n'] as const;
 
@@ -86,6 +163,10 @@ function buildPlugins(features: string[]): {
   coreImports: string[];
   telegramImports: string[];
   storageImports: string[];
+  /** Database client/driver imports (when a non-file storage backend is chosen). */
+  dbImports: string[];
+  /** Statements creating the storage driver, placed before createBot(). */
+  dbSetup: string;
   pluginsBlock: string;
 } {
   const plugins: string[] = [];
@@ -93,9 +174,14 @@ function buildPlugins(features: string[]): {
   const telegramImports: string[] = [];
   const storageImports: string[] = [];
 
+  let dbImports: string[] = [];
+  let dbSetup = '';
   if (hasFeature(features, 'storage')) {
+    const db = dbWiring(databaseOf(features));
     storageImports.push('storagePlugin');
-    plugins.push("storagePlugin({ driver: 'file', path: '.teact/storage.json' })");
+    plugins.push(db.driver);
+    dbImports = db.imports;
+    dbSetup = db.setup.length ? `\n${db.setup.join('\n')}\n` : '';
   }
   if (hasFeature(features, 'conversations')) {
     telegramImports.push('conversationsPlugin');
@@ -113,7 +199,7 @@ function buildPlugins(features: string[]): {
   const pluginsBlock =
     plugins.length > 0 ? `  plugins: [\n    ${plugins.join(',\n    ')},\n  ],\n` : '';
 
-  return { coreImports, telegramImports, storageImports, pluginsBlock };
+  return { coreImports, telegramImports, storageImports, dbImports, dbSetup, pluginsBlock };
 }
 
 export function buildDependencies(template: TemplateId, features: string[]): {
@@ -131,7 +217,10 @@ export function buildDependencies(template: TemplateId, features: string[]): {
   if (template === 'showcase') {
     deps['@tanstack/react-query'] = '^5.95.2';
   }
-  if (hasFeature(features, 'storage')) deps['@teactjs/storage'] = TEACT_PEER_VERSION;
+  if (hasFeature(features, 'storage')) {
+    deps['@teactjs/storage'] = TEACT_PEER_VERSION;
+    Object.assign(deps, dbWiring(databaseOf(features)).deps);
+  }
   // i18next / react-i18next come transitively from @teactjs/core; do not pin them
   // here or two conflicting major versions can break the react-i18next singleton.
   return {
@@ -147,6 +236,9 @@ export function buildDependencies(template: TemplateId, features: string[]): {
 export function buildEnvContent(features: string[]): string {
   let env = 'TELEGRAM_BOT_TOKEN=\n';
   if (hasFeature(features, 'payments')) env += 'PAYMENT_PROVIDER_TOKEN=\n';
+  if (hasFeature(features, 'storage')) {
+    for (const line of dbWiring(databaseOf(features)).env) env += `${line}\n`;
+  }
   return env;
 }
 
@@ -283,6 +375,7 @@ function starterFiles(features: string[]): Record<string, string> {
   if (plugins.storageImports.length > 0) {
     indexSrc += `import { ${plugins.storageImports.join(', ')} } from '@teactjs/storage';\n`;
   }
+  for (const line of plugins.dbImports) indexSrc += `${line}\n`;
   indexSrc += `\n`;
 
   for (const r of routes) {
@@ -294,6 +387,7 @@ function starterFiles(features: string[]): Record<string, string> {
     indexSrc += `\nconst i18n = createI18n({\n  defaultLocale: 'en',\n  resources: {\n    en: { translation: en },\n    am: { translation: am },\n  },\n});\n`;
   }
 
+  indexSrc += plugins.dbSetup;
   indexSrc += `\nconst loggerMiddleware: Middleware = async (ctx) => {\n  console.log(\`[middleware] \${ctx.chatId} | \${ctx.text ?? ctx.callbackData ?? '—'}\`);\n};\n`;
 
   indexSrc += `\nconst router = createRouter({\n`;
@@ -555,6 +649,7 @@ function buildShowcaseIndex(features: string[]): string {
   if (plugins.storageImports.length > 0) {
     imports.push(`import { ${plugins.storageImports.join(', ')} } from '@teactjs/storage';`);
   }
+  imports.push(...plugins.dbImports);
   imports.push(`import { commands } from './commands';`);
   imports.push(
     ``,
@@ -641,7 +736,7 @@ const i18n = createI18n({
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 60_000, retry: 1 } },
 });
-${i18nBlock}
+${i18nBlock}${plugins.dbSetup}
 const loggerMiddleware: Middleware = async (ctx) => {
   console.log(\`[middleware] \${ctx.chatId} | \${ctx.text ?? ctx.callbackData ?? '—'}\`);
 };

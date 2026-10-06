@@ -9,6 +9,9 @@ import {
   normalizeTemplate,
   TEMPLATE_SELECT_OPTIONS,
   FEATURE_SELECT_OPTIONS,
+  DB_SELECT_OPTIONS,
+  withDatabase,
+  normalizeDatabase,
   type TemplateId,
 } from '../lib';
 
@@ -17,6 +20,7 @@ interface CreateOptions {
   install?: boolean;
   pm?: string;
   features?: string;
+  db?: string;
 }
 
 const isTTY = process.stdin.isTTY;
@@ -63,6 +67,16 @@ export async function createCommand(name: string, opts: CreateOptions): Promise<
     if (p.isCancel(f)) { p.cancel('Cancelled'); process.exit(0); }
     features = f as string[];
 
+    if (features.includes('storage') && !opts.db) {
+      const db = await p.select({
+        message: 'Storage backend',
+        options: [...DB_SELECT_OPTIONS],
+        initialValue: 'file',
+      });
+      if (p.isCancel(db)) { p.cancel('Cancelled'); process.exit(0); }
+      features = withDatabase(features, db as string);
+    }
+
     const m = await p.select({
       message: 'Package manager',
       options: [
@@ -79,6 +93,14 @@ export async function createCommand(name: string, opts: CreateOptions): Promise<
       ? opts.features.split(',').map((s) => s.trim()).filter(Boolean)
       : defaultFeaturesForTemplate(template);
     pm = opts.pm ?? 'bun';
+  }
+
+  if (opts.db) {
+    if (normalizeDatabase(opts.db) !== opts.db) {
+      p.log.error(`Unknown --db "${opts.db}". Use: ${DB_SELECT_OPTIONS.map((o) => o.value).join(', ')}`);
+      process.exit(1);
+    }
+    features = withDatabase(features, opts.db);
   }
 
   const spin = p.spinner();

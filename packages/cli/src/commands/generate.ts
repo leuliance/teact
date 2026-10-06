@@ -1,6 +1,6 @@
 import { mkdirSync, writeFileSync, existsSync } from 'fs';
 import { resolve, join } from 'path';
-import { heading, success, error, findProjectRoot } from '../utils';
+import { heading, success, error, hint, findProjectRoot } from '../utils';
 
 const GENERATORS: Record<string, (name: string, projectRoot: string) => void> = {
   component: generateComponent,
@@ -8,10 +8,18 @@ const GENERATORS: Record<string, (name: string, projectRoot: string) => void> = 
   plugin: generatePlugin,
 };
 
+const ALIASES: Record<string, string> = { c: 'component', h: 'hook', p: 'plugin' };
+
 export async function generateCommand(type: string, name: string): Promise<void> {
+  type = ALIASES[type] ?? type;
   const generator = GENERATORS[type];
   if (!generator) {
     error(`Unknown generator: ${type}. Available: ${Object.keys(GENERATORS).join(', ')}`);
+    process.exit(1);
+  }
+  if (!/^[A-Za-z_$][\w$]*$/.test(name)) {
+    error(`"${name}" is not a valid identifier`);
+    hint('Use PascalCase for components (ProfileCard) and camelCase for hooks/plugins (usePoints, audit)');
     process.exit(1);
   }
 

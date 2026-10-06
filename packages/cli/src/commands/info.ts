@@ -1,34 +1,31 @@
-import * as p from '@clack/prompts';
-import { existsSync, readFileSync } from 'fs';
 import { resolve } from 'path';
-import { findProjectRoot } from '../utils';
+import { existsSync } from 'fs';
+import pkg from '../../package.json';
+import { c, heading, findProjectRoot, findEntry, readEnvVar, detectPackageManager, findViteConfig } from '../utils';
 
 export async function infoCommand(): Promise<void> {
-  p.intro('Teact Project Info');
+  heading('Teact Project Info');
 
-  const bunVersion = typeof Bun !== 'undefined' ? Bun.version : 'not found';
-  const nodeVersion = process.version;
+  const row = (k: string, v: string) => console.log(`  ${c.dim(k.padEnd(14))}${v}`);
+  row('Teact CLI', pkg.version);
+  row('Bun', typeof Bun !== 'undefined' ? Bun.version : 'not found');
+  row('Node API', process.version);
+  row('Platform', `${process.platform} ${process.arch}`);
 
   const root = findProjectRoot();
-
-  const pkg = await import('../../package.json');
-  p.log.info(`Teact CLI:  ${pkg.version}`);
-  p.log.info(`Bun:        ${bunVersion}`);
-  p.log.info(`Node:       ${nodeVersion}`);
-  p.log.info(`Platform:   ${process.platform} ${process.arch}`);
-
-  if (root) {
-    const envPath = resolve(root, '.env');
-    const hasEnv = existsSync(envPath);
-    const envContent = hasEnv ? readFileSync(envPath, 'utf-8') : '';
-    const hasToken = hasEnv && envContent.includes('TELEGRAM_BOT_TOKEN=') && !!envContent.match(/TELEGRAM_BOT_TOKEN=\S+/);
-
-    p.log.info(`Project:    ${root}`);
-    p.log.info(`.env:       ${hasEnv ? 'found' : 'missing'}`);
-    p.log.info(`Bot token:  ${hasToken ? 'configured' : 'not set'}`);
-  } else {
-    p.log.warn('No Teact project found in current directory');
+  if (!root) {
+    console.log(`\n  ${c.yellow('⚠')} No Teact project found in current directory`);
+    return;
   }
-
-  p.outro('Done');
+  const { teactVersions } = await import('./doctor');
+  const versions = teactVersions(root);
+  console.log('');
+  row('Project', root);
+  row('Entry', findEntry(root) ?? c.yellow('not found'));
+  row('Package mgr', detectPackageManager(root));
+  row('Pipeline', findViteConfig(root) ? 'vite (vite.config found)' : 'bun (dev: bun --watch, build: Bun.build)');
+  row('.env', existsSync(resolve(root, '.env')) ? 'found' : c.yellow('missing'));
+  row('Bot token', readEnvVar(root, 'TELEGRAM_BOT_TOKEN') ? 'configured' : c.yellow('not set'));
+  const names = Object.keys(versions);
+  if (names.length) row('Packages', names.map((n) => `${n.slice(9)}@${versions[n]}`).join(', '));
 }

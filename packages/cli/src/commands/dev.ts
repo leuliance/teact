@@ -1,124 +1,85 @@
-import { resolve } from 'path';
+import { resolve, relative } from 'path';
 import { existsSync } from 'fs';
-import { createServer, version as viteVersion } from 'vite';
-import { ViteNodeServer } from 'vite-node/server';
-import { ViteNodeRunner } from 'vite-node/client';
-import { installSourcemapsSupport } from 'vite-node/source-map';
-import { createHotContext, handleMessage, viteNodeHmrPlugin } from 'vite-node/hmr';
-import { createDevConfig } from '../vite-config';
-import { heading, log, error, success, findProjectRoot } from '../utils';
+import { heading, log, fail, findEntry, findViteConfig, requireProjectRoot, c } from '../utils';
 
-interface DevOptions {
+export interface DevOptions {
   entry?: string;
+  /** Force the vite-node pipeline. */
+  vite?: boolean;
+  /** Use `bun --hot` (in-process soft reload) instead of `bun --watch` (process restart). */
+  hot?: boolean;
+  /** Clear the terminal on every reload. */
+  clear?: boolean;
+}
+
+export type DevRunner = 'bun-watch' | 'bun-hot' | 'vite';
+
+/**
+ * Pick the dev pipeline:
+ * - `--vite`, a project vite.config.*, or a non-Bun runtime → vite-node (Vite plugins, HMR).
+ * - otherwise Bun-native: `bun --watch` by default, `bun --hot` with `--hot`.
+ *
+ * Why `--watch` is the default: it restarts the process, so every reload starts from a clean
+ * slate — timers, sockets, DB pools, `process.on` listeners and the previous grammY poller are
+ * torn down by the OS (and Bun runs the bot's SIGTERM handler first, so polling stops
+ * gracefully). `bun --hot` re-evaluates the whole module graph (node_modules included, so
+ * React is never duplicated) while keeping `globalThis`; core's HMR hook then stops the
+ * previous bot on `bot.start()`, but anything else a module started (intervals, connections,
+ * signal listeners) leaks across reloads. The reload-time difference is small because both
+ * re-evaluate everything, so robustness wins.
+ */
+export function resolveDevRunner(opts: DevOptions, hasViteConfig: boolean, isBun = typeof Bun !== 'undefined'): DevRunner {
+  if (opts.vite || hasViteConfig || !isBun) return 'vite';
+  return opts.hot ? 'bun-hot' : 'bun-watch';
+}
+
+/** Arguments passed to the bun binary for the Bun-native dev runner. */
+export function bunDevArgs(entryPath: string, runner: Exclude<DevRunner, 'vite'>, clear = false): string[] {
+  return [runner === 'bun-hot' ? '--hot' : '--watch', ...(clear ? [] : ['--no-clear-screen']), entryPath];
 }
 
 export async function devCommand(opts: DevOptions): Promise<void> {
-  const projectRoot = findProjectRoot();
-
-  if (!projectRoot) {
-    error('No Teact project found. Run this command inside a Teact project directory.');
-    process.exit(1);
-  }
-
-  heading('Starting Teact dev server');
+  const projectRoot = requireProjectRoot();
 
   const entry = opts.entry || findEntry(projectRoot);
-  if (!entry) {
-    error('No entry file found. Create src/index.tsx or specify with --entry');
-    process.exit(1);
+  if (!entry || !existsSync(resolve(projectRoot, entry))) {
+    fail(
+      entry ? `Entry file not found: ${entry}` : 'No entry file found.',
+      'Create src/index.tsx or pass one with --entry <file>',
+    );
   }
 
-  const entryPath = resolve(projectRoot, entry);
-  const files = [entryPath];
+  const viteConfig = findViteConfig(projectRoot);
+  const runner = resolveDevRunner(opts, !!viteConfig);
 
+  heading('Starting Teact dev server');
   log(`Entry: ${entry}`);
-  log(`Mode: vite-node (HMR enabled)`);
+
+  if (runner === 'vite') {
+    const why = opts.vite ? '--vite' : viteConfig ? relative(projectRoot, viteConfig) : 'not running under Bun';
+    log(`Mode:  vite-node HMR ${c.dim(`(${why})`)}`);
+    console.log('');
+    const { devWithVite } = await import('./dev-vite');
+    await devWithVite(projectRoot, entry);
+    return;
+  }
+
+  log(`Mode:  ${runner === 'bun-hot' ? 'bun --hot (in-process reload)' : 'bun --watch (restart on change)'}`);
   console.log('');
 
-  const baseConfig = createDevConfig({ root: projectRoot, entry });
-
-  const server = await createServer({
-    ...baseConfig,
-    logLevel: 'error',
-    server: {
-      ...baseConfig.server,
-      hmr: true,
-      watch: undefined,
-    },
-    plugins: [
-      ...(Array.isArray(baseConfig.plugins) ? baseConfig.plugins : []),
-      viteNodeHmrPlugin(),
-    ],
+  const proc = Bun.spawn([process.execPath, ...bunDevArgs(resolve(projectRoot, entry), runner, opts.clear)], {
+    cwd: projectRoot, // Bun auto-loads .env / .env.development / .env.local from here
+    env: { ...process.env, NODE_ENV: process.env.NODE_ENV || 'development' },
+    stdin: 'inherit',
+    stdout: 'inherit',
+    stderr: 'inherit',
   });
 
-  const majorVersion = Number(viteVersion.split('.')[0]);
-  if (majorVersion < 6) {
-    await server.pluginContainer.buildStart({});
-  } else {
-    await (server as any).environments.client.pluginContainer.buildStart({});
-  }
+  // Ctrl+C reaches the child through the process group; just wait for it to exit.
+  // A SIGTERM aimed only at the CLI (e.g. from a process manager) is forwarded.
+  process.on('SIGINT', () => {});
+  process.on('SIGTERM', () => proc.kill('SIGTERM'));
 
-  const node = new ViteNodeServer(server);
-
-  installSourcemapsSupport({
-    getSourceMap: (source: string) => node.getSourceMap(source),
-  });
-
-  const runner = new ViteNodeRunner({
-    root: server.config.root,
-    base: server.config.base,
-    fetchModule(id: string) {
-      return node.fetchModule(id);
-    },
-    resolveId(id: string, importer?: string) {
-      return node.resolveId(id, importer);
-    },
-    createHotContext(runner: any, url: string) {
-      return createHotContext(runner, server.emitter, files, url);
-    },
-  });
-
-  await runner.executeId('/@vite/env');
-
-  for (const file of files) {
-    await runner.executeFile(file);
-  }
-
-  success('Dev server started (watching for changes)');
-
-  server.emitter?.on('message', (payload: any) => {
-    handleMessage(runner, server.emitter, files, payload);
-  });
-
-  process.on('uncaughtException', (err) => {
-    console.error('\x1b[31m[vite-node] Failed to execute file: \n\x1b[0m', err);
-  });
-
-  const shutdown = async () => {
-    log('Shutting down dev server…');
-    await server.close();
-    process.exit(0);
-  };
-
-  process.once('SIGINT', shutdown);
-  process.once('SIGTERM', shutdown);
-}
-
-function findEntry(projectRoot: string): string | null {
-  const candidates = [
-    'src/index.tsx',
-    'src/index.ts',
-    'src/bot.tsx',
-    'src/bot.ts',
-    'index.tsx',
-    'index.ts',
-  ];
-
-  for (const candidate of candidates) {
-    if (existsSync(resolve(projectRoot, candidate))) {
-      return candidate;
-    }
-  }
-
-  return null;
+  const code = await proc.exited;
+  process.exit(code ?? 0);
 }
