@@ -9,7 +9,10 @@ export interface StorageDriver {
 
 /** Options accepted by {@link AsyncStorageDriver.set}. */
 export interface SetOptions {
-  /** Expire the entry after this many milliseconds (drivers without native TTL may ignore it). */
+  /**
+   * Expire the entry after this many milliseconds. `0`, negative or omitted means the
+   * entry never expires (every driver follows this rule; see `runDriverConformance`).
+   */
   ttl?: number;
 }
 
@@ -39,6 +42,14 @@ export interface AsyncStorageDriver {
    * query when the backend allows; the fallback is `keys(prefix)` + one `get` per key.
    */
   entries?(prefix: string): Promise<Array<[string, unknown]>>;
+  /**
+   * Atomically add `by` (default 1) to the number stored at `key` (a missing key counts
+   * as 0) and resolve the new value. `opts.ttl` applies only when the increment creates
+   * the key, so a counter keeps its original expiry. Optional: implement it when the
+   * backend has an atomic primitive (Redis `INCRBY`, SQL upsert … `RETURNING`, Mongo
+   * `$inc`); counters in `@teactjs/plugins` use it to stay correct across instances.
+   */
+  incr?(key: string, by?: number, opts?: SetOptions): Promise<number>;
   /** Release connections (called from the plugin's `onStop`). */
   close?(): Promise<void>;
 }

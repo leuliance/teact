@@ -1,5 +1,5 @@
-export { createBot, ROUTE_PREFIX } from './bot';
-export type { CreateBotOptions, CommandContext, CommandDef, ReplyOptions, ReplyButton, ReplyKeyboardButton, WebhookConfig } from './bot';
+export { createBot, ROUTE_PREFIX, getEnv } from './bot';
+export type { CreateBotOptions, BotFetchOptions, CommandContext, CommandDef, ReplyOptions, ReplyButton, ReplyKeyboardButton, WebhookConfig } from './bot';
 
 export { MemorySessionStore } from './session';
 

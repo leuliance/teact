@@ -101,3 +101,51 @@ describe('TelegramAdapter.webhookCallback (grammY std/http)', () => {
     await adapter.disconnect();
   });
 });
+
+describe('bot.fetch — secret, env, command menu', () => {
+  test('rejects a wrong secret before initializing (no plugin onStart)', async () => {
+    let started = 0;
+    const adapter = new MockAdapter();
+    const bot = createBot({
+      component: () => <Message text="hi" />,
+      adapter,
+      token: 't',
+      plugins: [{ name: 'probe', onStart: () => { started++; } }],
+    });
+    const bad = await bot.fetch(new Request('https://x/', { method: 'POST', body: '{}' }), { secretToken: 's3cret' });
+    expect(bad.status).toBe(401);
+    expect(started).toBe(0);
+    const ok = await bot.fetch(
+      new Request('https://x/', { method: 'POST', body: JSON.stringify({ text: 'hi' }), headers: { 'x-telegram-bot-api-secret-token': 's3cret' } }),
+      { secretToken: 's3cret' },
+    );
+    expect(ok.status).toBe(200);
+    expect(started).toBe(1);
+    await bot.stop();
+  });
+
+  test('getEnv() returns the env of the latest fetch', async () => {
+    const { getEnv } = await import('../packages/core/src');
+    let seen: unknown;
+    function C() {
+      seen = getEnv<{ DB: string }>().DB;
+      return <Message text="hi" />;
+    }
+    const bot = createBot({ component: C, adapter: new MockAdapter(), token: 't' });
+    await bot.fetch(new Request('https://x/', { method: 'POST', body: JSON.stringify({ text: 'hi' }) }), { env: { DB: 'd1' } });
+    expect(seen).toBe('d1');
+    await bot.stop();
+  });
+
+  test('setCommands() registers the command menu on demand', async () => {
+    const adapter = new MockAdapter();
+    const bot = createBot({
+      component: () => <Message text="hi" />,
+      adapter,
+      token: 't',
+      commands: { start: { description: 'Start' }, help: { description: 'Help', handler: 'help' } },
+    });
+    expect(await bot.setCommands()).toBe(2);
+    await bot.stop();
+  });
+});

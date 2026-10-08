@@ -155,7 +155,7 @@ describe('i18nPlugin', () => {
       return <Greeting />;
     }
     const { adapter, bot, plugin } = await start(App, { locales: { en, am } });
-    expect(plugin.name).toBe('i18n');
+    expect(plugin.name).toBe('teact-i18n');
     await adapter.message('1', 'hi', 'am');
     await wait();
     expect(latest(adapter)!.props.text).toBe(`ሰላም|${packs.am.cancel}|am`);

@@ -33,8 +33,8 @@ export type { UseQueryOptions, UseQueryResult, UseMutationOptions, UseMutationRe
 
 // ---- Runtime (bot engine, hooks, router, plugins) ----
 
-export { createBot, ROUTE_PREFIX } from './runtime';
-export type { CreateBotOptions, CommandContext, CommandDef, ReplyOptions, ReplyButton, ReplyKeyboardButton, WebhookConfig } from './runtime';
+export { createBot, ROUTE_PREFIX, getEnv } from './runtime';
+export type { CreateBotOptions, BotFetchOptions, CommandContext, CommandDef, ReplyOptions, ReplyButton, ReplyKeyboardButton, WebhookConfig } from './runtime';
 
 export { MemorySessionStore } from './runtime';
 export { compose, commandMiddleware, halt, isHalted } from './runtime';

@@ -232,3 +232,18 @@ describe('teact add · project helpers', () => {
     expect(colorEnabled({ FORCE_COLOR: '1' }, false)).toBe(true);
   });
 });
+
+describe('wireSource safety', () => {
+  test('refuses when an apostrophe in JSX text hides an existing plugins key', () => {
+    const { wireSource } = require('../packages/cli/src/add/wire');
+    const src = `import { createBot } from '@teactjs/core';
+export const bot = createBot({
+  component: () => <M>Don't panic</M>, plugins: [logger()],
+  adapter,
+});
+`;
+    const r = wireSource(src, findPlugin('rate-limit')!.build(undefined as any));
+    expect(r.ok).toBe(false);
+    expect(r.ok ? '' : r.reason).toMatch(/could not reliably locate `plugins`/);
+  });
+});

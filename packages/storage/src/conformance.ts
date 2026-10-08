@@ -23,7 +23,7 @@ export class MemoryAsyncDriver implements AsyncStorageDriver {
   async set<T>(key: string, value: T, opts?: SetOptions): Promise<void> {
     this.store.set(key, {
       value: structuredClone(value),
-      expiresAt: opts?.ttl ? Date.now() + opts.ttl : undefined,
+      expiresAt: opts?.ttl && opts.ttl > 0 ? Date.now() + opts.ttl : undefined,
     });
   }
   async delete(key: string): Promise<void> { this.store.delete(key); }
@@ -33,6 +33,15 @@ export class MemoryAsyncDriver implements AsyncStorageDriver {
   }
   async clear(prefix = ''): Promise<void> {
     for (const k of [...this.store.keys()]) if (k.startsWith(prefix)) this.store.delete(k);
+  }
+  async incr(key: string, by = 1, opts?: SetOptions): Promise<number> {
+    const e = this.live(key);
+    const value = (typeof e?.value === 'number' ? e.value : 0) + by;
+    this.store.set(key, {
+      value,
+      expiresAt: e ? e.expiresAt : opts?.ttl && opts.ttl > 0 ? Date.now() + opts.ttl : undefined,
+    });
+    return value;
   }
   async entries(prefix: string): Promise<Array<[string, unknown]>> {
     const keys = await this.keys(prefix);
@@ -123,6 +132,30 @@ export function runDriverConformance(
       expect(await d.keys()).toEqual(['q:1']);
       await d.clear();
       expect(await d.keys()).toEqual([]);
+    });
+
+    test('ttl <= 0 means no expiry', async () => {
+      const d = await make();
+      await d.set('zero', 'v', { ttl: 0 });
+      await d.set('neg', 'v', { ttl: -5 });
+      expect(await d.get('zero')).toBe('v');
+      expect(await d.get('neg')).toBe('v');
+    });
+
+    test('incr (when implemented) is atomic and keeps the first ttl', async () => {
+      const d = await make();
+      if (!d.incr) return;
+      expect(await d.incr('n')).toBe(1);
+      expect(await d.incr('n', 5)).toBe(6);
+      expect(await d.get('n')).toBe(6);
+      const results = await Promise.all(Array.from({ length: 20 }, () => d.incr!('c')));
+      expect(results.sort((a, b) => a - b)).toEqual(Array.from({ length: 20 }, (_, i) => i + 1));
+      if (!skipTtl) {
+        await d.incr('t', 1, { ttl: 40 });
+        await d.incr('t', 1, { ttl: 100_000 }); // must not extend the expiry
+        await new Promise((r) => setTimeout(r, 80));
+        expect(await d.get('t')).toBeUndefined();
+      }
     });
 
     if (!skipTtl) {

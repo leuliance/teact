@@ -128,6 +128,14 @@ export function idSet(ids: ReadonlyArray<string | number> | undefined): Set<stri
 export interface KV {
   get<T>(key: string): Promise<T | undefined>;
   set<T>(key: string, value: T, ttlMs?: number): Promise<void>;
+  /**
+   * Add 1 to a counter and return the new value. `ttlMs` applies when the counter is
+   * created. Atomic across instances when the driver implements `incr` (Redis, Postgres,
+   * SQLite, D1, MongoDB); otherwise serialized within this process only.
+   */
+  incr(key: string, ttlMs?: number): Promise<number>;
+  /** Whether {@link KV.incr} is atomic across processes. */
+  readonly atomic: boolean;
 }
 
 interface Entry<T> { v: T; e?: number }
@@ -144,10 +152,29 @@ function isAsync(d: AnyStorageDriver): d is AsyncStorageDriver {
 export function createKV(driver: AnyStorageDriver | undefined, prefix: string): KV {
   if (!driver) return memoryKV(prefix);
   const d = driver;
-  return {
+  const lock = new KeyedMutex();
+  const kv: KV = {
+    atomic: isAsync(d) && typeof d.incr === 'function',
+    async incr(key: string, ttlMs?: number) {
+      if (isAsync(d) && d.incr) return d.incr(prefix + key, 1, ttlMs ? { ttl: ttlMs } : undefined);
+      return lock.run(key, async () => {
+        const next = ((await kv.get<number>(key)) ?? 0) + 1;
+        const k = prefix + key;
+        const existing = (isAsync(d) ? await d.get<Entry<number>>(k) : d.get<Entry<number>>(k)) as Entry<number> | number | undefined;
+        // Keep the original expiry of an existing counter.
+        const e = existing && typeof existing === 'object' ? existing.e : ttlMs ? Date.now() + ttlMs : undefined;
+        const entry: Entry<number> = e != null ? { v: next, e } : { v: next };
+        const ttl = e != null ? Math.max(1, e - Date.now()) : undefined;
+        if (isAsync(d)) await d.set(k, entry, ttl ? { ttl } : undefined);
+        else d.set(k, entry);
+        return next;
+      });
+    },
     async get<T>(key: string) {
       const k = prefix + key;
       const entry = (await d.get<Entry<T>>(k)) as Entry<T> | undefined;
+      // Counters written by a driver's native incr() are plain numbers.
+      if (typeof entry === 'number') return entry as T;
       if (!entry || typeof entry !== 'object') return undefined;
       if (entry.e != null && entry.e <= Date.now()) {
         await d.delete(k);
@@ -162,6 +189,7 @@ export function createKV(driver: AnyStorageDriver | undefined, prefix: string): 
       else d.set(k, entry);
     },
   };
+  return kv;
 }
 
 function memoryKV(prefix: string): KV {
@@ -172,6 +200,16 @@ function memoryKV(prefix: string): KV {
     for (const [k, e] of map) if (e.e != null && e.e <= now) map.delete(k);
   };
   return {
+    atomic: false,
+    async incr(key: string, ttlMs?: number) {
+      const now = Date.now();
+      const k = prefix + key;
+      const entry = map.get(k);
+      const live = entry && (entry.e == null || entry.e > now) ? entry : undefined;
+      const next = ((live?.v as number | undefined) ?? 0) + 1;
+      map.set(k, { v: next, e: live ? live.e : ttlMs ? now + ttlMs : undefined });
+      return next;
+    },
     async get<T>(key: string) {
       const entry = map.get(prefix + key);
       if (!entry) return undefined;

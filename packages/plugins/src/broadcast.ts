@@ -147,22 +147,31 @@ export function createBroadcaster(options: BroadcasterOptions): Broadcaster {
             const backoff = status === 429 ? (retryAfter ?? 1) * 1000 : 500 * attempt;
             nextAt = Math.max(nextAt, Date.now() + backoff);
             await slot();
+            if (opts.signal?.aborted) {
+              result.aborted = true;
+              result.failed.push({ chatId, error });
+              break;
+            }
           }
         }
         progress();
       };
 
       const inflight = new Set<Promise<void>>();
-      for await (const chatId of options.recipients()) {
-        if (opts.signal?.aborted) { result.aborted = true; break; }
-        result.total++;
-        while (inflight.size >= concurrency) await Promise.race(inflight);
-        await slot();
-        if (opts.signal?.aborted) { result.total--; result.aborted = true; break; }
-        const p: Promise<void> = deliver(chatId).finally(() => inflight.delete(p));
-        inflight.add(p);
+      try {
+        for await (const chatId of options.recipients()) {
+          if (opts.signal?.aborted) { result.aborted = true; break; }
+          result.total++;
+          while (inflight.size >= concurrency) await Promise.race(inflight);
+          await slot();
+          if (opts.signal?.aborted) { result.total--; result.aborted = true; break; }
+          const p: Promise<void> = deliver(chatId).finally(() => inflight.delete(p));
+          inflight.add(p);
+        }
+      } finally {
+        // Even if `recipients()` throws, let sends already started finish (and be counted).
+        await Promise.all(inflight);
       }
-      await Promise.all(inflight);
       result.durationMs = Date.now() - started;
       return result;
     },

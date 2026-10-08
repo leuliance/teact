@@ -18,8 +18,12 @@ export interface RateLimitOptions {
   key?: 'user' | 'chat' | ((ctx: BotContext) => string | null | undefined);
   /**
    * `'sliding'` (default) counts updates in the last `window` ms — smooth, no bursts at
-   * window boundaries. `'fixed'` uses aligned buckets (`floor(now / window)`) — cheaper
-   * (one counter per key) and easier to reason about.
+   * window boundaries. `'fixed'` uses aligned buckets (`floor(now / window)`) — one
+   * atomic counter per key and window.
+   *
+   * Across several bot instances sharing `storage`, use `'fixed'`: it relies on the
+   * driver's atomic `incr()` (Redis, Postgres, SQLite, D1, MongoDB), so the limit holds
+   * globally. `'sliding'` is exact within one process only.
    */
   strategy?: 'sliding' | 'fixed';
   /**
@@ -38,7 +42,6 @@ export interface RateLimitOptions {
 }
 
 interface SlidingRecord { hits: number[]; notified?: number }
-interface FixedRecord { count: number; notified?: boolean }
 
 /**
  * Flood protection. Counts updates (messages **and** button presses) per user/chat and
@@ -50,9 +53,9 @@ interface FixedRecord { count: number; notified?: boolean }
  * @example
  * rateLimit({ window: 2000, limit: 3, onLimited: '⏳ Slow down a bit!' })
  *
- * // Shared across instances (horizontal scaling):
+ * // Shared across instances (horizontal scaling) — fixed windows use atomic increments:
  * import { RedisDriver } from '@teactjs/redis';
- * rateLimit({ window: 60_000, limit: 20, key: 'chat', storage: new RedisDriver({ client: redis }) })
+ * rateLimit({ window: 60_000, limit: 20, key: 'chat', strategy: 'fixed', storage: new RedisDriver({ client: redis }) })
  */
 export function rateLimit(options: RateLimitOptions = {}): TeactPlugin {
   const windowMs = options.window ?? 1000;
@@ -74,24 +77,22 @@ export function rateLimit(options: RateLimitOptions = {}): TeactPlugin {
   };
 
   /** Returns `null` if allowed, or `{ notify }` if limited. */
-  const hit = (key: string): Promise<{ notify: boolean } | null> =>
+  const hit = async (key: string): Promise<{ notify: boolean } | null> => {
+    if (strategy === 'fixed') {
+      // One atomic increment per hit: correct across instances when the storage
+      // driver implements incr() (Redis, Postgres, SQLite, D1, MongoDB).
+      const now = Date.now();
+      const bucket = Math.floor(now / windowMs);
+      const count = await kv.incr(`${key}:${bucket}`, (bucket + 1) * windowMs - now);
+      if (count <= limit) return null;
+      return { notify: count === limit + 1 };
+    }
+    return slidingHit(key);
+  };
+
+  const slidingHit = (key: string): Promise<{ notify: boolean } | null> =>
     lock.run(key, async () => {
       const now = Date.now();
-      if (strategy === 'fixed') {
-        const bucket = Math.floor(now / windowMs);
-        const k = `${key}:${bucket}`;
-        const rec = (await kv.get<FixedRecord>(k)) ?? { count: 0 };
-        const ttl = (bucket + 1) * windowMs - now;
-        if (rec.count < limit) {
-          rec.count++;
-          await kv.set(k, rec, ttl);
-          return null;
-        }
-        if (rec.notified) return { notify: false };
-        rec.notified = true;
-        await kv.set(k, rec, ttl);
-        return { notify: true };
-      }
       const rec = (await kv.get<SlidingRecord>(key)) ?? { hits: [] };
       rec.hits = rec.hits.filter((t) => t > now - windowMs);
       if (rec.hits.length < limit) {

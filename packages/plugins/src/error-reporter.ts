@@ -78,7 +78,9 @@ export function errorReporter(options: ErrorReporterOptions): TeactPlugin {
     if (include.has('chat')) context.chat = { id: ctx.chatId, type: chatTypeOf(ctx) };
     if (include.has('text') && ctx.text != null) context.text = ctx.text;
     if (include.has('callbackData') && ctx.callbackData != null) context.callbackData = ctx.callbackData;
-    if (include.has('raw')) context.raw = ctx.raw;
+    // The plain Telegram update, never the grammY context: that holds `api` and with it
+    // the bot token, which must not reach an error tracker.
+    if (include.has('raw')) context.raw = plainUpdate(ctx.raw);
     const info: ErrorReportInfo = { source, context };
     if (componentStack) info.componentStack = componentStack;
     return info;
@@ -181,4 +183,16 @@ class ReportingBoundary extends React.Component<BoundaryProps, BoundaryState> {
 
 function toElement(node: OutputNode): React.ReactElement {
   return React.createElement(node.type, node.props, ...node.children.map(toElement));
+}
+
+/** The raw platform update without client objects (grammY's Context carries the API + token). */
+function plainUpdate(raw: unknown): unknown {
+  if (!raw || typeof raw !== 'object') return raw;
+  const r = raw as { update?: unknown; api?: unknown };
+  if (r.update && typeof r.update === 'object') return r.update;
+  if ('api' in r) {
+    const { api: _api, ...rest } = r as Record<string, unknown>;
+    return rest;
+  }
+  return raw;
 }

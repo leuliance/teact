@@ -1,5 +1,5 @@
 import { resolve, relative } from 'path';
-import { existsSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync, readdirSync, statSync } from 'fs';
 import { REGISTRY, findPlugin, mergeWirings, renderSnippet, UnknownClientError, type Wiring } from '../add/registry';
 import { wireSource } from '../add/wire';
 import {
@@ -94,6 +94,11 @@ export async function addCommand(names: string[], opts: AddOptions): Promise<voi
       const candidates: Array<{ file: string; call: 'createBot' | 'defineConfig' }> = [];
       const entry = findEntry(projectRoot);
       if (entry) candidates.push({ file: resolve(projectRoot, entry), call: 'createBot' });
+      // createBot() may live outside the entry (e.g. src/bot.tsx): wire that file rather than
+      // falling back to teact.config.ts, which would register the plugin a second time.
+      for (const file of findCreateBotFiles(projectRoot)) {
+        if (!candidates.some((c) => c.file === file)) candidates.push({ file, call: 'createBot' });
+      }
       for (const cfg of ['teact.config.ts', 'teact.config.js']) {
         if (existsSync(resolve(projectRoot, cfg))) candidates.push({ file: resolve(projectRoot, cfg), call: 'defineConfig' });
       }
@@ -151,4 +156,20 @@ export async function addCommand(names: string[], opts: AddOptions): Promise<voi
 
   for (const note of wiring.notes) info(note);
   if (!dry) console.log(`\n${c.dim('Next:')} teact dev`);
+}
+
+/** Source files under src/ that call createBot(…), skipping node_modules/dist. */
+function findCreateBotFiles(root: string): string[] {
+  const out: string[] = [];
+  const walk = (dir: string, depth: number) => {
+    if (depth > 6 || !existsSync(dir)) return;
+    for (const name of readdirSync(dir)) {
+      if (name === 'node_modules' || name === 'dist' || name.startsWith('.')) continue;
+      const p = resolve(dir, name);
+      if (statSync(p).isDirectory()) walk(p, depth + 1);
+      else if (/\.(tsx?|jsx?)$/.test(name) && /\bcreateBot\s*\(/.test(readFileSync(p, 'utf-8'))) out.push(p);
+    }
+  };
+  walk(resolve(root, 'src'), 0);
+  return out;
 }

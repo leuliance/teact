@@ -259,6 +259,12 @@ export function wireSource(source: string, w: Wiring, call: 'createBot' | 'defin
     if (objClose === -1) return { ok: false, reason: `could not find the end of ${call}({ … })` };
 
     const keyIdx = findTopLevelKey(masked, objOpen, objClose, 'plugins');
+    // The masker didn't see a `plugins` key but the raw text has one: unusual syntax (e.g.
+    // an apostrophe in JSX text) confused it. Adding a second key would silently shadow
+    // or be shadowed by the real one, so refuse.
+    if (keyIdx === -1 && /(^|[\s,{])plugins\s*:/.test(source.slice(objOpen, objClose))) {
+      return { ok: false, reason: `could not reliably locate \`plugins\` in ${call}({ … }) — add the plugins manually` };
+    }
     if (keyIdx !== -1) {
       const colon = skipWs(masked, keyIdx + 'plugins'.length);
       if (masked[colon] !== ':') return { ok: false, reason: '`plugins` is a shorthand/variable — add the plugins to it manually' };

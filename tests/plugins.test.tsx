@@ -69,11 +69,13 @@ describe('rateLimit', () => {
   });
 
   test('fixed window strategy resets on the next bucket', async () => {
-    const { adapter } = await setup([rateLimit({ window: 60, limit: 1, strategy: 'fixed' })]);
+    const { adapter } = await setup([rateLimit({ window: 200, limit: 1, strategy: 'fixed' })]);
+    // Start right after a bucket boundary so 'a' and 'b' are in the same aligned window.
+    await wait(200 - (Date.now() % 200) + 5);
     await adapter.simulateMessage('1', '1', 'a');
     await adapter.simulateMessage('1', '1', 'b');
     expect(texts(adapter)).toEqual(['rendered']);
-    await wait(130);
+    await wait(220);
     await adapter.simulateMessage('1', '1', 'c');
     expect(texts(adapter)).toEqual(['rendered', 'rendered']);
   });
@@ -331,7 +333,8 @@ describe('errorReporter', () => {
       await wait();
     } finally { console.error = origError; }
     expect(reports.length).toBe(1);
-    expect(texts(adapter)[0]).toContain('kaput');
+    expect(texts(adapter)[0]).toContain('Something went wrong');
+    expect(texts(adapter)[0]).not.toContain('kaput');
   });
 
   test('a throwing report() never breaks the update', async () => {
@@ -480,5 +483,54 @@ describe('plugin shape', () => {
       expect(typeof p.middleware).toBe('function');
     }
     expect(new Set(plugins.map((p) => p.name)).size).toBe(plugins.length);
+  });
+});
+
+describe('release-review regressions', () => {
+  const ctxOf = (userId: string, text = 'x'): BotContext => ({
+    chatId: userId, userId, platform: 'mock', text, raw: {}, user: { id: userId, platform: 'mock' },
+  });
+  /** Run a plugin's middleware like the bot would; true when the update got through. */
+  const passes = async (p: TeactPlugin, ctx: BotContext) => {
+    let reached = false;
+    await p.middleware!(ctx, async () => { reached = true; });
+    return reached;
+  };
+
+  test('fixed-window rateLimit holds across instances sharing a driver with incr()', async () => {
+    const shared = new MemoryAsyncDriver();
+    const a = rateLimit({ window: 60_000, limit: 3, strategy: 'fixed', storage: shared });
+    const b = rateLimit({ window: 60_000, limit: 3, strategy: 'fixed', storage: shared });
+    const results = await Promise.all(
+      Array.from({ length: 6 }, (_, i) => passes(i % 2 ? a : b, ctxOf('42'))),
+    );
+    expect(results.filter(Boolean).length).toBe(3);
+  });
+
+  test('analytics counts are exact across instances and ignore junk command names', async () => {
+    const shared = new MemoryAsyncDriver();
+    const a = analytics({ storage: shared });
+    const b = analytics({ storage: shared });
+    await Promise.all([
+      ...Array.from({ length: 10 }, (_, i) => passes(i % 2 ? a : b, ctxOf(String(i % 3), '/start'))),
+      passes(a, ctxOf('9', '/constructor')),
+      passes(a, ctxOf('9', '/not-a-command!')),
+    ]);
+    const s = await a.getStats();
+    expect(s.updates).toBe(12);
+    expect(s.uniqueUsers).toBe(4);
+    expect(s.commands.start).toBe(10);
+    expect(s.commands['constructor' as string]).toBe(1); // counted as a plain name, not Object's constructor
+    expect(Object.keys(s.commands).sort()).toEqual(['constructor', 'start']);
+  });
+
+  test("errorReporter include: ['raw'] never forwards the grammY context (bot token)", async () => {
+    const reports: any[] = [];
+    const p = errorReporter({ report: (_e, _c, info) => { reports.push(info); }, include: ['raw'] });
+    const ctx = ctxOf('1');
+    ctx.raw = { api: { token: '123:SECRET' }, update: { update_id: 7, message: { text: 'x' } } };
+    await p.middleware!(ctx, async () => { throw new Error('boom'); });
+    expect(JSON.stringify(reports)).not.toContain('SECRET');
+    expect(JSON.stringify(reports)).toContain('update_id');
   });
 });

@@ -141,7 +141,7 @@ export function i18nPlugin(options: I18nPluginOptions): I18nPlugin {
     React.createElement(i18n.Provider, null, children);
 
   return {
-    name: 'i18n',
+    name: 'teact-i18n',
     Provider,
     services: { i18n: i18n.instance },
     i18n,

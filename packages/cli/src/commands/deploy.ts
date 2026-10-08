@@ -14,18 +14,19 @@ import { bot } from './index';
 export interface Env {
   TELEGRAM_BOT_TOKEN: string;
   WEBHOOK_SECRET?: string;
+  // Add your bindings here (e.g. DB: D1Database) and read them in src/index.tsx with
+  // getEnv<Env>() from '@teactjs/core'.
 }
 
 export default {
   fetch: (request: Request, env: Env) =>
-    bot.fetch(request, { token: env.TELEGRAM_BOT_TOKEN, secretToken: env.WEBHOOK_SECRET }),
+    bot.fetch(request, { token: env.TELEGRAM_BOT_TOKEN, secretToken: env.WEBHOOK_SECRET, env }),
 };
 `;
 
 function wranglerConfig(name: string): string {
   return JSON.stringify(
     {
-      $schema: 'node_modules/wrangler/config-schema.json',
       name,
       main: 'src/worker.ts',
       compatibility_date: '2024-09-23',
@@ -67,6 +68,13 @@ export async function deployCommand(target: string | undefined, opts: DeployOpti
   if (existsSync(worker)) log('• src/worker.ts already exists — leaving it as is');
   else { writeFileSync(worker, WORKER_ENTRY); success('created src/worker.ts'); }
 
+  // wrangler reads local secrets from .dev.vars — keep them out of git.
+  const gitignore = resolve(root, '.gitignore');
+  if (existsSync(gitignore) && !/^\.dev\.vars$/m.test(readFileSync(gitignore, 'utf-8'))) {
+    writeFileSync(gitignore, readFileSync(gitignore, 'utf-8').replace(/\n?$/, '\n') + '.dev.vars\n');
+    success('added .dev.vars to .gitignore');
+  }
+
   const wrangler = resolve(root, 'wrangler.jsonc');
   if (existsSync(wrangler)) log('• wrangler.jsonc already exists — leaving it as is');
   else { writeFileSync(wrangler, wranglerConfig(name)); success('created wrangler.jsonc'); }
@@ -77,9 +85,12 @@ export async function deployCommand(target: string | undefined, opts: DeployOpti
   log('  2. bunx wrangler secret put WEBHOOK_SECRET        # any random string');
   log('  3. bunx wrangler deploy                            # or: teact deploy --run');
   log('  4. teact webhook set https://<your-worker>.workers.dev --secret <same WEBHOOK_SECRET>');
+  log('  5. bun -e "import { bot } from \'./src/index\'; await bot.setCommands()"   # command menu, once');
   log('');
   log('ℹ On the edge there is no filesystem, so teact.config.ts is NOT auto-loaded.');
   log('  Pass your plugins directly: createBot({ plugins: [...] }) so they run on Workers.');
+  log('ℹ Sessions must be durable on Workers (each request may hit a fresh instance):');
+  log('  teact add cloudflare --client d1, then session: { store: d1SessionStore(() => getEnv<Env>().DB) }');
 
   if (opts.run) {
     log('');

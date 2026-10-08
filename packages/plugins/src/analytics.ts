@@ -59,6 +59,10 @@ export type AnalyticsPlugin = TeactPlugin & AnalyticsService;
 export const ANALYTICS_SERVICE = 'teact-analytics';
 
 const DAY_MS = 86_400_000;
+/** Most distinct command / event names kept in the stats maps; the rest count as `'(other)'`. */
+export const MAX_NAMES = 100;
+const OTHER = '(other)';
+const COMMAND_RE = /^[a-z0-9_]{1,32}$/;
 const dayOf = (ts: number) => new Date(ts).toISOString().slice(0, 10);
 
 /**
@@ -67,9 +71,10 @@ const dayOf = (ts: number) => new Date(ts).toISOString().slice(0, 10);
  * record custom events with {@link useTrack}. Read the counters with `getStats()`.
  *
  * Counters live in `storage` (default: memory) — pass a shared driver (Redis…) to
- * aggregate across instances. Increments are serialized per process; concurrent
- * instances writing the same key may occasionally lose an increment (no atomic INCR
- * in the driver interface).
+ * aggregate across instances. Totals, daily counts and unique users use the driver's
+ * atomic `incr()` when it has one (Redis, Postgres, SQLite, D1, MongoDB), so instances
+ * never lose increments. Recording runs alongside your handlers rather than before them,
+ * and only well-formed command names are counted (at most {@link MAX_NAMES} distinct).
  *
  * @example
  * const stats = analytics({ track: (e) => posthog.capture({ distinctId: e.userId, event: e.name, properties: e.properties }) });
@@ -80,17 +85,30 @@ export function analytics(options: AnalyticsOptions = {}): AnalyticsPlugin {
   const lock = new KeyedMutex();
   const retention = (options.retentionDays ?? 90) * DAY_MS;
 
-  const incr = (key: string, ttl?: number) =>
-    lock.run(key, async () => {
-      await kv.set(key, ((await kv.get<number>(key)) ?? 0) + 1, ttl);
-    });
+  const incr = (key: string, ttl?: number) => kv.incr(key, ttl);
 
-  const incrIn = (key: string, field: string) =>
-    lock.run(key, async () => {
-      const map = (await kv.get<Record<string, number>>(key)) ?? {};
-      map[field] = (map[field] ?? 0) + 1;
-      await kv.set(key, map);
-    });
+  /**
+   * Count `name` under `group` ('commands' / 'events'). Each name has its own atomic
+   * counter (`<group>:#<name>`); `<group>` itself only lists the known names, so it is
+   * written once per new name. At most MAX_NAMES names; the rest count as '(other)'.
+   */
+  const incrIn = async (group: string, name: string) => {
+    const names = (await kv.get<string[]>(group)) ?? [];
+    if (!names.includes(name) && names.length >= MAX_NAMES) name = OTHER;
+    if ((await kv.incr(`${group}:#${name}`)) === 1 || !names.includes(name)) {
+      await lock.run(group, async () => {
+        const current = (await kv.get<string[]>(group)) ?? [];
+        if (!current.includes(name)) await kv.set(group, [...current, name]);
+      });
+    }
+  };
+
+  const readGroup = async (group: string): Promise<Record<string, number>> => {
+    const names = (await kv.get<string[]>(group)) ?? [];
+    const counts = await Promise.all(names.map((n) => kv.get<number>(`${group}:#${n}`)));
+    // fromEntries defines own properties, so a name like '__proto__' can't touch the prototype.
+    return Object.fromEntries(names.map((n, i) => [n, counts[i] ?? 0] as const).filter(([, c]) => c > 0));
+  };
 
   const emit = async (event: AnalyticsEvent) => {
     if (!options.track) return;
@@ -104,16 +122,17 @@ export function analytics(options: AnalyticsOptions = {}): AnalyticsPlugin {
   const recordUpdate = async (ctx: BotContext) => {
     const now = Date.now();
     const day = dayOf(now);
-    const cmd = commandName(ctx);
+    const raw = commandName(ctx);
+    // Only Telegram-shaped command names: anything else would let users grow the map.
+    const cmd = raw && COMMAND_RE.test(raw) ? raw : undefined;
     const tasks: Promise<unknown>[] = [incr('updates'), incr(`updates:${day}`, retention)];
     if (cmd) tasks.push(incrIn('commands', cmd));
     const seenKey = `seen:${day}:${ctx.platform}:${ctx.userId}`;
     tasks.push(
-      lock.run(seenKey, async () => {
-        if (await kv.get<boolean>(seenKey)) return;
-        await kv.set(seenKey, true, 2 * DAY_MS);
-        await incr(`users:${day}`, retention);
-      }),
+      (async () => {
+        // First hit of the day for this user (atomic when the driver has incr()).
+        if ((await kv.incr(seenKey, 2 * DAY_MS)) === 1) await incr(`users:${day}`, retention);
+      })(),
     );
     await Promise.all(tasks);
     const properties: Record<string, unknown> = { type: updateKind(ctx) };
@@ -135,16 +154,16 @@ export function analytics(options: AnalyticsOptions = {}): AnalyticsPlugin {
         kv.get<number>('updates'),
         kv.get<number>(`updates:${day}`),
         kv.get<number>(`users:${day}`),
-        kv.get<Record<string, number>>('commands'),
-        kv.get<Record<string, number>>('events'),
+        readGroup('commands'),
+        readGroup('events'),
       ]);
       return {
         day,
         updates: updates ?? 0,
         updatesOnDay: updatesOnDay ?? 0,
         uniqueUsers: uniqueUsers ?? 0,
-        commands: commands ?? {},
-        events: events ?? {},
+        commands,
+        events,
       };
     },
   };
@@ -153,12 +172,16 @@ export function analytics(options: AnalyticsOptions = {}): AnalyticsPlugin {
     name: 'teact-analytics',
     services: { [ANALYTICS_SERVICE]: service },
     async middleware(ctx, next) {
-      try {
-        await recordUpdate(ctx);
-      } catch (err) {
+      // Record in parallel with the rest of the pipeline (no added latency), but await it
+      // before the update finishes so the counts survive on serverless.
+      const recording = recordUpdate(ctx).catch((err) => {
         console.error('[teact-analytics] failed to record update:', err);
+      });
+      try {
+        await next();
+      } finally {
+        await recording;
       }
-      await next();
     },
     track: service.track,
     getStats: service.getStats,

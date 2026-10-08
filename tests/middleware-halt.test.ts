@@ -79,3 +79,24 @@ describe('handler commands go through middleware', () => {
     await bot.stop();
   });
 });
+
+describe('plugin de-duplication', () => {
+  test('repeating a plugin in one list keeps both (layered rate limits)', async () => {
+    const { rateLimit } = await import('../packages/plugins/src');
+    const adapter = new MockAdapter();
+    const bot = createBot({
+      component: () => React.createElement('tg-message', { text: 'ok' }),
+      adapter,
+      token: 't',
+      plugins: [
+        rateLimit({ limit: 100, window: 1000 }),
+        rateLimit({ key: 'chat', limit: 1, window: 60_000 }),
+      ],
+    });
+    await bot.start();
+    for (let i = 0; i < 5; i++) await adapter.simulateMessage('1', String(i), 'x');
+    // only the first message gets past the per-chat limit
+    expect(adapter.sent.filter((m) => JSON.stringify(m.output).includes('ok')).length).toBe(1);
+    await bot.stop();
+  });
+});
