@@ -1,6 +1,6 @@
 import React, { Suspense } from 'react';
 import type { FunctionComponent, ReactNode } from 'react';
-import { createRoot, type TeactRoot, type OutputNode, type BotContext, type SessionStore, type Middleware, type Adapter } from '../renderer';
+import { createRoot, type TeactRoot, type OutputNode, type BotContext, type SessionStore, type SessionData, type Middleware, type Adapter } from '../renderer';
 import { CallbackRegistryCtx, ErrorBoundary, type CallbackMap } from '../renderer';
 
 /** Minimal internal Suspense fallback — a raw host element so core never imports @teactjs/ui. */
@@ -206,6 +206,12 @@ interface ChatRoot {
   commitSignal?: () => void;
 }
 
+interface ActiveSession {
+  session: SessionData;
+  /** Chain of pending session writes for this update, in call order. */
+  write: Promise<unknown>;
+}
+
 interface CommandInfo {
   name: string;
   args: string[];
@@ -291,6 +297,8 @@ export function createBot(options: CreateBotOptions) {
   }
 
   const chatRoots = new Map<string, ChatRoot>();
+  // The session of each chat's latest update (see renderForChat).
+  const activeSessions = new Map<string, ActiveSession>();
   // Serializes updates per chat: a chat's next update waits for its previous one to
   // finish rendering + sending. Without this, two rapid messages/callbacks for the same
   // chat interleave and race on the shared ChatRoot (commitSignal, commitMode, handlers).
@@ -369,9 +377,14 @@ export function createBot(options: CreateBotOptions) {
         return;
       }
 
+      // Resetting the chat's root (a new command or route button) is deferred to the end of
+      // the middleware pipeline, so an update a middleware halts (rate limit,
+      // maintenance…) leaves the chat's current screen and button handlers intact.
+      let reset = false;
+
       if (botCtx.callbackData?.startsWith(ROUTE_PREFIX)) {
         const routePath = botCtx.callbackData.slice(ROUTE_PREFIX.length);
-        resetChatRoot(botCtx);
+        reset = true;
         commandInfo = { name: '', args: [], initialRoute: routePath };
       } else if (botCtx.text?.startsWith('/')) {
         const [cmdPart, ...args] = botCtx.text.slice(1).split(/\s+/);
@@ -379,7 +392,7 @@ export function createBot(options: CreateBotOptions) {
         const cmdDef = rawCommands[cmdName];
 
         if (cmdDef) {
-          resetChatRoot(botCtx);
+          reset = true;
 
           if (cmdDef.handler != null) {
             const handler = cmdDef.handler;
@@ -407,7 +420,10 @@ export function createBot(options: CreateBotOptions) {
       const pipeline = compose([
         ...pluginMiddleware,
         ...userMiddleware,
-        async (ctx) => (finalStep ? finalStep() : renderForChat(ctx, commandInfo)),
+        async (ctx) => {
+          if (reset) resetChatRoot(ctx);
+          return finalStep ? finalStep() : renderForChat(ctx, commandInfo);
+        },
       ]);
       await pipeline(botCtx, async () => {});
       debugLog(`update processed in ${Date.now() - updateStart}ms`);
@@ -433,25 +449,33 @@ export function createBot(options: CreateBotOptions) {
       chatState = undefined;
     }
 
-    if (botCtx.callbackData && chatState) {
-      const handler = chatState.handlers.get(botCtx.callbackData);
-      if (handler) handler();
-    }
+    // The session for THIS update. It is registered per chat before any handler runs:
+    // onClick handlers were created by an earlier render and hold that render's
+    // updateSession, so updateSession always resolves the chat's *current* session
+    // instead of the object it closed over. Writes are chained so they land in order,
+    // and the whole chain is awaited before we return — on serverless the isolate
+    // freezes once the Response resolves, so a fire-and-forget set() to an async store
+    // (KV, Redis, DB) would be dropped.
+    const active: ActiveSession = { session, write: Promise.resolve() };
+    activeSessions.set(chatKey, active);
 
-    // Track the latest session write so we can await it before returning. On serverless
-    // the isolate freezes once the Response resolves, so a fire-and-forget set() to an
-    // async store (KV, Redis, DB) would be dropped and the session would never persist.
-    let sessionWrite: Promise<unknown> = Promise.resolve();
     const runtimeValue: RuntimeContextValue = {
       botCtx,
       session,
       updateSession(patch) {
-        Object.assign(session, patch);
-        // Snapshot so later mutations of `session` don't leak into an in-flight write.
-        sessionWrite = Promise.resolve(sessionStore.set(chatKey, { ...session }));
+        const current = activeSessions.get(chatKey) ?? active;
+        Object.assign(current.session, patch);
+        // Snapshot so later mutations of the session don't leak into an in-flight write.
+        const snapshot = { ...current.session };
+        current.write = current.write.then(() => sessionStore.set(chatKey, snapshot));
       },
       command: commandInfo ? { name: commandInfo.name, args: commandInfo.args } : null,
     };
+
+    if (botCtx.callbackData && chatState) {
+      const handler = chatState.handlers.get(botCtx.callbackData);
+      if (handler) handler();
+    }
 
     if (!chatState) {
       const handlers: CallbackMap = new Map();
@@ -615,7 +639,7 @@ export function createBot(options: CreateBotOptions) {
     await cs.commitQueue;
     // Ensure any session write triggered by this render (or its onClick handler) is
     // durably persisted before we return — critical on serverless (see above).
-    await sessionWrite;
+    await active.write;
   }
 
   /**

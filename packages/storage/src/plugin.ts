@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useContext, createContext } from 'react';
 import type { TeactPlugin } from '@teactjs/core';
-import { useChatId, usePlatform } from '@teactjs/core';
+import { useChatId, usePlatform, RuntimeContext } from '@teactjs/core';
 import type { AnyStorageDriver, StorageDriver, StoragePluginOptions } from './types';
 import { MemoryDriver } from './drivers/memory';
 import { FileDriver } from './drivers/file';
@@ -92,17 +92,14 @@ export function storagePlugin(opts: StoragePluginOptions = {}): TeactPlugin {
     backend = new MemoryDriver();
   }
 
-  let driver: StorageDriver;
-  const Provider = ({ children }: { children: React.ReactNode }) =>
-    React.createElement(
-      BackendCtx.Provider,
-      { value: backend },
-      React.createElement(StorageCtx.Provider, { value: driver }, children),
-    );
-
   if (!isAsyncDriver(backend)) {
     const sync = backend;
-    driver = sync;
+    const Provider = ({ children }: { children: React.ReactNode }) =>
+      React.createElement(
+        BackendCtx.Provider,
+        { value: backend },
+        React.createElement(StorageCtx.Provider, { value: sync }, children),
+      );
     return {
       name: 'teact-storage',
       Provider,
@@ -114,29 +111,67 @@ export function storagePlugin(opts: StoragePluginOptions = {}): TeactPlugin {
     };
   }
 
-  // Async backend: load the chat's keys before rendering, await writes after.
+  // Async backend. Every update gets its own CachedDriver holding only that chat's keys
+  // (plus `preload` prefixes): loaded before rendering, flushed after. Caches are never
+  // shared between chats, so one chat can't see, clear or inherit errors from another.
+  //
+  // Components see a per-chat view whose target is swapped to the current update's cache.
+  // The view is stable across updates, so a setter captured by an earlier render (an
+  // onClick handler runs at the start of the *next* update) writes into the update that
+  // is actually running and is flushed with it.
   const async = backend;
-  const cached = new CachedDriver(async);
-  driver = cached;
   const preload = opts.preload ?? [];
+  const views = new Map<string, ChatStorageView>();
+  const viewFor = (chatKey: string) => {
+    let view = views.get(chatKey);
+    if (!view) views.set(chatKey, (view = new ChatStorageView(new CachedDriver(async))));
+    return view;
+  };
+
+  const AsyncProvider = ({ children }: { children: React.ReactNode }) => {
+    const rt = useContext(RuntimeContext);
+    const chatKey = rt ? `${rt.botCtx.platform}:${rt.botCtx.chatId}` : '';
+    return React.createElement(
+      BackendCtx.Provider,
+      { value: backend },
+      React.createElement(StorageCtx.Provider, { value: viewFor(chatKey) }, children),
+    );
+  };
 
   return {
     name: 'teact-storage',
-    Provider,
+    Provider: AsyncProvider,
     middleware: async (ctx, next) => {
+      const cache = new CachedDriver(async);
       await Promise.all([
-        cached.hydrate(`${ctx.platform}:${ctx.chatId}:`),
-        ...preload.map((prefix) => cached.hydrate(prefix)),
+        cache.hydrate(`${ctx.platform}:${ctx.chatId}:`),
+        ...preload.map((prefix) => cache.hydrate(prefix)),
       ]);
+      viewFor(`${ctx.platform}:${ctx.chatId}`).current = cache;
       try {
         await next();
       } finally {
-        await cached.flush();
+        await cache.flush();
       }
     },
     onStop: async () => {
-      try { await cached.flush(); } catch (err) { console.error('[teact/storage] Failed to flush on stop:', err); }
+      const results = await Promise.allSettled([...views.values()].map((v) => v.current.flush()));
+      for (const r of results) {
+        if (r.status === 'rejected') console.error('[teact/storage] Failed to flush on stop:', r.reason);
+      }
+      views.clear();
       await async.close?.();
     },
   };
+}
+
+/** A chat's storage as seen by components: forwards to the current update's cache. */
+class ChatStorageView implements StorageDriver {
+  constructor(public current: CachedDriver) {}
+  get<T>(key: string): T | undefined { return this.current.get<T>(key); }
+  set<T>(key: string, value: T): void { this.current.set(key, value); }
+  delete(key: string): void { this.current.delete(key); }
+  has(key: string): boolean { return this.current.has(key); }
+  clear(): void { this.current.clear(); }
+  keys(): string[] { return this.current.keys(); }
 }
