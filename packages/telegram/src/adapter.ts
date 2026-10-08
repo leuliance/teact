@@ -168,10 +168,20 @@ export class TelegramAdapter implements Adapter {
       await this.startWebhook(opts.webhook);
     } else if (opts.polling !== false) {
       console.log('[telegram] Starting polling…');
-      this.bot.start({
-        onStart: (info) =>
-          console.log(`[telegram] Connected as @${info.username} (${info.first_name})`),
-      });
+      // Fetch the bot's identity ourselves first: this call goes through autoRetry with
+      // rethrowHttpErrors, so a bad token or an unreachable Telegram rejects listen() (and
+      // bot.start()) within a second. grammY's own init would retry getMe forever.
+      if (!this.bot.isInited()) this.bot.botInfo = await this.bot.api.getMe();
+      this.bot
+        .start({
+          onStart: (info) =>
+            console.log(`[telegram] Connected as @${info.username} (${info.first_name})`),
+        })
+        .catch((err) => {
+          // bot.stop() during a retry backoff rejects with "Aborted delay" — a normal shutdown.
+          if (String((err as Error)?.message) === 'Aborted delay') return;
+          console.error('[telegram] Polling stopped:', err);
+        });
     }
   }
 
