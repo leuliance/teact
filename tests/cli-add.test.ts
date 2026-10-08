@@ -110,7 +110,7 @@ describe('teact add · source wiring', () => {
     if (!r.ok) throw new Error(r.reason);
     expect(r.source).toContain("import { logger } from '@teactjs/plugins';");
     expect(r.source).toContain("import Redis from 'ioredis';");
-    expect(r.source).toContain("    storagePlugin({ driver: 'file' }), // keep me\n    logger(),\n    redisPlugin({ client: redis }),\n  ],");
+    expect(r.source).toContain("    storagePlugin({ driver: 'file' }), // keep me\n    logger(),\n    redisPlugin({ client: redis, closeOnStop: true }),\n  ],");
     expect(r.source.indexOf('const redis = new Redis')).toBeLessThan(r.source.indexOf('createBot({'));
     // storagePlugin is already registered with other options → reported, not duplicated
     expect(r.skipped).toEqual(['storagePlugin({ driver: redisDriver })']);

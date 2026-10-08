@@ -20,6 +20,11 @@ export interface MongoCollectionLike {
   findOne(filter: any, options?: any): Promise<any>;
   find(filter: any, options?: any): MongoCursorLike;
   updateOne(filter: any, update: any, options?: any): Promise<unknown>;
+  /**
+   * Used by `MongoDriver.incr`. Resolves the document (driver v6+) or a
+   * `{ value, ok }` result (v5); both are handled.
+   */
+  findOneAndUpdate?(filter: any, update: any, options?: any): Promise<any>;
   deleteOne(filter: any, options?: any): Promise<unknown>;
   deleteMany(filter: any, options?: any): Promise<unknown>;
   createIndex(spec: any, options?: any): Promise<unknown>;

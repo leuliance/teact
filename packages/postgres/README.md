@@ -80,17 +80,22 @@ console.log(createTableSql("teact_storage" /*, "schema" */));
 ```
 
 ```sql
-CREATE TABLE IF NOT EXISTS "teact_storage" (key TEXT COLLATE "C" PRIMARY KEY, value JSONB NOT NULL, expires_at TIMESTAMPTZ);
+CREATE TABLE IF NOT EXISTS "teact_storage" (key TEXT COLLATE "C" PRIMARY KEY, value JSON NOT NULL, expires_at TIMESTAMPTZ);
 CREATE INDEX IF NOT EXISTS "teact_storage_expires_at_idx" ON "teact_storage" (expires_at) WHERE expires_at IS NOT NULL;
 ```
 
 If you run migrations yourself (Drizzle Kit, Prisma Migrate, Supabase migrations), add this DDL and pass `autoMigrate: false`. `COLLATE "C"` lets the prefix queries (`LIKE 'prefix%'`) use the primary key index.
 
+The `value` column is `JSON`, not `JSONB`: `JSONB` rejects strings containing `\u0000` and reorders object keys, while `JSON` stores the text exactly as written, so values round-trip like they do in every other driver. Tables created with a `JSONB` column by earlier versions keep working unchanged (Postgres casts `json` to `jsonb` on assignment), but they keep JSONB's limitations; to switch, run `ALTER TABLE teact_storage ALTER COLUMN value TYPE json USING value::json`.
+
+**Concurrent first start**: when two processes run `CREATE TABLE IF NOT EXISTS` on a fresh database at the same moment, Postgres can fail one of them with a unique violation on `pg_type` (SQLSTATE `23505`) or `42P07`. `migrate()` treats both as success, since the table exists either way.
+
 ### API
 
 ```ts
 await pg.get<T>(key)                 // expiry is checked in SQL against now()
-await pg.set(key, value, { ttl })    // upsert; ttl in ms
+await pg.set(key, value, { ttl })    // upsert; ttl in ms (0, negative or Infinity = no expiry)
+await pg.incr(key, by?, { ttl })     // atomic upsert … RETURNING; ttl only when it creates the key
 await pg.delete(key); await pg.has(key)
 await pg.keys(prefix?); await pg.entries(prefix); await pg.clear(prefix?)
 await pg.purgeExpired()              // DELETE expired rows; returns the count (run from a cron)

@@ -94,7 +94,7 @@ function dbWiring(db: DatabaseId): DbWiring {
     case 'redis':
       return {
         imports: [`import Redis from 'ioredis';`, `import { RedisDriver } from '@teactjs/redis';`],
-        setup: [`const db = new RedisDriver({ client: new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379') });`],
+        setup: [`const db = new RedisDriver({ client: new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379'), closeClient: true });`],
         driver: 'storagePlugin({ driver: db })',
         deps: { '@teactjs/redis': TEACT_PEER_VERSION, ioredis: '^5.4.0' },
         env: ['REDIS_URL=redis://localhost:6379'],
@@ -102,7 +102,7 @@ function dbWiring(db: DatabaseId): DbWiring {
     case 'postgres':
       return {
         imports: [`import postgres from 'postgres';`, `import { PostgresDriver } from '@teactjs/postgres';`],
-        setup: [`const db = new PostgresDriver({ client: postgres(process.env.DATABASE_URL!) });`],
+        setup: [`const db = new PostgresDriver({ client: postgres(process.env.DATABASE_URL!), closeClient: true });`],
         driver: 'storagePlugin({ driver: db })',
         deps: { '@teactjs/postgres': TEACT_PEER_VERSION, postgres: '^3.4.0' },
         env: ['DATABASE_URL=postgres://localhost:5432/bot'],

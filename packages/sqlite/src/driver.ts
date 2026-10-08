@@ -1,4 +1,6 @@
+import { mkdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { dirname } from 'node:path';
 import type { AsyncStorageDriver, SetOptions, StorageDriver } from '@teactjs/storage';
 
 /**
@@ -59,27 +61,98 @@ export function quoteSqliteIdent(name: string): string {
   return `"${name}"`;
 }
 
-/** Escape `%`, `_` and `\` so `prefix` is matched literally by `LIKE ? ESCAPE '\'`. */
+/**
+ * Escape `%`, `_` and `\` so `prefix` is matched literally by `LIKE ? ESCAPE '\'`, and
+ * append the trailing `%`. Internal (not exported from the package index).
+ */
 export function escapeLike(prefix: string): string {
   return prefix.replace(/[\\%_]/g, '\\$&') + '%';
 }
 
-/** Open a database file with `bun:sqlite`, or `better-sqlite3` when not running on Bun. */
+/**
+ * Normalize `SetOptions.ttl`: a positive finite number of ms, or `undefined` for "never
+ * expires" (`0`, negative, `NaN`, `Infinity` or omitted).
+ */
+export function normalizeTtl(ttl: number | undefined): number | undefined {
+  return typeof ttl === 'number' && Number.isFinite(ttl) && ttl > 0 ? ttl : undefined;
+}
+
+/** `true` for a path naming a real file (not `':memory:'`, `''` or a `file:` URI). */
+function isFilePath(path: string): boolean {
+  return path !== '' && path !== ':memory:' && !path.startsWith('file:');
+}
+
+const errMessage = (err: unknown) => String((err as Error)?.message ?? err);
+
+/**
+ * Open a database file with `bun:sqlite`, or `better-sqlite3` when not running on Bun.
+ * Creates missing parent directories first (SQLite creates the file, not the folders).
+ */
 function openDatabase(path: string): SqliteDatabase {
+  if (isFilePath(path)) mkdirSync(dirname(path), { recursive: true });
   const req = createRequire(import.meta.url);
-  let lastErr: unknown;
+  let BunDatabase: (new (p: string, o?: object) => SqliteDatabase) | undefined;
   try {
-    const { Database } = req('bun:sqlite') as { Database: new (p: string, o?: object) => SqliteDatabase };
-    return new Database(path, { create: true });
-  } catch (err) { lastErr = err; }
+    BunDatabase = (req('bun:sqlite') as { Database: new (p: string, o?: object) => SqliteDatabase }).Database;
+  } catch { /* not running on Bun */ }
+  if (BunDatabase) {
+    try {
+      return new BunDatabase(path, { create: true });
+    } catch (err) {
+      throw new Error(`[teact/sqlite] bun:sqlite could not open ${JSON.stringify(path)}: ${errMessage(err)}`, { cause: err });
+    }
+  }
+  let BetterSqlite: (new (p: string) => SqliteDatabase) | undefined;
   try {
-    const BetterSqlite = req('better-sqlite3') as new (p: string) => SqliteDatabase;
+    BetterSqlite = req('better-sqlite3') as new (p: string) => SqliteDatabase;
+  } catch (err) {
+    throw new Error(
+      '[teact/sqlite] Could not open a SQLite database: run on Bun (bun:sqlite) or install better-sqlite3, ' +
+      `or pass an open database via { db }. Cause: ${errMessage(err)}`,
+      { cause: err },
+    );
+  }
+  try {
     return new BetterSqlite(path);
-  } catch (err) { lastErr = err; }
-  throw new Error(
-    '[teact/sqlite] Could not open a SQLite database: run on Bun (bun:sqlite) or install better-sqlite3, ' +
-    `or pass an open database via { db }. Cause: ${String((lastErr as Error)?.message ?? lastErr)}`,
+  } catch (err) {
+    throw new Error(`[teact/sqlite] better-sqlite3 could not open ${JSON.stringify(path)}: ${errMessage(err)}`, { cause: err });
+  }
+}
+
+/**
+ * Atomic increment as one UPSERT … RETURNING (SQLite ≥ 3.35, JSON1). Parameters:
+ * key, by, expires_at for a new row, now, now, by, now. An expired row counts as missing
+ * (value and expiry are reset); a live row keeps its expiry. A stored value that is not a
+ * JSON number becomes NULL, which the `NOT NULL` constraint rejects — so the statement
+ * fails instead of silently overwriting it. `@teactjs/cloudflare`'s D1 driver uses the same SQL.
+ */
+export function incrSql(q: string): string {
+  const expired = 'expires_at IS NOT NULL AND expires_at <= ?';
+  return (
+    `INSERT INTO ${q} (key, value, expires_at) VALUES (?, ?, ?) ` +
+    `ON CONFLICT(key) DO UPDATE SET ` +
+    `value = CASE WHEN ${expired} THEN excluded.value ` +
+    `WHEN json_valid(value) AND json_type(value) IN ('integer', 'real') THEN value + ? ELSE NULL END, ` +
+    `expires_at = CASE WHEN ${expired} THEN excluded.expires_at ELSE expires_at END ` +
+    `RETURNING value`
   );
+}
+
+/**
+ * Bindings for {@link incrSql}. `by` is bound as its JSON text (`'1'`, `'2.5'`): SQLite
+ * converts it to INTEGER/REAL for the addition, and better-sqlite3 — which binds every JS
+ * number as REAL — would otherwise store an integer counter as `'1.0'`.
+ */
+export function incrParams(key: string, by: number, ttl: number | undefined, now: number): unknown[] {
+  const amount = JSON.stringify(by);
+  return [key, amount, ttl !== undefined ? now + ttl : null, now, amount, now];
+}
+
+/** Turn the `NOT NULL` failure of {@link incrSql} into a readable error. */
+export function incrError(key: string, err: unknown): Error {
+  return /NOT NULL/i.test(errMessage(err))
+    ? new TypeError(`[teact/sqlite] incr: the value at ${JSON.stringify(key)} is not a number`, { cause: err })
+    : (err as Error);
 }
 
 interface Row { key: string; value: string }
@@ -171,11 +244,28 @@ export class SqliteDriver implements StorageDriver {
    */
   set<T>(key: string, value: T, opts?: SetOptions): void {
     if (value === undefined) return this.delete(key);
-    const expiresAt = opts?.ttl ? Date.now() + opts.ttl : null;
+    const ttl = normalizeTtl(opts?.ttl);
+    const expiresAt = ttl !== undefined ? Date.now() + ttl : null;
     this.stmt(
       `INSERT INTO ${this.q} (key, value, expires_at) VALUES (?, ?, ?) ` +
       `ON CONFLICT(key) DO UPDATE SET value = excluded.value, expires_at = excluded.expires_at`,
     ).run(key, JSON.stringify(value), expiresAt);
+  }
+
+  /**
+   * Atomically add `by` (default 1) to the number at `key` (missing or expired → 0) and
+   * return the new value, in one UPSERT … RETURNING. `opts.ttl` applies only when the
+   * increment creates the key. Throws when the stored value is not a number.
+   */
+  incr(key: string, by = 1, opts?: SetOptions): number {
+    if (!Number.isFinite(by)) throw new TypeError(`[teact/sqlite] incr: \`by\` must be a finite number, got ${by}`);
+    let row: { value: unknown } | null | undefined;
+    try {
+      row = this.stmt(incrSql(this.q)).get(...incrParams(key, by, normalizeTtl(opts?.ttl), Date.now())) as typeof row;
+    } catch (err) {
+      throw incrError(key, err);
+    }
+    return Number(row?.value);
   }
 
   delete(key: string): void {
@@ -253,6 +343,7 @@ export class SqliteAsyncDriver implements AsyncStorageDriver {
 
   async get<T>(key: string): Promise<T | undefined> { return this.sync.get<T>(key); }
   async set<T>(key: string, value: T, opts?: SetOptions): Promise<void> { this.sync.set(key, value, opts); }
+  async incr(key: string, by?: number, opts?: SetOptions): Promise<number> { return this.sync.incr(key, by, opts); }
   async delete(key: string): Promise<void> { this.sync.delete(key); }
   async has(key: string): Promise<boolean> { return this.sync.has(key); }
   async keys(prefix?: string): Promise<string[]> { return this.sync.keys(prefix); }

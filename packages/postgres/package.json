@@ -4,19 +4,20 @@
   "description": "Postgres storage driver, session store and plugin for Teact — pg, postgres.js, Neon and PGlite",
   "type": "module",
   "main": "dist/index.js",
-  "types": "dist/postgres/src/index.d.ts",
+  "types": "dist/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/postgres/src/index.d.ts"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     }
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
-    "build": "bun build ./src/index.ts --outdir ./dist --format esm --target bun --external react --external react/jsx-runtime --external react/jsx-dev-runtime --external @teactjs/core --external @teactjs/storage --external @teactjs/plugin-sdk --external pg --external postgres --external @neondatabase/serverless --external @electric-sql/pglite && tsc --emitDeclarationOnly --outDir dist --declaration --project tsconfig.build.json"
+    "build": "rm -rf dist && bun build ./src/index.ts --outdir ./dist --format esm --target bun --external react --external react/jsx-runtime --external react/jsx-dev-runtime --external @teactjs/core --external @teactjs/storage --external @teactjs/plugin-sdk --external pg --external postgres --external @neondatabase/serverless --external @electric-sql/pglite && tsc --emitDeclarationOnly --outDir dist --declaration --project tsconfig.build.json && bun ../../scripts/fix-dts.ts"
   },
   "dependencies": {},
   "peerDependencies": {
@@ -30,11 +31,38 @@
     "@electric-sql/pglite": ">=0.2.0"
   },
   "peerDependenciesMeta": {
-    "pg": { "optional": true },
-    "postgres": { "optional": true },
-    "@neondatabase/serverless": { "optional": true },
-    "@electric-sql/pglite": { "optional": true }
+    "pg": {
+      "optional": true
+    },
+    "postgres": {
+      "optional": true
+    },
+    "@neondatabase/serverless": {
+      "optional": true
+    },
+    "@electric-sql/pglite": {
+      "optional": true
+    }
   },
-  "keywords": ["teact", "telegram", "bot", "postgres", "postgresql", "storage", "session", "neon", "supabase"],
-  "license": "MIT"
+  "keywords": [
+    "teact",
+    "telegram",
+    "bot",
+    "postgres",
+    "postgresql",
+    "storage",
+    "session",
+    "neon",
+    "supabase"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/leuliance/teact.git",
+    "directory": "packages/postgres"
+  },
+  "homepage": "https://teact-docs.vercel.app",
+  "bugs": {
+    "url": "https://github.com/leuliance/teact/issues"
+  }
 }

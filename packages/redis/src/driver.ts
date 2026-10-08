@@ -19,8 +19,9 @@ export interface RedisDriverOptions {
   namespace?: string;
   /**
    * Close the client when the driver is closed (the storage plugin closes its driver in
-   * `onStop`). Turn it off when the client is shared with other code.
-   * @default true
+   * `onStop`). Off by default: the driver never closes a client it was given unless you
+   * ask it to, so a client shared with other code stays usable.
+   * @default false
    */
   closeClient?: boolean;
 }
@@ -30,6 +31,14 @@ export function escapeGlob(s: string): string {
   return s.replace(/[*?[\]\\]/g, '\\$&');
 }
 
+/**
+ * Normalize `SetOptions.ttl`: a positive finite number of ms, or `undefined` for "never
+ * expires" (`0`, negative, `NaN`, `Infinity` or omitted).
+ */
+export function normalizeTtl(ttl: number | undefined): number | undefined {
+  return typeof ttl === 'number' && Number.isFinite(ttl) && ttl > 0 ? Math.ceil(ttl) : undefined;
+}
+
 /** How many keys to delete per `DEL` command in `clear()`. */
 const DEL_BATCH = 500;
 
@@ -37,7 +46,10 @@ const DEL_BATCH = 500;
  * {@link AsyncStorageDriver} backed by Redis.
  *
  * - Values are stored as JSON strings (readable from any other Redis client).
- * - `ttl` maps to `SET … PX <ms>`.
+ * - `ttl` maps to `SET … PX <ms>` (`0`/negative/`Infinity` = no expiry).
+ * - `incr()` is atomic: a small Lua script runs `INCRBY` (`INCRBYFLOAT` for fractions)
+ *   and sets the expiry only when it created the key. It is `undefined` when the client
+ *   adapter has no `incrby` (e.g. a hand-written {@link RedisCommands} without it).
  * - Prefix lookups use `SCAN … MATCH <escaped prefix>*` — never `KEYS`, so they don't block
  *   the server — and `entries()` fetches all values with a single `MGET`.
  *
@@ -55,11 +67,23 @@ export class RedisDriver implements AsyncStorageDriver {
   readonly commands: RedisCommands;
   private readonly ns: string;
   private readonly closeClient: boolean;
+  /**
+   * Atomically add `by` (default 1) to the number at `key` (missing → 0) and resolve the
+   * new value; `opts.ttl` applies only when the increment creates the key.
+   */
+  readonly incr?: (key: string, by?: number, opts?: SetOptions) => Promise<number>;
 
   constructor(opts: RedisDriverOptions) {
     this.commands = toRedisCommands(opts.client, opts.clientKind);
     this.ns = opts.namespace ?? '';
-    this.closeClient = opts.closeClient ?? true;
+    this.closeClient = opts.closeClient ?? false;
+    const incrby = this.commands.incrby?.bind(this.commands);
+    if (incrby) {
+      this.incr = async (key, by = 1, o) => {
+        if (!Number.isFinite(by)) throw new TypeError(`[teact/redis] incr: \`by\` must be a finite number, got ${by}`);
+        return incrby(this.k(key), by, normalizeTtl(o?.ttl));
+      };
+    }
   }
 
   private k(key: string): string {
@@ -72,8 +96,7 @@ export class RedisDriver implements AsyncStorageDriver {
 
   async set<T>(key: string, value: T, opts?: SetOptions): Promise<void> {
     if (value === undefined) return this.delete(key);
-    const ttl = opts?.ttl && opts.ttl > 0 ? Math.ceil(opts.ttl) : undefined;
-    await this.commands.set(this.k(key), JSON.stringify(value), ttl);
+    await this.commands.set(this.k(key), JSON.stringify(value), normalizeTtl(opts?.ttl));
   }
 
   async delete(key: string): Promise<void> {
@@ -127,7 +150,7 @@ export class RedisDriver implements AsyncStorageDriver {
     return out;
   }
 
-  /** Close the client (unless `closeClient: false`). Safe to call more than once. */
+  /** Close the client when `closeClient: true` was passed; otherwise a no-op. Safe to call more than once. */
   async close(): Promise<void> {
     if (this.closeClient) await this.commands.close?.();
   }

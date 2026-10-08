@@ -16,7 +16,10 @@ export function quotePgIdent(name: string): string {
   return `"${name}"`;
 }
 
-/** Escape `%`, `_` and `\` so `prefix` is matched literally by `LIKE $n ESCAPE '\'`. */
+/**
+ * Escape `%`, `_` and `\` so `prefix` is matched literally by `LIKE $n ESCAPE '\'`, and
+ * append the trailing `%`. Internal (not exported from the package index).
+ */
 export function escapeLike(prefix: string): string {
   return prefix.replace(/[\\%_]/g, '\\$&') + '%';
 }
@@ -27,7 +30,9 @@ export function createTableStatements(table = 'teact_storage', schema?: string):
   const idx = quotePgIdent(`${table}_expires_at_idx`.slice(0, 63));
   return [
     // COLLATE "C" lets prefix LIKE queries use the primary-key b-tree index.
-    `CREATE TABLE IF NOT EXISTS ${q} (key TEXT COLLATE "C" PRIMARY KEY, value JSONB NOT NULL, expires_at TIMESTAMPTZ)`,
+    // JSON (not JSONB): keeps object key order and accepts "\u0000" in strings. Tables
+    // created as JSONB by older versions keep working (json → jsonb is an assignment cast).
+    `CREATE TABLE IF NOT EXISTS ${q} (key TEXT COLLATE "C" PRIMARY KEY, value JSON NOT NULL, expires_at TIMESTAMPTZ)`,
     `CREATE INDEX IF NOT EXISTS ${idx} ON ${q} (expires_at) WHERE expires_at IS NOT NULL`,
   ];
 }
@@ -38,12 +43,27 @@ export function createTableStatements(table = 'teact_storage', schema?: string):
  *
  * @example
  * console.log(createTableSql()); // paste into a migration
- * // CREATE TABLE IF NOT EXISTS "teact_storage" (key TEXT COLLATE "C" PRIMARY KEY, value JSONB NOT NULL, expires_at TIMESTAMPTZ);
+ * // CREATE TABLE IF NOT EXISTS "teact_storage" (key TEXT COLLATE "C" PRIMARY KEY, value JSON NOT NULL, expires_at TIMESTAMPTZ);
  * // CREATE INDEX IF NOT EXISTS "teact_storage_expires_at_idx" ON "teact_storage" (expires_at) WHERE expires_at IS NOT NULL;
  */
 export function createTableSql(table = 'teact_storage', schema?: string): string {
   return createTableStatements(table, schema).map((s) => s + ';').join('\n');
 }
+
+/**
+ * Normalize `SetOptions.ttl`: a positive finite number of ms, or `null` for "never
+ * expires" (`0`, negative, `NaN`, `Infinity` or omitted).
+ */
+function normalizeTtl(ttl: number | undefined): number | null {
+  return typeof ttl === 'number' && Number.isFinite(ttl) && ttl > 0 ? ttl : null;
+}
+
+/**
+ * SQLSTATEs a concurrent `CREATE … IF NOT EXISTS` can raise when another process creates
+ * the same table at the same moment: `23505` unique_violation (on `pg_type`) and `42P07`
+ * duplicate_table. The object exists afterwards either way.
+ */
+const ALREADY_EXISTS = new Set(['23505', '42P07']);
 
 /** Options for {@link PostgresDriver}. */
 export interface PostgresDriverOptions {
@@ -69,8 +89,8 @@ export interface PostgresDriverOptions {
 /**
  * Postgres {@link AsyncStorageDriver}.
  *
- * Stores JSON values in `teact_storage(key TEXT PRIMARY KEY, value JSONB NOT NULL,
- * expires_at TIMESTAMPTZ)`. Expiry is evaluated in SQL against the database clock, writes
+ * Stores JSON values in `teact_storage(key TEXT PRIMARY KEY, value JSON NOT NULL,
+ * expires_at TIMESTAMPTZ)` (an existing `JSONB` column works too). Expiry is evaluated in SQL against the database clock, writes
  * are single-statement upserts, and `entries(prefix)` loads a chat's keys in one query —
  * exactly what `storagePlugin`'s per-update cache needs.
  *
@@ -102,11 +122,22 @@ export class PostgresDriver implements AsyncStorageDriver {
     if (opts.autoMigrate === false) this.ready = Promise.resolve();
   }
 
-  /** Create the table if needed (runs once; retried if it failed). Called automatically. */
+  /**
+   * Create the table if needed (runs once; retried if it failed). Called automatically.
+   * Two processes racing `CREATE TABLE IF NOT EXISTS` on a fresh database can make one of
+   * them fail with a unique violation on `pg_type` (SQLSTATE 23505) or 42P07; both mean the
+   * table now exists, so they count as success.
+   */
   migrate(): Promise<void> {
     if (!this.ready) {
       this.ready = (async () => {
-        for (const sql of createTableStatements(this.opts.table, this.opts.schema)) await this.run(sql);
+        for (const sql of createTableStatements(this.opts.table, this.opts.schema)) {
+          try {
+            await this.run(sql);
+          } catch (err) {
+            if (!ALREADY_EXISTS.has(String((err as { code?: unknown })?.code))) throw err;
+          }
+        }
       })().catch((err) => {
         this.ready = undefined;
         throw err;
@@ -144,10 +175,31 @@ export class PostgresDriver implements AsyncStorageDriver {
     // Values go in as text and are cast server-side, so every client serialises them the same way.
     await this.exec(
       `INSERT INTO ${this.tableRef} (key, value, expires_at) ` +
-      `VALUES ($1, $2::text::jsonb, now() + ($3::float8 * interval '1 millisecond')) ` +
+      `VALUES ($1, $2::text::json, now() + ($3::float8 * interval '1 millisecond')) ` +
       `ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, expires_at = EXCLUDED.expires_at`,
-      [key, JSON.stringify(value), opts?.ttl ? opts.ttl : null],
+      [key, JSON.stringify(value), normalizeTtl(opts?.ttl)],
     );
+  }
+
+  /**
+   * Atomically add `by` (default 1) to the number at `key` and resolve the new value, in
+   * one upsert. A missing or expired row counts as 0 and gets `opts.ttl`; a live row keeps
+   * its expiry. Rejects when the stored value is not a JSON number. Arithmetic is exact
+   * (`numeric`), and works with both `JSON` and legacy `JSONB` value columns.
+   */
+  async incr(key: string, by = 1, opts?: SetOptions): Promise<number> {
+    if (!Number.isFinite(by)) throw new TypeError(`[teact/postgres] incr: \`by\` must be a finite number, got ${by}`);
+    const live = '(t.expires_at IS NULL OR t.expires_at > now())';
+    const rows = await this.exec(
+      `INSERT INTO ${this.tableRef} AS t (key, value, expires_at) ` +
+      `VALUES ($1, to_json($2::numeric), now() + ($3::float8 * interval '1 millisecond')) ` +
+      `ON CONFLICT (key) DO UPDATE SET ` +
+      `value = CASE WHEN ${live} THEN to_json(t.value::text::numeric + $2::numeric) ELSE to_json($2::numeric) END, ` +
+      `expires_at = CASE WHEN ${live} THEN t.expires_at ELSE EXCLUDED.expires_at END ` +
+      `RETURNING t.value::text AS value`,
+      [key, String(by), normalizeTtl(opts?.ttl)],
+    );
+    return Number(parseValue(rows[0]?.value));
   }
 
   async delete(key: string): Promise<void> {

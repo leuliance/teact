@@ -92,6 +92,7 @@ new KVDriver(() => env.BOT_KV, { namespace: 'mybot:' /* optional key prefix */ }
 - **TTL**: KV's minimum `expirationTtl` is **60 seconds**. `set(k, v, { ttl })` converts milliseconds to seconds, rounding up, with a floor of 60s. A `ttl` of 5000 (5s) therefore lives for 60s.
 - `keys()` and `clear()` page through `list({ prefix, cursor })`. `entries()` lists the keys, then reads the values in parallel (`concurrency`, default 50).
 - **Consistency**: KV is eventually consistent. Writes can take up to about 60s to reach other locations, and KV allows about one write per second per key. Avoid it for per-message state such as counters, multi-step forms or wizards. Use D1 for those.
+- **No `incr`**: KV has no atomic increment or compare-and-swap, so `KVDriver` deliberately doesn't implement the optional `incr()` (a get-then-put counter would lose updates). `D1Driver.incr(key, by, { ttl })` is atomic: one `UPSERT … RETURNING` statement.
 - **Cost**: each update runs `list` plus one `get` per key in the chat. Keep chat-scoped keys few, or use D1.
 
 ## Sessions

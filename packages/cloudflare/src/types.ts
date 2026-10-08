@@ -38,6 +38,14 @@ export interface D1DatabaseLike {
  */
 export type Lazy<T> = T | (() => T);
 
+/**
+ * Normalize `SetOptions.ttl`: a positive finite number of ms, or `undefined` for "never
+ * expires" (`0`, negative, `NaN`, `Infinity` or omitted). Internal.
+ */
+export function normalizeTtl(ttl: number | undefined): number | undefined {
+  return typeof ttl === 'number' && Number.isFinite(ttl) && ttl > 0 ? ttl : undefined;
+}
+
 /** Resolve a {@link Lazy} binding. */
 export function resolve<T extends object>(b: Lazy<T>): T {
   return typeof b === 'function' ? (b as () => T)() : b;

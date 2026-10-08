@@ -17,9 +17,11 @@ import {
   fromUpstash,
   detectRedisClient,
   toRedisCommands,
+  markNormalized,
   type RedisCommands,
   type BunRedisLike,
 } from '../packages/redis/src';
+import { INCR_SCRIPT } from '../packages/redis/src/client';
 
 // Compile-time check: Bun's real RedisClient satisfies the structural interface.
 const _bunClientIsAssignable: BunRedisLike = null as unknown as RedisClient;
@@ -65,6 +67,21 @@ class FakeRedisServer {
   }
   del(keys: string[]) { this.commands.push('DEL'); let n = 0; for (const k of keys) if (this.data.delete(k)) n++; return n; }
   exists(keys: string[]) { return keys.filter((k) => this.live(k)).length; }
+  /** Emulates `EVAL INCR_SCRIPT 1 key by ttl` (GET + INCRBY/INCRBYFLOAT + PEXPIRE when created). */
+  eval(script: string, keys: string[], args: string[]): number | string {
+    this.commands.push('EVAL');
+    if (script !== INCR_SCRIPT) throw new Error('NOSCRIPT unexpected script');
+    if (!args.every((a) => typeof a === 'string')) throw new Error('ERR args must be strings');
+    const [key] = keys;
+    const [by, ttl] = args;
+    const e = this.live(key);
+    const float = /[.eE]/.test(by) || (!!e && !/^-?\d+$/.test(e.v));
+    const cur = e ? Number(e.v) : 0;
+    if (e && (!/^-?\d+(\.\d+)?$/.test(e.v) || (!float && !Number.isInteger(cur)))) throw new Error('ERR value is not an integer or out of range');
+    const v = cur + Number(by);
+    this.data.set(key, { v: String(v), exp: e ? e.exp : Number(ttl) > 0 ? Date.now() + Number(ttl) : undefined });
+    return float ? String(v) : v;
+  }
   scan(cursor: number, match = '*', count = 10): [string, string[]] {
     this.commands.push('SCAN');
     if (match === '*' && this.commands.includes('KEYS')) throw new Error('unreachable');
@@ -95,8 +112,41 @@ function fakeIoredis(s = new FakeRedisServer()) {
       const opt = (name: string) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : undefined; };
       return s.scan(Number(cursor), opt('MATCH'), opt('COUNT'));
     },
+    async eval(script: string, numKeys: number, ...rest: string[]) {
+      return s.eval(script, rest.slice(0, numKeys), rest.slice(numKeys));
+    },
     scanStream() { throw new Error('not used'); },
     async keys() { throw new Error('KEYS must never be used'); },
+    async quit() { this.quitted++; return 'OK'; },
+  };
+}
+
+/**
+ * ioredis `Cluster` shape: no `scanStream`, `isCluster`, `nodes('master')`; keys are spread
+ * over several masters and multi-key MGET/DEL across masters fails with CROSSSLOT.
+ */
+function fakeIoredisCluster(masters = 3) {
+  const servers = Array.from({ length: masters }, () => new FakeRedisServer());
+  const slot = (k: string) => { let h = 0; for (const ch of k) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return h % masters; };
+  const at = (k: string) => servers[slot(k)];
+  const sameSlot = (keys: string[]) => {
+    if (new Set(keys.map(slot)).size > 1) throw new Error("CROSSSLOT Keys in request don't hash to the same slot");
+  };
+  const nodes = servers.map((s) => fakeIoredis(s));
+  return {
+    servers,
+    isCluster: true as const,
+    quitted: 0,
+    nodes(role?: string) { if (role !== 'master') throw new Error('expected master'); return nodes; },
+    async get(k: string) { return at(k).get(k); },
+    async mget(...keys: string[]) { sameSlot(keys); return at(keys[0]).mget(keys); },
+    async set(k: string, v: string, ...args: any[]) { at(k).set(k, v, args[1]); return 'OK'; },
+    async del(...keys: string[]) { sameSlot(keys); return at(keys[0]).del(keys); },
+    // A cluster's own scan() only reaches one random node — must not be used.
+    async scan(): Promise<[string, string[]]> { throw new Error('single-node SCAN on a cluster'); },
+    async eval(script: string, numKeys: number, ...rest: string[]) {
+      return at(rest[0]).eval(script, rest.slice(0, numKeys), rest.slice(numKeys));
+    },
     async quit() { this.quitted++; return 'OK'; },
   };
 }
@@ -117,6 +167,9 @@ function fakeNodeRedis(s = new FakeRedisServer(), version: 4 | 5 = 4) {
     async scan(cursor: string | number, opts: { MATCH?: string; COUNT?: number }) {
       const [next, keys] = s.scan(Number(cursor), opts.MATCH, opts.COUNT);
       return { cursor: version === 4 ? Number(next) : next, keys };
+    },
+    async eval(script: string, o: { keys?: string[]; arguments?: string[] }) {
+      return s.eval(script, o.keys ?? [], o.arguments ?? []);
     },
     async keys() { throw new Error('KEYS must never be used'); },
     async quit() { this.closed++; return 'OK'; },
@@ -147,6 +200,10 @@ function fakeBunRedis(s = new FakeRedisServer()) {
           return s.scan(Number(cursor), match, Number(count));
         }
         case 'MGET': return s.mget(args);
+        case 'EVAL': {
+          const [script, n, ...rest] = args;
+          return s.eval(script, rest.slice(0, Number(n)), rest.slice(Number(n)));
+        }
         default: throw new Error('unexpected ' + cmd);
       }
     },
@@ -172,6 +229,7 @@ function fakeUpstash(s = new FakeRedisServer(), automaticDeserialization = true)
     },
     async del(...keys: string[]) { return s.del(keys); },
     async exists(...keys: string[]) { return s.exists(keys); },
+    async eval(script: string, keys: string[], args: string[]) { return parse(String(s.eval(script, keys, args))); },
     async scan(cursor: string | number, opts: { match?: string; count?: number }) {
       const [next, keys] = s.scan(Number(cursor), opts.match, opts.count);
       return [Number(next), keys] as [number, string[]];
@@ -190,6 +248,7 @@ runDriverConformance('RedisDriver(node-redis v5)', () => new RedisDriver({ clien
 runDriverConformance('RedisDriver(bun)', () => new RedisDriver({ client: fakeBunRedis() }), opts);
 runDriverConformance('RedisDriver(upstash)', () => new RedisDriver({ client: fakeUpstash() }), opts);
 runDriverConformance('RedisDriver(upstash, no auto-deserialize)', () => new RedisDriver({ client: fakeUpstash(undefined, false) }), opts);
+runDriverConformance('RedisDriver(ioredis Cluster, auto)', () => new RedisDriver({ client: fakeIoredisCluster() }), opts);
 runDriverConformance('RedisDriver(namespace)', () => new RedisDriver({ client: fakeIoredis(), namespace: 'bot*[1]:' }), opts);
 
 describe('RedisDriver details', () => {
@@ -201,8 +260,27 @@ describe('RedisDriver details', () => {
     const real = new RedisClient('redis://127.0.0.1:1', { autoReconnect: false, enableOfflineQueue: false });
     expect(detectRedisClient(real)).toBe('bun'); // real Bun client, never connected
     real.close();
+    expect(detectRedisClient(fakeIoredisCluster())).toBe('ioredis');
     expect(detectRedisClient(fromIoredis(fakeIoredis()))).toBeUndefined();
     expect(() => toRedisCommands({} as any)).toThrow('Could not recognize');
+    // An unknown raw client with get/set/del/scan must not be mistaken for RedisCommands.
+    const raw = { get: async () => null, set: async () => 'OK', del: async () => 0, scan: async () => ['0', []] };
+    expect(() => toRedisCommands(raw as any)).toThrow('Could not recognize');
+  });
+
+  test('ioredis Cluster: scans every master, never multi-key MGET/DEL across slots', async () => {
+    const c = fakeIoredisCluster();
+    const d = new RedisDriver({ client: c, namespace: 'app:' });
+    for (let i = 0; i < 30; i++) await d.set(`p:${i}`, i);
+    expect(c.servers.every((s) => s.data.size > 0)).toBe(true); // spread over the masters
+    expect((await d.keys('p:')).length).toBe(30);
+    expect((await d.entries('p:')).sort(([, a], [, b]) => (a as number) - (b as number)).map(([, v]) => v))
+      .toEqual(Array.from({ length: 30 }, (_, i) => i));
+    expect(await d.incr!('n', 2)).toBe(2);
+    await d.clear('p:');
+    expect(await d.keys()).toEqual(['n']);
+    await new RedisDriver({ client: c, closeClient: true }).close();
+    expect(c.quitted).toBe(1);
   });
 
   test('escapeGlob escapes * ? [ ] and backslash', () => {
@@ -259,20 +337,62 @@ describe('RedisDriver details', () => {
     expect([...c.server.data.keys()]).toEqual(['foreign']);
   });
 
-  test('close() closes once, and can be disabled', async () => {
+  test('close() leaves a given client open by default; closeClient: true closes it once', async () => {
     const io = fakeIoredis();
-    const d = new RedisDriver({ client: io });
+    const d = new RedisDriver({ client: io, closeClient: true });
     await d.close();
     await d.close();
     expect(io.quitted).toBe(1);
 
     const v5 = fakeNodeRedis(undefined, 5);
-    await new RedisDriver({ client: v5 }).close();
+    await new RedisDriver({ client: v5, closeClient: true }).close();
     expect(v5.closed).toBe(1);
 
     const bun = fakeBunRedis();
-    await new RedisDriver({ client: bun, closeClient: false }).close();
+    await new RedisDriver({ client: bun }).close();
     expect(bun.closed).toBe(0);
+  });
+
+  test('ttl: 0, negative, NaN and Infinity mean no expiry (plain SET, no throw)', async () => {
+    const c = fakeBunRedis();
+    const d = new RedisDriver({ client: c });
+    for (const ttl of [0, -1, NaN, Infinity]) await d.set('k', 1, { ttl });
+    expect(c.server.commands.filter((x) => x === 'SET PX')).toEqual([]);
+    expect(c.server.data.get('k')!.exp).toBeUndefined();
+  });
+
+  test('incr: one EVAL round trip per call, ttl only on creation, works for every adapter', async () => {
+    for (const make of [fakeIoredis, fakeNodeRedis, fakeBunRedis, fakeUpstash] as const) {
+      const c = make();
+      const d = new RedisDriver({ client: c, namespace: 'ns:' });
+      c.server.commands = [];
+      expect(await d.incr!('n', 1, { ttl: 5000 })).toBe(1);
+      expect(c.server.commands).toEqual(['EVAL']);
+      const exp = c.server.data.get('ns:n')!.exp!;
+      expect(exp).toBeGreaterThan(Date.now());
+      expect(await d.incr!('n', 4, { ttl: 999_999 })).toBe(5);
+      expect(c.server.data.get('ns:n')!.exp).toBe(exp);
+      expect(await d.get<number>('n')).toBe(5);
+      expect(await d.incr!('f', 0.5)).toBe(0.5);
+      expect(await d.incr!('f', 1.25)).toBe(1.75);
+      expect(await d.incr!('f', 2)).toBe(3.75); // integer step on a float value
+      await expect(d.incr!('n', Infinity)).rejects.toThrow('finite');
+      await d.set('s', 'text');
+      await expect(d.incr!('s')).rejects.toThrow('not an integer');
+    }
+  });
+
+  test('incr is undefined for a RedisCommands implementation without incrby', () => {
+    const s = new FakeRedisServer();
+    const d = new RedisDriver({
+      client: markNormalized({
+        get: async (k) => s.get(k),
+        set: async (k, v, ttl) => s.set(k, v, ttl),
+        del: async (keys) => { s.del(keys); },
+        async *scan() { yield []; },
+      } as RedisCommands),
+    });
+    expect(d.incr).toBeUndefined();
   });
 
   test('custom RedisCommands implementations are used as-is', async () => {
@@ -346,7 +466,20 @@ describe('storagePlugin + RedisDriver (integration)', () => {
 });
 
 describe('redisPlugin', () => {
-  test('provides the client via useRedis() and closes it on stop', async () => {
+  test('provides the client via useRedis(); leaves it open on stop by default', async () => {
+    const client = fakeIoredis();
+    const bot = createBot({
+      component: () => <Message text="x" />,
+      adapter: new MockAdapter(),
+      token: 't',
+      plugins: [redisPlugin({ client }), storagePlugin({ driver: new RedisDriver({ client }) })],
+    });
+    await bot.start();
+    await bot.stop();
+    expect(client.quitted).toBe(0); // the client was given, so nobody closes it
+  });
+
+  test('closeOnStop + closeClient close a shared client exactly once', async () => {
     const client = fakeIoredis();
     await client.set('greeting', 'hi from redis');
     function App() {
@@ -358,7 +491,7 @@ describe('redisPlugin', () => {
       component: App,
       adapter,
       token: 't',
-      plugins: [redisPlugin({ client }), storagePlugin({ driver: new RedisDriver({ client }) })],
+      plugins: [redisPlugin({ client, closeOnStop: true }), storagePlugin({ driver: new RedisDriver({ client, closeClient: true }) })],
     });
     await bot.start();
     await adapter.simulateMessage('1', '1', 'x');
@@ -367,11 +500,11 @@ describe('redisPlugin', () => {
     expect(client.quitted).toBe(1); // shared client closed exactly once
   });
 
-  test('closeOnStop: false leaves the client open', async () => {
+  test('closeOnStop: true closes a node-redis client', async () => {
     const client = fakeNodeRedis();
-    const bot = createBot({ component: () => <Message text="x" />, adapter: new MockAdapter(), token: 't', plugins: [redisPlugin({ client, closeOnStop: false })] });
+    const bot = createBot({ component: () => <Message text="x" />, adapter: new MockAdapter(), token: 't', plugins: [redisPlugin({ client, closeOnStop: true })] });
     await bot.start();
     await bot.stop();
-    expect(client.closed).toBe(0);
+    expect(client.closed).toBe(1);
   });
 });

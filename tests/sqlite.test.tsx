@@ -17,8 +17,9 @@ import {
   useSqlite,
   quoteSqliteIdent,
   createSqliteTableSql,
-  escapeLike,
 } from '../packages/sqlite/src';
+import { escapeLike } from '../packages/sqlite/src/driver';
+import * as sqliteIndex from '../packages/sqlite/src';
 
 const tmp = mkdtempSync(join(tmpdir(), 'teact-sqlite-'));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
@@ -96,8 +97,40 @@ describe('SqliteDriver (sync StorageDriver)', () => {
     expect(d.keys().sort()).toEqual(['50%:x', '50a:x', 'Telegram:1:b', 'back\\slash:x'].sort());
   });
 
-  test('escapeLike escapes % _ and backslash', () => {
+  test('escapeLike escapes % _ and backslash (internal, not exported from the index)', () => {
     expect(escapeLike('a%b_c\\d')).toBe('a\\%b\\_c\\\\d%');
+    expect('escapeLike' in sqliteIndex).toBe(false);
+  });
+
+  test('sync set: ttl 0, negative, NaN and Infinity mean no expiry', async () => {
+    const d = mem();
+    for (const [i, ttl] of [0, -1, NaN, Infinity].entries()) d.set(`k${i}`, i, { ttl });
+    await Bun.sleep(5);
+    expect(d.keys()).toEqual(['k0', 'k1', 'k2', 'k3']);
+    const rows = d.db.prepare('SELECT expires_at FROM teact_storage').all() as Array<{ expires_at: number | null }>;
+    expect(rows.every((r) => r.expires_at === null)).toBe(true);
+  });
+
+  test('sync incr: upsert, floats, expired rows reset, ttl only on creation, non-numbers rejected', async () => {
+    const d = mem();
+    expect(d.incr('n')).toBe(1);
+    expect(d.incr('n', 4)).toBe(5);
+    expect((d.db.prepare("SELECT value FROM teact_storage WHERE key = 'n'").get() as { value: string }).value).toBe('5');
+    expect(d.get<number>('n')).toBe(5);
+    expect(d.incr('f', 0.5)).toBe(0.5);
+    expect(d.incr('f', 1)).toBe(1.5);
+    d.set('e', 100, { ttl: 10 });
+    await Bun.sleep(25);
+    expect(d.incr('e', 1, { ttl: 60_000 })).toBe(1);
+    expect(d.has('e')).toBe(true);
+    d.incr('t', 1, { ttl: 20 });
+    d.incr('t', 1, { ttl: 60_000 });
+    await Bun.sleep(40);
+    expect(d.get('t')).toBeUndefined();
+    d.set('s', 'text');
+    expect(() => d.incr('s')).toThrow('not a number');
+    expect(d.get<string>('s')).toBe('text');
+    expect(() => d.incr('x', Infinity)).toThrow('finite');
   });
 
   test('ttl hides expired rows and purgeExpired deletes them', async () => {
@@ -165,6 +198,27 @@ describe('SqliteDriver file persistence', () => {
     expect(b.get<any>('user:1')).toEqual({ name: 'Ada' });
     expect(b.get<any>('gone')).toBe(1);
     b.close();
+  });
+
+  test('path in a missing nested directory: the directories are created', () => {
+    const path = join(tmp, 'fresh', 'nested', '.teact', 'bot.db');
+    expect(existsSync(join(tmp, 'fresh'))).toBe(false);
+    const d = new SqliteDriver({ path });
+    d.set('k', 1);
+    d.close();
+    expect(existsSync(path)).toBe(true);
+    rmSync(join(tmp, 'fresh'), { recursive: true, force: true });
+  });
+
+  test('open errors on Bun report the bun:sqlite cause, not better-sqlite3', () => {
+    const dir = join(tmp, 'is-a-dir');
+    new SqliteDriver({ path: join(dir, 'x.db') }).close();
+    let err: any;
+    try { new SqliteDriver({ path: dir }); } catch (e) { err = e; }
+    expect(err).toBeInstanceOf(Error);
+    expect(err.message).toContain('bun:sqlite could not open');
+    expect(err.message).not.toContain('better-sqlite3');
+    expect(err.cause).toBeDefined();
   });
 
   test('separate tables in one file are isolated', () => {

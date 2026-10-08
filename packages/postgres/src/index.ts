@@ -3,7 +3,6 @@ export {
   createTableSql,
   createTableStatements,
   quotePgIdent,
-  escapeLike,
 } from './driver';
 export type { PostgresDriverOptions } from './driver';
 export { fromPg, fromPostgresJs, fromNeon, fromPglite, toQueryFn, closeClient } from './client';

@@ -1,6 +1,6 @@
 import type { AsyncStorageDriver, SetOptions } from '@teactjs/storage';
 import { decode } from './kv';
-import { resolve, type D1DatabaseLike, type Lazy } from './types';
+import { normalizeTtl, resolve, type D1DatabaseLike, type Lazy } from './types';
 
 /** Default table name. */
 export const DEFAULT_D1_TABLE = 'teact_storage';
@@ -16,7 +16,10 @@ export interface D1DriverOptions {
   table?: string;
 }
 
-/** Escape `%`, `_` and `\` for a `LIKE … ESCAPE '\'` pattern. */
+/**
+ * Escape `%`, `_` and `\` for a `LIKE … ESCAPE '\'` pattern (no trailing `%`).
+ * Internal (not exported from the package index).
+ */
 export function escapeLike(s: string): string {
   return s.replace(/[\\%_]/g, '\\$&');
 }
@@ -33,6 +36,7 @@ export function escapeLike(s: string): string {
  * - **Prefix queries** use `key LIKE ? ESCAPE '\'` with `% _ \` escaped. SQLite's LIKE
  *   ignores ASCII case, so the driver adds an exact, case-sensitive
  *   `substr(key, 1, length(?)) = ?` check.
+ * - **`incr`** is a single atomic UPSERT … RETURNING; expired rows count as missing.
  * - **Expiry** is filtered on read. Call {@link D1Driver.purgeExpired} from a Cron
  *   Trigger to reclaim space.
  *
@@ -100,7 +104,8 @@ export class D1Driver implements AsyncStorageDriver {
 
   async set<T>(key: string, value: T, opts?: SetOptions): Promise<void> {
     if (value === undefined) return this.delete(key);
-    const expiresAt = opts?.ttl && opts.ttl > 0 ? Date.now() + Math.ceil(opts.ttl) : null;
+    const ttl = normalizeTtl(opts?.ttl);
+    const expiresAt = ttl !== undefined ? Date.now() + Math.ceil(ttl) : null;
     await (
       await this.stmt(
         `INSERT INTO ${this.table} (key, value, expires_at) VALUES (?, ?, ?) ` +
@@ -110,6 +115,45 @@ export class D1Driver implements AsyncStorageDriver {
         expiresAt,
       )
     ).run();
+  }
+
+  /**
+   * Atomically add `by` (default 1) to the number at `key` (missing or expired → 0) and
+   * resolve the new value, in one UPSERT … RETURNING. `opts.ttl` applies only when the
+   * increment creates the key. Rejects when the stored value is not a JSON number.
+   */
+  async incr(key: string, by = 1, opts?: SetOptions): Promise<number> {
+    if (!Number.isFinite(by)) throw new TypeError(`[teact/cloudflare] incr: \`by\` must be a finite number, got ${by}`);
+    const ttl = normalizeTtl(opts?.ttl);
+    const now = Date.now();
+    const expired = 'expires_at IS NOT NULL AND expires_at <= ?';
+    let row: { value: unknown } | null;
+    try {
+      row = await (
+        await this.stmt(
+          `INSERT INTO ${this.table} (key, value, expires_at) VALUES (?, ?, ?) ` +
+            `ON CONFLICT(key) DO UPDATE SET ` +
+            `value = CASE WHEN ${expired} THEN excluded.value ` +
+            // A non-number becomes NULL, which NOT NULL rejects — the statement fails instead of overwriting it.
+            `WHEN json_valid(value) AND json_type(value) IN ('integer', 'real') THEN value + ? ELSE NULL END, ` +
+            `expires_at = CASE WHEN ${expired} THEN excluded.expires_at ELSE expires_at END ` +
+            `RETURNING value`,
+          key,
+          // Bound as JSON text so the stored counter reads '1', not '1.0', whatever the binding layer does.
+          JSON.stringify(by),
+          ttl !== undefined ? now + Math.ceil(ttl) : null,
+          now,
+          JSON.stringify(by),
+          now,
+        )
+      ).first<{ value: unknown }>();
+    } catch (err) {
+      if (/NOT NULL/i.test(String((err as Error)?.message ?? err))) {
+        throw new TypeError(`[teact/cloudflare] incr: the value at ${JSON.stringify(key)} is not a number`, { cause: err });
+      }
+      throw err;
+    }
+    return Number(row?.value);
   }
 
   async delete(key: string): Promise<void> {

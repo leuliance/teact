@@ -30,6 +30,30 @@ export function escapeRegex(s: string): string {
 }
 
 /**
+ * Normalize `SetOptions.ttl`: a positive finite number of ms, or `undefined` for "never
+ * expires" (`0`, negative, `NaN`, `Infinity` or omitted — so `new Date()` never gets an
+ * invalid time).
+ */
+function normalizeTtl(ttl: number | undefined): number | undefined {
+  return typeof ttl === 'number' && Number.isFinite(ttl) && ttl > 0 ? ttl : undefined;
+}
+
+/**
+ * Write options: the official driver serializes `undefined` object members as `null` by
+ * default; `ignoreUndefined` drops them like `JSON.stringify` (and every other driver) does.
+ */
+const WRITE_OPTS = { upsert: true, ignoreUndefined: true } as const;
+
+/** Mongo duplicate-key error (a concurrent upsert inserted the same `_id` first). */
+const isDuplicateKey = (err: unknown) => (err as { code?: unknown })?.code === 11000;
+
+/** `findOneAndUpdate` resolves the document (v6+) or `{ value, ok, … }` (v5). */
+function modifiedDoc(res: any): MongoStorageDoc | null {
+  if (!res) return null;
+  return '_id' in res ? res : (res.value ?? null);
+}
+
+/**
  * {@link AsyncStorageDriver} backed by a MongoDB collection.
  *
  * Each entry is one document, `{ _id: key, value, expiresAt? }`. `value` is stored as
@@ -41,6 +65,10 @@ export function escapeRegex(s: string): string {
  *   out on read immediately. To have Mongo delete them, create a TTL index once with
  *   {@link MongoDriver.ensureIndexes} (`{ expiresAt: 1 }`, `expireAfterSeconds: 0`).
  *   Mongo's TTL monitor runs about once a minute.
+ * - **BSON, not JSON**: values keep their BSON types, so a stored `Date` comes back as a
+ *   `Date` (other drivers JSON-encode it and return an ISO string). `undefined` object
+ *   members are dropped (`ignoreUndefined`), as with JSON.
+ * - **`incr`** is atomic (`$inc`); an expired document counts as missing.
  *
  * @example
  * import { MongoClient } from 'mongodb';
@@ -55,6 +83,12 @@ export class MongoDriver implements AsyncStorageDriver {
   readonly collection: MongoCollectionLike;
   private readonly client?: MongoClientLike;
   private readonly closeClient: boolean;
+  /**
+   * Atomically add `by` (default 1) to the number at `key` (missing or expired → 0) and
+   * resolve the new value; `opts.ttl` applies only when the increment creates the key.
+   * Defined when the collection has `findOneAndUpdate` (every real `Collection` does).
+   */
+  readonly incr?: (key: string, by?: number, opts?: SetOptions) => Promise<number>;
 
   constructor(opts: MongoDriverOptions) {
     const name = opts.collectionName ?? DEFAULT_COLLECTION;
@@ -64,6 +98,7 @@ export class MongoDriver implements AsyncStorageDriver {
     else throw new Error('[teact/mongodb] MongoDriver needs a `collection`, `db` or `client`.');
     this.client = opts.client;
     this.closeClient = opts.closeClient ?? false;
+    if (typeof this.collection.findOneAndUpdate === 'function') this.incr = (k, by, o) => this.increment(k, by, o);
   }
 
   /**
@@ -92,11 +127,48 @@ export class MongoDriver implements AsyncStorageDriver {
 
   async set<T>(key: string, value: T, opts?: SetOptions): Promise<void> {
     if (value === undefined) return this.delete(key);
-    const update =
-      opts?.ttl && opts.ttl > 0
-        ? { $set: { value, expiresAt: new Date(Date.now() + opts.ttl) } }
-        : { $set: { value }, $unset: { expiresAt: '' } };
-    await this.collection.updateOne({ _id: key }, update, { upsert: true });
+    await this.collection.updateOne({ _id: key }, this.replaceUpdate(value, normalizeTtl(opts?.ttl)), WRITE_OPTS);
+  }
+
+  /** Update document that replaces the value and sets (or clears) the expiry. */
+  private replaceUpdate(value: unknown, ttl: number | undefined): Record<string, unknown> {
+    return ttl !== undefined
+      ? { $set: { value, expiresAt: new Date(Date.now() + ttl) } }
+      : { $set: { value }, $unset: { expiresAt: '' } };
+  }
+
+  /**
+   * Lock-free increment, each step a single atomic `findOneAndUpdate`:
+   * 1. `$inc` a live document (keeps its expiry);
+   * 2. otherwise replace an expired document, or insert a new one, with `value: by` and the
+   *    ttl (upsert);
+   * 3. if a concurrent call inserted the key between 1 and 2 (duplicate `_id`), retry.
+   * Every increment is applied exactly once. Rejects when the value is not a number.
+   */
+  private async increment(key: string, by = 1, opts?: SetOptions): Promise<number> {
+    if (!Number.isFinite(by)) throw new TypeError(`[teact/mongodb] incr: \`by\` must be a finite number, got ${by}`);
+    const ttl = normalizeTtl(opts?.ttl);
+    const after = { returnDocument: 'after', ignoreUndefined: true } as const;
+    for (let attempt = 0; ; attempt++) {
+      const now = new Date();
+      const live = await this.collection.findOneAndUpdate!(
+        { _id: key, $or: [{ expiresAt: null }, { expiresAt: { $gt: now } }] },
+        { $inc: { value: by } },
+        after,
+      );
+      const incremented = modifiedDoc(live);
+      if (incremented) return incremented.value as number;
+      try {
+        const created = await this.collection.findOneAndUpdate!(
+          { _id: key, expiresAt: { $lte: now } },
+          this.replaceUpdate(by, ttl),
+          { ...after, upsert: true },
+        );
+        return (modifiedDoc(created)?.value as number | undefined) ?? by;
+      } catch (err) {
+        if (!isDuplicateKey(err) || attempt >= 10) throw err;
+      }
+    }
   }
 
   async delete(key: string): Promise<void> {

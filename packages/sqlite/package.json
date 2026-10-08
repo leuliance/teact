@@ -4,19 +4,20 @@
   "description": "SQLite storage driver, session store and plugin for Teact — bun:sqlite and better-sqlite3",
   "type": "module",
   "main": "dist/index.js",
-  "types": "dist/sqlite/src/index.d.ts",
+  "types": "dist/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/sqlite/src/index.d.ts"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     }
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
-    "build": "bun build ./src/index.ts --outdir ./dist --format esm --target bun --external react --external react/jsx-runtime --external react/jsx-dev-runtime --external @teactjs/core --external @teactjs/storage --external @teactjs/plugin-sdk --external bun:sqlite --external better-sqlite3 && tsc --emitDeclarationOnly --outDir dist --declaration --project tsconfig.build.json"
+    "build": "rm -rf dist && bun build ./src/index.ts --outdir ./dist --format esm --target bun --external react --external react/jsx-runtime --external react/jsx-dev-runtime --external @teactjs/core --external @teactjs/storage --external @teactjs/plugin-sdk --external bun:sqlite --external better-sqlite3 && tsc --emitDeclarationOnly --outDir dist --declaration --project tsconfig.build.json && bun ../../scripts/fix-dts.ts"
   },
   "dependencies": {},
   "peerDependencies": {
@@ -31,6 +32,22 @@
       "optional": true
     }
   },
-  "keywords": ["teact", "telegram", "bot", "sqlite", "storage", "session"],
-  "license": "MIT"
+  "keywords": [
+    "teact",
+    "telegram",
+    "bot",
+    "sqlite",
+    "storage",
+    "session"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/leuliance/teact.git",
+    "directory": "packages/sqlite"
+  },
+  "homepage": "https://teact-docs.vercel.app",
+  "bugs": {
+    "url": "https://github.com/leuliance/teact/issues"
+  }
 }

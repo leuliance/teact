@@ -21,7 +21,7 @@ import { createBot } from "@teactjs/core";
 import { storagePlugin } from "@teactjs/storage";
 import { SqliteDriver } from "@teactjs/sqlite";
 
-const sqlite = new SqliteDriver({ path: "./data/bot.db" }); // created if missing, WAL mode
+const sqlite = new SqliteDriver({ path: "./data/bot.db" }); // file and folders created if missing, WAL mode
 
 createBot({
   plugins: [storagePlugin({ driver: sqlite })],
@@ -68,7 +68,8 @@ Values are stored as JSON. `expires_at` holds epoch milliseconds. `createSqliteT
 
 ```ts
 sqlite.get<T>(key)                 // T | undefined (expired rows read as missing)
-sqlite.set(key, value, { ttl })    // ttl in ms, optional; set(key, undefined) deletes
+sqlite.set(key, value, { ttl })    // ttl in ms, optional (0, negative or Infinity = no expiry); set(key, undefined) deletes
+sqlite.incr(key, by?, { ttl })     // atomic UPSERT … RETURNING; ttl only when it creates the key; also on asAsync()
 sqlite.delete(key); sqlite.has(key)
 sqlite.keys(prefix?)               // sorted; prefix matched literally and case-sensitively
 sqlite.entries(prefix?)            // [key, value][] in one query

@@ -93,7 +93,7 @@ export const REGISTRY: RegistryEntry[] = [
       const tail = [
         'const redisDriver = new RedisDriver({ client: redis });',
       ];
-      const plugins = ['redisPlugin({ client: redis })', 'storagePlugin({ driver: redisDriver })'];
+      const plugins = ['redisPlugin({ client: redis, closeOnStop: true })', 'storagePlugin({ driver: redisDriver })'];
       const notes = [sessionNote('redisDriver')];
       switch (client) {
         case 'ioredis':
@@ -119,7 +119,7 @@ export const REGISTRY: RegistryEntry[] = [
         { from: STORAGE, named: ['storagePlugin'] },
         { from: '@teactjs/postgres', named: ['PostgresDriver', 'postgresPlugin'] },
       ];
-      const tail = ['const pg = new PostgresDriver({ client: db });'];
+      const tail = ['const pg = new PostgresDriver({ client: db, closeClient: true });'];
       const base = {
         env: ['DATABASE_URL'],
         plugins: ['storagePlugin({ driver: pg })', 'postgresPlugin({ driver: pg })'],
@@ -175,7 +175,7 @@ export const REGISTRY: RegistryEntry[] = [
           'const mongo = new MongoClient(process.env.MONGO_URL!);',
           "const mongoDriver = new MongoDriver({ client: mongo, dbName: 'bot' });",
         ],
-        plugins: ["mongoPlugin({ client: mongo, dbName: 'bot' })", 'storagePlugin({ driver: mongoDriver })'],
+        plugins: ["mongoPlugin({ client: mongo, dbName: 'bot', closeOnStop: true })", 'storagePlugin({ driver: mongoDriver })'],
         notes: [sessionNote('mongoDriver')],
       }),
   },

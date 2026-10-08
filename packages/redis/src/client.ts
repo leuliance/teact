@@ -23,12 +23,49 @@ export interface RedisCommands {
    * Yields one batch per SCAN page; batches may contain duplicates, the driver dedupes.
    */
   scan(pattern: string): AsyncIterable<string[]>;
+  /**
+   * Atomically add `by` to the integer (or, for a non-integer `by`, float) stored at `key`
+   * — a missing key counts as 0 — and resolve the new value. When `ttlMs` is given and the
+   * increment created the key, the key expires after that many milliseconds; an existing
+   * key keeps its expiry. One round trip ({@link INCR_SCRIPT}). Optional: without it,
+   * {@link RedisDriver} has no `incr`.
+   */
+  incrby?(key: string, by: number, ttlMs?: number): Promise<number>;
   /** Close the underlying connection, if the client has one. */
   close?(): Promise<void>;
 }
 
 /** How many keys to ask for per SCAN page (`COUNT` hint). */
 const SCAN_COUNT = 250;
+
+/**
+ * Lua script behind {@link RedisCommands.incrby}: `KEYS[1]` = key, `ARGV[1]` = increment,
+ * `ARGV[2]` = ttl in ms (`0` = none). Uses `INCRBY` when both the increment and the
+ * stored value are integers and `INCRBYFLOAT` otherwise, and sets the expiry only when
+ * the key did not exist before — all atomically, in one round trip, on any Redis version
+ * with scripting (2.6+).
+ */
+export const INCR_SCRIPT =
+  "local cur = redis.call('GET', KEYS[1]) " +
+  'local v ' +
+  "if string.find(ARGV[1], '[%.eE]') or (cur and not string.match(cur, '^%-?%d+$')) then " +
+  "v = redis.call('INCRBYFLOAT', KEYS[1], ARGV[1]) " +
+  "else v = redis.call('INCRBY', KEYS[1], ARGV[1]) end " +
+  "if not cur and tonumber(ARGV[2]) > 0 then redis.call('PEXPIRE', KEYS[1], ARGV[2]) end " +
+  'return v';
+
+/** `[increment, ttl]` as the string arguments {@link INCR_SCRIPT} expects. */
+function incrArgs(by: number, ttlMs?: number): [string, string] {
+  const amount = Number.isSafeInteger(by) ? String(by) : by.toExponential();
+  return [amount, String(ttlMs && ttlMs > 0 ? Math.ceil(ttlMs) : 0)];
+}
+
+/** Script replies are integers for `INCRBY` and bulk strings for `INCRBYFLOAT`. */
+function toNumber(reply: unknown): number {
+  const n = typeof reply === 'number' ? reply : Number(String(reply));
+  if (!Number.isFinite(n)) throw new Error(`[teact/redis] Unexpected INCRBY reply: ${String(reply)}`);
+  return n;
+}
 
 // ── Structural shapes of the supported clients ─────────────────────────────────────────
 // Only the members Teact calls are declared, so none of the libraries has to be installed
@@ -42,6 +79,12 @@ export interface IoredisLike {
   set(key: string, value: string, ...args: any[]): Promise<unknown>;
   del(...keys: string[]): Promise<number>;
   scan(cursor: string | number, ...args: any[]): Promise<[string, string[]]>;
+  /** `EVAL script numkeys key… arg…` — used by `incrby`. */
+  eval?(script: string, numKeys: number, ...args: any[]): Promise<unknown>;
+  /** `true` on an ioredis `Cluster`. */
+  isCluster?: boolean;
+  /** Cluster only: the node clients for a role (`'master'`). */
+  nodes?(role?: any): Array<Pick<IoredisLike, 'scan'>>;
   quit?(): Promise<unknown>;
 }
 
@@ -52,6 +95,8 @@ export interface NodeRedisLike {
   set(key: string, value: string, options?: any): Promise<unknown>;
   del(keys: string | string[]): Promise<number>;
   scan(cursor: any, options?: any): Promise<{ cursor: string | number; keys: string[] }>;
+  /** `eval(script, { keys, arguments })` — used by `incrby`. */
+  eval?(script: string, options?: any): Promise<unknown>;
   quit?(): Promise<unknown>;
   close?(): Promise<unknown>;
 }
@@ -61,7 +106,7 @@ export interface BunRedisLike {
   get(key: string): Promise<string | null>;
   mget?(...keys: string[]): Promise<Array<string | null>>;
   del(...keys: string[]): Promise<number>;
-  /** Raw command escape hatch — used for `SET … PX` and `SCAN`, which every Bun version supports this way. */
+  /** Raw command escape hatch — used for `SET … PX`, `SCAN` and `EVAL`, which every Bun version supports this way. */
   send(command: string, args: string[]): Promise<any>;
   close?(): void;
 }
@@ -79,6 +124,8 @@ export interface UpstashLike {
   del(...keys: string[]): Promise<number>;
   exists(...keys: string[]): Promise<number>;
   scan(cursor: string | number, opts?: any): Promise<[string | number, string[]]>;
+  /** `eval(script, keys, args)` — used by `incrby`. */
+  eval?(script: string, keys: string[], args: string[]): Promise<unknown>;
 }
 
 // ── Adapters ───────────────────────────────────────────────────────────────────────────
@@ -103,23 +150,48 @@ async function* scanLoop(
   } while (cursor !== '0');
 }
 
+/** An ioredis `Cluster` (as opposed to a single-node `Redis`). */
+function isIoredisCluster(c: Record<string, any>): boolean {
+  return c.isCluster === true && typeof c.nodes === 'function';
+}
+
 /**
- * Adapt an [ioredis](https://github.com/redis/ioredis) client.
+ * Adapt an [ioredis](https://github.com/redis/ioredis) client — a single-node `Redis` or a
+ * `Cluster`. On a cluster, `SCAN` runs on every master and multi-key reads/deletes are
+ * split into per-key commands (keys usually live in different hash slots, so `MGET`/`DEL`
+ * with several keys would fail with `CROSSSLOT`).
+ *
+ * Note: ioredis' `keyPrefix` option is not applied to `SCAN` patterns or results — use
+ * the driver's `namespace` option instead.
  *
  * @example
  * import Redis from 'ioredis';
  * new RedisDriver({ client: fromIoredis(new Redis(process.env.REDIS_URL!)) });
  */
 export function fromIoredis(client: IoredisLike): RedisCommands {
+  const cluster = isIoredisCluster(client as Record<string, any>);
+  const scanNode = (node: Pick<IoredisLike, 'scan'>, pattern: string) =>
+    scanLoop((c) => node.scan(c, 'MATCH', pattern, 'COUNT', SCAN_COUNT));
   return markNormalized({
     get: (key) => client.get(key),
-    mget: (keys) => client.mget(...keys),
+    mget: cluster ? (keys) => Promise.all(keys.map((k) => client.get(k))) : (keys) => client.mget(...keys),
     async set(key, value, ttlMs) {
       if (ttlMs) await client.set(key, value, 'PX', ttlMs);
       else await client.set(key, value);
     },
-    async del(keys) { await client.del(...keys); },
-    scan: (pattern) => scanLoop((c) => client.scan(c, 'MATCH', pattern, 'COUNT', SCAN_COUNT)),
+    async del(keys) {
+      if (cluster) await Promise.all(keys.map((k) => client.del(k)));
+      else await client.del(...keys);
+    },
+    scan: cluster
+      ? async function* (pattern) {
+          for (const node of client.nodes!('master')) yield* scanNode(node, pattern);
+        }
+      : (pattern) => scanNode(client, pattern),
+    ...(typeof client.eval === 'function' && {
+      incrby: async (key: string, by: number, ttlMs?: number) =>
+        toNumber(await client.eval!(INCR_SCRIPT, 1, key, ...incrArgs(by, ttlMs))),
+    }),
     close: () => closeOnce(client, () => client.quit?.()),
   });
 }
@@ -150,6 +222,11 @@ export function fromNodeRedis(client: NodeRedisLike): RedisCommands {
         const r = await client.scan(c, { MATCH: pattern, COUNT: SCAN_COUNT });
         return [r.cursor, r.keys];
       }),
+    // v4, v5 and v6 all take `eval(script, { keys, arguments })` with string arguments.
+    ...(typeof client.eval === 'function' && {
+      incrby: async (key: string, by: number, ttlMs?: number) =>
+        toNumber(await client.eval!(INCR_SCRIPT, { keys: [key], arguments: incrArgs(by, ttlMs) })),
+    }),
     // v5 prefers close(); v4 only has quit().
     close: () => closeOnce(client, () => (client.close ? client.close() : client.quit?.())),
   });
@@ -171,6 +248,7 @@ export function fromBunRedis(client: BunRedisLike): RedisCommands {
     },
     async del(keys) { await client.del(...keys); },
     scan: (pattern) => scanLoop((c) => client.send('SCAN', [c, 'MATCH', pattern, 'COUNT', String(SCAN_COUNT)])),
+    incrby: async (key, by, ttlMs) => toNumber(await client.send('EVAL', [INCR_SCRIPT, '1', key, ...incrArgs(by, ttlMs)])),
     close: () => closeOnce(client, () => client.close?.()),
   });
 }
@@ -222,6 +300,10 @@ export function fromUpstash(client: UpstashLike, opts: FromUpstashOptions = {}):
     },
     async del(keys) { await client.del(...keys); },
     scan: (pattern) => scanLoop((c) => client.scan(c, { match: pattern, count: SCAN_COUNT })),
+    ...(typeof client.eval === 'function' && {
+      incrby: async (key: string, by: number, ttlMs?: number) =>
+        toNumber(await client.eval!(INCR_SCRIPT, [key], incrArgs(by, ttlMs))),
+    }),
     // HTTP client — nothing to close.
   });
 }
@@ -238,7 +320,7 @@ export type RedisClientKind = 'ioredis' | 'node-redis' | 'bun' | 'upstash';
  *
  * - node-redis: camel-cased `mGet`
  * - Bun: an instance of `Bun.RedisClient`, or has `send()` without ioredis' `scanStream`
- * - ioredis: has `scanStream()`
+ * - ioredis: has `scanStream()` (`Redis`), or `isCluster === true` and `nodes()` (`Cluster`)
  * - Upstash: has an HTTP `client.request()` and `exists()`
  */
 export function detectRedisClient(client: unknown): RedisClientKind | undefined {
@@ -248,7 +330,7 @@ export function detectRedisClient(client: unknown): RedisClientKind | undefined 
   if (typeof c.mGet === 'function') return 'node-redis';
   const BunRedis = (globalThis as any).Bun?.RedisClient;
   if (typeof BunRedis === 'function' && c instanceof BunRedis) return 'bun';
-  if (typeof c.scanStream === 'function') return 'ioredis';
+  if (typeof c.scanStream === 'function' || isIoredisCluster(c)) return 'ioredis';
   if (typeof c.send === 'function' && typeof c.del === 'function') return 'bun';
   if (typeof c.client?.request === 'function' && typeof c.exists === 'function') return 'upstash';
   return undefined;
@@ -259,9 +341,18 @@ function isRedisCommands(c: Record<PropertyKey, any>): boolean {
     && typeof c.scan === 'function' && c[NORMALIZED] === true;
 }
 
-/** Duck-typed fallback for unmarked hand-written {@link RedisCommands} implementations. */
+const AsyncGeneratorFunction = Object.getPrototypeOf(async function* () {}).constructor;
+
+/**
+ * Fallback for unmarked hand-written {@link RedisCommands} implementations: besides
+ * `get`/`set`/`del`, `scan` must be an `async function*` — that's what a hand-written
+ * `scan(pattern)` usually is, and what no raw client's cursor-based `scan` is, so an
+ * unrecognized raw client is rejected instead of being misused. Anything else must opt in
+ * with {@link markNormalized}.
+ */
 function looksLikeCommands(c: Record<string, any>): boolean {
-  return !!c && ['get', 'set', 'del', 'scan'].every((m) => typeof c[m] === 'function');
+  return !!c && ['get', 'set', 'del'].every((m) => typeof c[m] === 'function')
+    && c.scan instanceof AsyncGeneratorFunction;
 }
 
 /** Marks objects produced by the `from*` adapters (and lets custom implementations opt in). */

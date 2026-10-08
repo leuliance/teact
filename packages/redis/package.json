@@ -1,19 +1,20 @@
 {
   "name": "@teactjs/redis",
   "version": "0.2.0-alpha.1",
-  "description": "Redis storage driver, session store and plugin for Teact \u2014 ioredis, node-redis, Bun RedisClient and Upstash (edge)",
+  "description": "Redis storage driver, session store and plugin for Teact — ioredis, node-redis, Bun RedisClient and Upstash (edge)",
   "type": "module",
   "main": "dist/index.js",
-  "types": "dist/redis/src/index.d.ts",
+  "types": "dist/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/redis/src/index.d.ts"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     }
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "keywords": [
     "teact",
@@ -26,7 +27,7 @@
     "bun"
   ],
   "scripts": {
-    "build": "bun build ./src/index.ts --outdir ./dist --format esm --target bun --external react --external react/jsx-runtime --external react/jsx-dev-runtime --external @teactjs/core --external @teactjs/storage --external @teactjs/plugin-sdk --external ioredis --external redis --external @upstash/redis && tsc --emitDeclarationOnly --outDir dist --declaration --project tsconfig.build.json"
+    "build": "rm -rf dist && bun build ./src/index.ts --outdir ./dist --format esm --target bun --external react --external react/jsx-runtime --external react/jsx-dev-runtime --external @teactjs/core --external @teactjs/storage --external @teactjs/plugin-sdk --external ioredis --external redis --external @upstash/redis && tsc --emitDeclarationOnly --outDir dist --declaration --project tsconfig.build.json && bun ../../scripts/fix-dts.ts"
   },
   "dependencies": {},
   "peerDependencies": {
@@ -49,5 +50,14 @@
       "optional": true
     }
   },
-  "license": "MIT"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/leuliance/teact.git",
+    "directory": "packages/redis"
+  },
+  "homepage": "https://teact-docs.vercel.app",
+  "bugs": {
+    "url": "https://github.com/leuliance/teact/issues"
+  }
 }

@@ -5,7 +5,7 @@ MongoDB storage for Teact bots: a storage driver for `storagePlugin`, a durable 
 ## Install
 
 ```bash
-bun add @teactjs/mongodb mongodb
+bun add @teactjs/mongodb mongodb   # mongodb driver v5, v6 or v7
 ```
 
 ## Storage driver
@@ -37,9 +37,10 @@ Each key is one document:
 { _id: 'telegram:12345:visits', value: { n: 3 }, expiresAt: ISODate('…') /* only with a ttl */ }
 ```
 
-- **`value`** is stored as native BSON, so you can query and index it like any other field.
+- **`value`** is stored as native BSON, so you can query and index it like any other field. One consequence: a `Date` you store comes back as a `Date` object, while the JSON-based drivers (Redis, Postgres, SQLite, Cloudflare) return it as an ISO string. Don't rely on either if your code has to run on several backends; store `date.toISOString()` or a timestamp. `undefined` object members are dropped (the driver writes with `ignoreUndefined: true`), just like `JSON.stringify`, instead of the `mongodb` default of storing `null`.
 - **Prefix lookups**, which the storage plugin runs on every update, use an anchored, escaped `^prefix` regex on `_id`. That query is served by the `_id` index. `entries()` is a single `find()`.
-- **Expiry**: `set(key, value, { ttl })` writes `expiresAt`. Expired documents are filtered out on read immediately. `ensureIndexes()` creates `{ expiresAt: 1 }` with `expireAfterSeconds: 0`, so MongoDB deletes them in the background. Its TTL monitor runs about once a minute. You can also create the index yourself:
+- **Counters**: `driver.incr(key, by = 1, { ttl })` uses `$inc` in a single `findOneAndUpdate`, so concurrent increments are never lost. An expired document counts as missing and is reset; `ttl` only applies when the increment creates the key.
+- **Expiry**: `set(key, value, { ttl })` writes `expiresAt` (`0`, negative or `Infinity` = no expiry). Expired documents are filtered out on read immediately. `ensureIndexes()` creates `{ expiresAt: 1 }` with `expireAfterSeconds: 0`, so MongoDB deletes them in the background. Its TTL monitor runs about once a minute. You can also create the index yourself:
 
   ```js
   db.teact_storage.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 })
@@ -81,7 +82,7 @@ function Profile() {
 }
 ```
 
-The `Db` is registered as the `'mongo'` service, and the client, when given, as `'mongoClient'`. With a `client`, the plugin closes it when the bot stops (`closeOnStop`, default `true`).
+The `Db` is registered as the `'mongo'` service, and the client, when given, as `'mongoClient'`. The plugin leaves the client open when the bot stops unless you pass `closeOnStop: true`, since you created it.
 
 ## Serverless notes
 

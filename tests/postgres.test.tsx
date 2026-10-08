@@ -13,7 +13,6 @@ import {
   createTableSql,
   createTableStatements,
   quotePgIdent,
-  escapeLike,
   fromPg,
   fromPglite,
   fromPostgresJs,
@@ -21,6 +20,8 @@ import {
   toQueryFn,
 } from '../packages/postgres/src';
 import type { QueryFn, Row } from '../packages/postgres/src';
+import { escapeLike } from '../packages/postgres/src/driver';
+import * as postgresIndex from '../packages/postgres/src';
 
 // One real Postgres (WASM) for the whole file — startup is slow. Each driver gets its own table.
 const pg = new PGlite();
@@ -62,6 +63,13 @@ runDriverConformance('PostgresDriver (fromPglite)', () => new PostgresDriver({ c
 runDriverConformance('PostgresDriver (pg-style Pool)', () => new PostgresDriver({ client: pgLike(pg), table: freshTable() }), opts);
 runDriverConformance('PostgresDriver (postgres.js-style)', () => new PostgresDriver({ client: postgresJsLike(pg), table: freshTable() }), opts);
 runDriverConformance('PostgresDriver (neon-style)', () => new PostgresDriver({ client: neonLike(pg), table: freshTable() }), opts);
+/** A table created with the pre-1.0 DDL (`value JSONB`) must keep working. */
+async function legacyJsonbTable() {
+  const table = freshTable();
+  await pg.exec(`CREATE TABLE "${table}" (key TEXT COLLATE "C" PRIMARY KEY, value JSONB NOT NULL, expires_at TIMESTAMPTZ)`);
+  return table;
+}
+runDriverConformance('PostgresDriver (legacy JSONB table)', async () => new PostgresDriver({ client: pg, table: await legacyJsonbTable() }), opts);
 runDriverConformance('PostgresDriver (legacy neon / QueryFn)', () => new PostgresDriver({ client: legacyNeonLike(pg), table: freshTable() }), opts);
 
 /** Wrap a QueryFn and record every statement. */
@@ -115,6 +123,74 @@ describe('PostgresDriver', () => {
       await d.set('k', v);
       expect(await d.get<any>('k')).toEqual(v);
     }
+  });
+
+  test('JSON column: strings with \\u0000 round-trip and object key order is kept', async () => {
+    const d = new PostgresDriver({ client: pgLike(pg), table: freshTable() });
+    await d.set('nul', 'a\u0000b');
+    expect(await d.get<string>('nul')).toBe('a\u0000b');
+    await d.set('obj', { z: 1, a: 2, m: { y: 1, b: 2 } });
+    const got = await d.get<any>('obj');
+    expect(Object.keys(got)).toEqual(['z', 'a', 'm']);
+    expect(Object.keys(got.m)).toEqual(['y', 'b']);
+    expect((await d.entries('obj'))[0][1]).toEqual(got);
+  });
+
+  test('legacy JSONB table: set/get/incr work against an existing JSONB column', async () => {
+    const table = await legacyJsonbTable();
+    const d = new PostgresDriver({ client: pg, table });
+    await d.set('o', { b: 1, a: [1, 'x'] });
+    expect(await d.get<any>('o')).toEqual({ b: 1, a: [1, 'x'] });
+    expect(await d.incr('n', 2)).toBe(2);
+    expect(await d.incr('n', 0.5)).toBe(2.5);
+    const [{ t }] = await d.query<{ t: string }>(`SELECT pg_typeof(value)::text AS t FROM "${table}" LIMIT 1`);
+    expect(t).toBe('jsonb');
+  });
+
+  test('incr: exact numeric arithmetic, expired rows reset, non-numbers rejected', async () => {
+    const d = new PostgresDriver({ client: postgresJsLike(pg), table: freshTable() });
+    expect(await d.incr('f', 0.1)).toBe(0.1);
+    expect(await d.incr('f', 0.2)).toBe(0.3);
+    expect(await d.incr('neg', -3)).toBe(-3);
+    await d.set('e', 100, { ttl: 10 });
+    await Bun.sleep(25);
+    expect(await d.incr('e', 1, { ttl: 60_000 })).toBe(1); // expired row counts as missing
+    const [{ live }] = await d.query<{ live: boolean }>(`SELECT expires_at > now() + interval '30 seconds' AS live FROM ${d.tableRef} WHERE key = 'e'`);
+    expect(live).toBe(true);
+    await d.set('s', 'text');
+    await expect(d.incr('s')).rejects.toThrow();
+    await expect(d.incr('n', NaN)).rejects.toThrow('finite');
+  });
+
+  test('migrate() treats a concurrent-create unique violation (23505 / 42P07) as success', async () => {
+    for (const code of ['23505', '42P07']) {
+      const base = fromPglite(pg);
+      const table = freshTable();
+      await base(createTableStatements(table)[0]); // the "other process" won the race
+      let raced = false;
+      const d = new PostgresDriver({
+        table,
+        client: async (text: string, values?: unknown[]) => {
+          if (!raced && text.startsWith('CREATE TABLE')) {
+            raced = true;
+            throw Object.assign(new Error('duplicate key value violates unique constraint "pg_type_typname_nsp_index"'), { code });
+          }
+          return base(text, values);
+        },
+      });
+      await d.set('a', 1);
+      expect(raced).toBe(true);
+      expect(await d.get<any>('a')).toBe(1);
+    }
+    const other = new PostgresDriver({
+      table: freshTable(),
+      client: async () => { throw Object.assign(new Error('permission denied'), { code: '42501' }); },
+    });
+    await expect(other.migrate()).rejects.toThrow('permission denied');
+  });
+
+  test('escapeLike is internal (not exported from the package index)', () => {
+    expect('escapeLike' in postgresIndex).toBe(false);
   });
 
   test('set(undefined) deletes', async () => {
@@ -173,7 +249,7 @@ describe('PostgresDriver', () => {
     await expect(d.get<any>('x')).rejects.toThrow();
     const ddl = createTableSql(table);
     expect(ddl).toContain(`CREATE TABLE IF NOT EXISTS "${table}"`);
-    expect(ddl).toContain('JSONB NOT NULL');
+    expect(ddl).toContain('value JSON NOT NULL');
     await pg.exec(ddl);
     await d.set('x', 1);
     expect(await d.get<any>('x')).toBe(1);

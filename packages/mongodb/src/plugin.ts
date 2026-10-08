@@ -11,8 +11,9 @@ export interface MongoPluginOptions {
   /** A `Db` to expose directly. */
   db?: MongoDbLike;
   /**
-   * Close `client` when the bot stops. Has no effect without a `client`.
-   * @default true
+   * Close `client` when the bot stops. Has no effect without a `client`. Off by default:
+   * Teact never closes a client it was given unless you ask it to.
+   * @default false
    */
   closeOnStop?: boolean;
 }
@@ -23,8 +24,8 @@ export const MONGO_SERVICE = 'mongo';
 export const MONGO_CLIENT_SERVICE = 'mongoClient';
 
 /**
- * Expose a MongoDB database to every component through {@link useMongo}, and close the
- * client when the bot stops.
+ * Expose a MongoDB database to every component through {@link useMongo} (and, with
+ * `closeOnStop: true`, close the client when the bot stops).
  *
  * @example
  * const client = await new MongoClient(process.env.MONGO_URL!).connect();
@@ -37,9 +38,9 @@ export const MONGO_CLIENT_SERVICE = 'mongoClient';
  */
 export function mongoPlugin(opts: MongoPluginOptions): TeactPlugin {
   return definePlugin<MongoPluginOptions>({
-    name: 'mongodb',
+    name: 'teact-mongodb',
     setup(ctx) {
-      const { client, db, dbName, closeOnStop = true } = ctx.config;
+      const { client, db, dbName, closeOnStop = false } = ctx.config;
       const database = db ?? client?.db(dbName);
       if (!database) throw new Error('[teact/mongodb] mongoPlugin needs a `client` or a `db`.');
       ctx.provideService(MONGO_SERVICE, database);

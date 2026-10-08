@@ -1,5 +1,5 @@
 import type { AsyncStorageDriver, SetOptions } from '@teactjs/storage';
-import { resolve, type KVNamespaceLike, type Lazy } from './types';
+import { normalizeTtl, resolve, type KVNamespaceLike, type Lazy } from './types';
 
 /** Workers KV rejects `expirationTtl` below 60 seconds. */
 export const KV_MIN_TTL_SECONDS = 60;
@@ -33,6 +33,9 @@ export interface KVDriverOptions {
  *   write per second per key. That suits settings, caches and low-churn data. For
  *   per-message state such as counters, multi-step forms or sessions that must be read
  *   back right away, prefer {@link D1Driver}, Durable Objects or Upstash Redis.
+ * - **No `incr`**: KV has no atomic read-modify-write (no compare-and-swap, no
+ *   increment), so a get + put counter would lose updates under concurrency. The driver
+ *   deliberately leaves the optional `incr` out; use {@link D1Driver} for counters.
  *
  * @example
  * import { env } from 'cloudflare:workers';
@@ -62,8 +65,9 @@ export class KVDriver implements AsyncStorageDriver {
   async set<T>(key: string, value: T, opts?: SetOptions): Promise<void> {
     if (value === undefined) return this.delete(key);
     const text = JSON.stringify(value);
-    if (opts?.ttl && opts.ttl > 0) {
-      await this.binding.put(this.ns + key, text, { expirationTtl: kvExpirationTtl(opts.ttl) });
+    const ttl = normalizeTtl(opts?.ttl);
+    if (ttl !== undefined) {
+      await this.binding.put(this.ns + key, text, { expirationTtl: kvExpirationTtl(ttl) });
     } else {
       await this.binding.put(this.ns + key, text);
     }

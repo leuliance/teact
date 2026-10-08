@@ -11,11 +11,12 @@ import {
   kvSessionStore,
   d1SessionStore,
   kvExpirationTtl,
-  escapeLike,
   type KVNamespaceLike,
   type D1DatabaseLike,
   type D1PreparedStatementLike,
 } from '../packages/cloudflare/src';
+import { escapeLike } from '../packages/cloudflare/src/d1';
+import * as cloudflareIndex from '../packages/cloudflare/src';
 
 // ── Fake Workers KV (paginated list, expirationTtl validation) ─────────────────────────
 
@@ -174,8 +175,38 @@ describe('D1Driver details', () => {
     expect(await d.keys()).toEqual(['Chat:1']);
   });
 
-  test('escapeLike escapes % _ and backslash', () => {
+  test('escapeLike escapes % _ and backslash (internal, not exported from the index)', () => {
     expect(escapeLike('a%b_c\\d')).toBe('a\\%b\\_c\\\\d');
+    expect('escapeLike' in cloudflareIndex).toBe(false);
+  });
+
+  test('incr: one statement, floats, expired rows reset, non-numbers rejected', async () => {
+    const db = fakeD1();
+    const d = new D1Driver(db);
+    await d.ensureTable();
+    db.log.length = 0;
+    expect(await d.incr('n', 2, { ttl: 60_000 })).toBe(2);
+    expect(db.log.length).toBe(1);
+    expect(await d.incr('n', 0.5)).toBe(2.5);
+    await d.set('e', 9, { ttl: 1 });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(await d.incr('e')).toBe(1);
+    expect((db.sqlite.query('SELECT expires_at FROM teact_storage WHERE key = ?').get('e') as any).expires_at).toBeNull();
+    await d.set('s', 'text');
+    await expect(d.incr('s')).rejects.toThrow('not a number');
+    await expect(d.incr('s', Infinity)).rejects.toThrow('finite');
+  });
+
+  test('ttl 0, negative, NaN and Infinity mean no expiry', async () => {
+    const db = fakeD1();
+    const d = new D1Driver(db);
+    for (const ttl of [0, -1, NaN, Infinity]) await d.set('k', 1, { ttl });
+    expect((db.sqlite.query('SELECT expires_at FROM teact_storage').get() as any).expires_at).toBeNull();
+    const kv = new FakeKV();
+    const k = new KVDriver(kv);
+    for (const ttl of [0, -1, NaN, Infinity]) await k.set('k', 1, { ttl });
+    expect(kv.puts.every((p) => p.options === undefined)).toBe(true);
+    expect((k as { incr?: unknown }).incr).toBeUndefined(); // KV has no atomic primitive
   });
 
   test('stores JSON text and epoch-ms expiry; purgeExpired removes expired rows', async () => {
