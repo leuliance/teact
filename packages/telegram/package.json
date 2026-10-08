@@ -4,19 +4,20 @@
   "description": "Telegram platform adapter for Teact, powered by grammY",
   "type": "module",
   "main": "dist/index.js",
-  "types": "dist/telegram/src/index.d.ts",
+  "types": "dist/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/telegram/src/index.d.ts"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     }
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
-    "build": "bun build ./src/index.ts --outdir ./dist --format esm --target bun --external react --external react/jsx-runtime --external react/jsx-dev-runtime --external @teactjs/core --external grammy --external @grammyjs/auto-retry --external @grammyjs/conversations --external @grammyjs/stream && tsc --emitDeclarationOnly --outDir dist --declaration --project tsconfig.build.json"
+    "build": "rm -rf dist && bun build ./src/index.ts --outdir ./dist --format esm --target bun --external react --external react/jsx-runtime --external react/jsx-dev-runtime --external @teactjs/core --external grammy --external @grammyjs/auto-retry --external @grammyjs/conversations --external @grammyjs/stream && tsc --emitDeclarationOnly --outDir dist --declaration --project tsconfig.build.json && bun ../../scripts/fix-dts.ts"
   },
   "dependencies": {
     "@grammyjs/auto-retry": "^2.0.2",
@@ -28,5 +29,14 @@
     "react": "^18.0.0 || ^19.0.0",
     "@teactjs/core": "^0.2.0-alpha.1"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/leuliance/teact.git",
+    "directory": "packages/telegram"
+  },
+  "homepage": "https://teact-docs.vercel.app",
+  "bugs": {
+    "url": "https://github.com/leuliance/teact/issues"
+  }
 }

@@ -21,6 +21,8 @@ export interface EditedMessage {
  */
 export class MockAdapter implements Adapter {
   readonly name = 'mock';
+  /** Tests don't need a bot token. */
+  readonly requiresToken = false;
   private listeners = new Map<string, Set<EventHandler>>();
   private msgIdCounter = 1;
   private inMsgId = 100;

@@ -4,19 +4,20 @@
   "description": "Production plugins for Teact — rate limiting, logging, maintenance mode, chat filters, error reporting, analytics, feature flags and broadcasting",
   "type": "module",
   "main": "dist/index.js",
-  "types": "dist/plugins/src/index.d.ts",
+  "types": "dist/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/plugins/src/index.d.ts"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     }
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
-    "build": "bun build ./src/index.ts --outdir ./dist --format esm --target bun --external react --external react/jsx-runtime --external react/jsx-dev-runtime --external @teactjs/core --external @teactjs/storage && tsc --emitDeclarationOnly --outDir dist --declaration --project tsconfig.build.json"
+    "build": "rm -rf dist && bun build ./src/index.ts --outdir ./dist --format esm --target bun --external react --external react/jsx-runtime --external react/jsx-dev-runtime --external @teactjs/core --external @teactjs/storage && tsc --emitDeclarationOnly --outDir dist --declaration --project tsconfig.build.json && bun ../../scripts/fix-dts.ts"
   },
   "dependencies": {},
   "peerDependencies": {
@@ -29,5 +30,14 @@
       "optional": true
     }
   },
-  "license": "MIT"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/leuliance/teact.git",
+    "directory": "packages/plugins"
+  },
+  "homepage": "https://teact-docs.vercel.app",
+  "bugs": {
+    "url": "https://github.com/leuliance/teact/issues"
+  }
 }

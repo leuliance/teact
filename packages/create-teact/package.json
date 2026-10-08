@@ -9,10 +9,20 @@
   "files": [
     "index.ts",
     "lib",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "dependencies": {
     "@clack/prompts": "^1.1.0"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/leuliance/teact.git",
+    "directory": "packages/create-teact"
+  },
+  "homepage": "https://teact-docs.vercel.app",
+  "bugs": {
+    "url": "https://github.com/leuliance/teact/issues"
+  }
 }

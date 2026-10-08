@@ -326,7 +326,9 @@ export function createBot(options: CreateBotOptions) {
   // Token is resolved lazily: on serverless (Cloudflare Workers etc.) there is no
   // process.env at module load — bot.fetch(request, { token }) supplies it per request.
   let resolvedToken: string | undefined =
-    options.token ?? (typeof process !== 'undefined' ? process.env?.TELEGRAM_BOT_TOKEN : undefined);
+    options.token ??
+    (typeof process !== 'undefined' ? process.env?.TELEGRAM_BOT_TOKEN : undefined) ??
+    (adapter.requiresToken === false ? 'test-token' : undefined);
 
   function debugLog(...args: any[]) {
     if (debugMode) console.log(`[teact:debug ${new Date().toISOString()}]`, ...args);
