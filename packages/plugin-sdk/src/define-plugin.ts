@@ -1,5 +1,5 @@
 import React, { type FunctionComponent, type ReactNode } from 'react';
-import type { Adapter, Middleware, TeactPlugin } from '@teactjs/core';
+import { compose, type Adapter, type Middleware, type TeactPlugin } from '@teactjs/core';
 
 /**
  * The context handed to a plugin's `setup` function. Register everything the
@@ -94,11 +94,7 @@ function composeProviders(
 }
 
 function composeMiddleware(mws: Middleware[]): Middleware {
-  return async (ctx, next) => {
-    const run = async (idx: number): Promise<void> => {
-      const fn = idx === mws.length ? next : mws[idx];
-      if (fn) await fn(ctx, () => run(idx + 1));
-    };
-    await run(0);
-  };
+  // Same semantics as the bot's own pipeline: next() is implied when a middleware returns
+  // without calling it, and halt(ctx) stops the chain.
+  return compose(mws);
 }

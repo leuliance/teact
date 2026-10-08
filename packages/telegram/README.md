@@ -1,111 +1,90 @@
 # @teactjs/telegram
 
-Telegram adapter for Teact, powered by [grammY](https://grammy.dev). Handles communication between the Teact runtime and the Telegram Bot API.
+The Telegram platform adapter for Teact. It is built on [grammY](https://grammy.dev) with auto-retry, and supports long polling, a built-in webhook server and serverless `bot.fetch()`.
 
 ## Install
 
 ```bash
-bun add @teactjs/telegram
+bun add @teactjs/telegram @teactjs/core @teactjs/ui react
 ```
 
-## Basic Setup
+## Example
 
-```ts
-import { createBot } from "@teactjs/core";
-import { TelegramAdapter } from "@teactjs/telegram";
+```tsx
+import { createBot } from '@teactjs/core';
+import { Message, InlineKeyboard, Button } from '@teactjs/ui';
+import { TelegramAdapter, conversationsPlugin, defineConversation, streamPlugin } from '@teactjs/telegram';
+
+const feedback = defineConversation('feedback', async (conversation) => {
+  const name = await conversation.prompt("What's your name?");
+  const rating = await conversation.ask('Rate us:', [[{ text: '👍', value: 'up' }, { text: '👎', value: 'down' }]]);
+  await conversation.send(`Thanks ${name}! (${rating})`);
+});
+
+function Home() {
+  return (
+    <Message text="Hi!">
+      <InlineKeyboard>
+        <Button text="Leave feedback" conversation={feedback} />
+      </InlineKeyboard>
+    </Message>
+  );
+}
 
 const bot = createBot({
-  component: App,
   adapter: new TelegramAdapter(),
-  token: process.env.TELEGRAM_BOT_TOKEN,
+  component: Home,
+  plugins: [conversationsPlugin(), streamPlugin()],
 });
 
-await bot.start();
+bot.start(); // long polling with TELEGRAM_BOT_TOKEN
 ```
 
-## Polling (Development)
+## Running modes
 
-The default mode. The adapter long-polls the Telegram API for updates.
+| Mode | How to use it |
+| --- | --- |
+| Polling (default) | `bot.start()` |
+| Webhook server | `createBot({ mode: 'webhook', webhook: { domain, port, path, secretToken } })`, then `bot.start()`. Calls `setWebhook` and serves `POST {path}` (default `/webhook`, port `3000`). |
+| Serverless / edge | `bot.fetch(request, { token, secretToken, env })` in a Cloudflare Worker, Vercel or Deno Edge function, or `Bun.serve`. This uses the adapter's web-standard `webhookCallback`. Run `bot.setCommands()` once after you deploy. |
+
+## `TelegramAdapter` options
 
 ```ts
-const bot = createBot({
-  component: App,
-  adapter: new TelegramAdapter(),
-  token: process.env.TELEGRAM_BOT_TOKEN,
-  mode: "polling",
+new TelegramAdapter({
+  client: { apiRoot: 'http://localhost:8081' }, // grammY ApiClientOptions: local Bot API server or a fake API in tests
+  botInfo: { id: 123, is_bot: true, first_name: 'My Bot', username: 'my_bot', /* … */ }, // skip getMe on cold start
 });
 ```
 
-## Webhook (Production)
+Pass `botInfo` on serverless platforms. Otherwise every cold isolate calls `getMe`.
 
-For production, use webhooks. The adapter starts an HTTP server and registers the webhook URL with Telegram.
+## Main exports
 
-```ts
-const bot = createBot({
-  component: App,
-  adapter: new TelegramAdapter(),
-  token: process.env.TELEGRAM_BOT_TOKEN,
-  mode: "webhook",
-  webhook: {
-    domain: "https://my-bot.example.com",
-    port: 3000,          // default: 3000
-    path: "/webhook",    // default: "/webhook"
-    secretToken: "s3cr3t", // optional, validates X-Telegram-Bot-Api-Secret-Token header
-  },
-});
-```
+| Export | Purpose |
+| --- | --- |
+| `TelegramAdapter` | The `Adapter` implementation. `getBot()` returns the underlying grammY `Bot`, and `use(...middleware)` registers grammY middleware. |
+| `conversationsPlugin(defs?)` | Wraps `@grammyjs/conversations`. Accepts `{ name: handler }`, or `{ conversations, exitActive }` (with `exitActive` defaulting to `true`, which leaves any active conversation before entering a new one). |
+| `defineConversation(name, handler \| { handler, command })` | Registers a conversation next to the component that starts it, and returns its name for `<Button conversation={…}>`. With `command`, a `/command` starts the conversation. |
+| `streamPlugin()` | Registers `@grammyjs/stream`. With it, `conversation.stream(asyncIterable)` uses Telegram's native streaming. Without it, `stream()` falls back to sending a message and editing it at a throttled rate. |
+| `serializeOutput(node)` | Converts a rendered `OutputNode` into a Telegram send payload (advanced). |
+| Types: `TelegramAdapterConfig`, `Conversation`, `ConversationHandler`, `ConversationDef`, `ConversationsPluginOptions`, `ConversationsConfig`, `MediaGroupItem`, `TelegramSendPayload` | |
 
-## Adapter API
+The `Conversation` object provides `prompt(text, { validate })` (a function or any schema with `.safeParse`, such as Zod), `wait`, `ask`, `send`, `stream`, `requestContact`, `requestLocation`, all the `replyWith*` media helpers, and `api`, `chat` and `raw` for direct access.
 
-The adapter implements the Teact adapter interface:
+## Notes
 
-| Method | Description |
-|--------|-------------|
-| `connect({ token })` | Initializes the grammY bot instance |
-| `listen({ polling?, webhook? })` | Starts polling or webhook server |
-| `send(chatId, output)` | Serializes an `OutputNode` tree and sends it via Telegram |
-| `edit(chatId, messageId, output)` | Edits an existing message |
-| `clearButtons(chatId, messageId)` | Removes inline keyboard from a message |
-| `setCommands(commands)` | Registers bot commands with Telegram |
-| `use(...middlewares)` | Adds grammY middleware to the bot instance |
-| `disconnect()` | Stops polling or webhook server |
-| `getBot()` | Returns the underlying grammY `Bot` instance |
+- A `<Notification>` rendered in response to a button press becomes the answer to that callback query. Otherwise the query is answered with no text, so the button's loading spinner stops.
+- An edit that would turn text into media, or media into text, falls back to sending a new message.
+- Text that exceeds Telegram's length limits is truncated, with a warning.
+- Each update's `languageCode` comes from Telegram's `language_code`, which `createI18n` in `@teactjs/core` uses for detection.
+- Conversation state uses grammY's in-memory session. Run conversations in a long-lived process (polling or the webhook server).
 
-## Conversations Plugin
+## Docs
 
-For imperative multi-step conversation flows:
+- [Package reference](https://teact-docs.vercel.app/docs/packages/telegram)
+- [Deployment guide](https://teact-docs.vercel.app/docs/guides/deployment)
 
-```ts
-import { conversationsPlugin, defineConversation } from "@teactjs/telegram";
+## License
 
-defineConversation("onboarding", async (convo) => {
-  const name = await convo.prompt("What's your name?");
-  await convo.send(`Welcome, ${name}!`);
-});
-
-const bot = createBot({
-  plugins: [conversationsPlugin()],
-  // ...
-});
-```
-
-The `Conversation` object provides: `prompt`, `send`, `wait`, `ask`, `stream`, `replyWith*` methods, `requestContact`, `requestLocation`, and access to `chatId`, `api`, `chat`, `raw`.
-
-## Stream Plugin
-
-Enables streaming text updates (used with `useStream` in the runtime):
-
-```ts
-import { streamPlugin } from "@teactjs/telegram";
-
-const bot = createBot({
-  plugins: [streamPlugin()],
-  // ...
-});
-```
-
-## See Also
-
-- [`@teactjs/core`](../core) for the barrel import
-- [`@teactjs/runtime`](../runtime) for bot engine docs
-- [grammY documentation](https://grammy.dev)
+MIT
