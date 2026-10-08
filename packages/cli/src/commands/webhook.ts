@@ -1,24 +1,18 @@
-import { resolve } from 'path';
-import { existsSync, readFileSync } from 'fs';
-import { heading, log, error, success, findProjectRoot } from '../utils';
-
-function readEnvVar(projectRoot: string, name: string): string | undefined {
-  if (process.env[name]) return process.env[name];
-  const envPath = resolve(projectRoot, '.env');
-  if (existsSync(envPath)) {
-    const m = readFileSync(envPath, 'utf-8').match(new RegExp(`^\\s*${name}\\s*=\\s*(.+)\\s*$`, 'm'));
-    if (m) return m[1].trim().replace(/^["']|["']$/g, '');
-  }
-  return undefined;
-}
+import { heading, log, error, success, findProjectRoot, readEnvVar } from '../utils';
 
 async function callApi(token: string, method: string, body?: Record<string, unknown>) {
   const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body ?? {}),
+    signal: AbortSignal.timeout(10_000),
   });
-  return res.json() as Promise<{ ok: boolean; result?: any; description?: string }>;
+  const text = await res.text();
+  try {
+    return JSON.parse(text) as { ok: boolean; result?: any; description?: string };
+  } catch {
+    throw new Error(`HTTP ${res.status} from api.telegram.org`);
+  }
 }
 
 interface WebhookOptions {
@@ -31,10 +25,14 @@ interface WebhookOptions {
  * Uses TELEGRAM_BOT_TOKEN from the environment or the project's .env.
  */
 export async function webhookCommand(action: string, url: string | undefined, opts: WebhookOptions): Promise<void> {
+  if (!['set', 'delete', 'info'].includes(action)) {
+    error(`Unknown action "${action}". Use: set <url> | delete | info`);
+    process.exit(1);
+  }
   const projectRoot = findProjectRoot() ?? process.cwd();
   const token = readEnvVar(projectRoot, 'TELEGRAM_BOT_TOKEN');
   if (!token) {
-    error('No TELEGRAM_BOT_TOKEN found (checked env and .env).');
+    error('No TELEGRAM_BOT_TOKEN found (checked env, .env.local and .env).');
     process.exit(1);
   }
 

@@ -39,8 +39,10 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
         return this.props.fallback;
       }
 
+      // Don't show the raw error to end users: messages can carry internals (SQL, paths,
+      // tokens). It is logged via onError; pass `fallback` to customize this screen.
       return React.createElement('tg-message', {
-        text: `❌ Something went wrong:\n${this.state.error.message}\n\nUse /start to restart.`,
+        text: '❌ Something went wrong. Please try again, or use /start to restart.',
       });
     }
 

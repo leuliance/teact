@@ -2,16 +2,23 @@ import { resolve, join } from 'path';
 import { existsSync } from 'fs';
 import type { InlineConfig } from 'vite';
 
-const TEACT_PACKAGES = [
+export const TEACT_PACKAGES = [
   '@teactjs/core',
   '@teactjs/ui',
   '@teactjs/plugin-sdk',
   '@teactjs/telegram',
   '@teactjs/storage',
   '@teactjs/testing',
+  '@teactjs/redis',
+  '@teactjs/postgres',
+  '@teactjs/sqlite',
+  '@teactjs/mongodb',
+  '@teactjs/cloudflare',
+  '@teactjs/i18n',
+  '@teactjs/plugins',
 ];
 
-const EXTERNAL_DEPS = [
+export const EXTERNAL_DEPS = [
   'grammy',
   '@grammyjs/conversations',
   '@grammyjs/stream',

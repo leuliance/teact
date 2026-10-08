@@ -1,4 +1,5 @@
-import { Bot, webhookCallback, type Context as GrammyContext, GrammyError, HttpError } from 'grammy';
+import { Bot, webhookCallback, type Context as GrammyContext, GrammyError, HttpError, type ApiClientOptions } from 'grammy';
+import type { UserFromGetMe } from 'grammy/types';
 import { autoRetry } from '@grammyjs/auto-retry';
 import type { Adapter, BotContext, OutputNode } from '@teactjs/core';
 import { serializeOutput, type SendMethod } from './serialize';
@@ -36,8 +37,25 @@ type EventHandler = (ctx: BotContext) => void | Promise<void>;
  *   2. use()     — registers Grammy middleware (conversations, session, etc.).
  *   3. listen()  — registers Teact bridge handlers, then starts polling or webhook.
  */
+/** Options for {@link TelegramAdapter}. */
+export interface TelegramAdapterOptions {
+  /**
+   * grammY API client options — e.g. `{ apiRoot: 'http://localhost:8081' }` for a local
+   * Bot API server, or a fake API in tests.
+   */
+  client?: ApiClientOptions;
+  /**
+   * The bot's own `getMe` info. When given, grammY skips the `getMe` call on startup —
+   * worthwhile on serverless, where every cold isolate would otherwise call it.
+   */
+  botInfo?: UserFromGetMe;
+}
+
 export class TelegramAdapter implements Adapter {
   readonly name = 'telegram';
+
+  constructor(private readonly options: TelegramAdapterOptions = {}) {}
+
   private bot: Bot | null = null;
   private httpServer: Server | null = null;
   private listeners = new Map<string, Set<EventHandler>>();
@@ -70,8 +88,10 @@ export class TelegramAdapter implements Adapter {
   /** Step 1 — create the Grammy Bot with auto-retry. Does NOT start polling. */
   async connect(config: TelegramAdapterConfig): Promise<void> {
     if (!config.token) throw new Error('TELEGRAM_BOT_TOKEN is required');
-    this.bot = new Bot(config.token);
-    this.bot.api.config.use(autoRetry({ maxRetryAttempts: 3, maxDelaySeconds: 10 }));
+    this.bot = new Bot(config.token, { client: this.options.client, botInfo: this.options.botInfo });
+    // rethrowHttpErrors: network failures (Telegram unreachable, DNS…) fail fast instead
+    // of being retried indefinitely, which made bot.start() hang silently.
+    this.bot.api.config.use(autoRetry({ maxRetryAttempts: 3, maxDelaySeconds: 10, rethrowHttpErrors: true }));
     this.bot.catch((err) => {
       const ctx = err.ctx;
       const e = err.error;
@@ -148,10 +168,20 @@ export class TelegramAdapter implements Adapter {
       await this.startWebhook(opts.webhook);
     } else if (opts.polling !== false) {
       console.log('[telegram] Starting polling…');
-      this.bot.start({
-        onStart: (info) =>
-          console.log(`[telegram] Connected as @${info.username} (${info.first_name})`),
-      });
+      // Fetch the bot's identity ourselves first: this call goes through autoRetry with
+      // rethrowHttpErrors, so a bad token or an unreachable Telegram rejects listen() (and
+      // bot.start()) within a second. grammY's own init would retry getMe forever.
+      if (!this.bot.isInited()) this.bot.botInfo = await this.bot.api.getMe();
+      this.bot
+        .start({
+          onStart: (info) =>
+            console.log(`[telegram] Connected as @${info.username} (${info.first_name})`),
+        })
+        .catch((err) => {
+          // bot.stop() during a retry backoff rejects with "Aborted delay" — a normal shutdown.
+          if (String((err as Error)?.message) === 'Aborted delay') return;
+          console.error('[telegram] Polling stopped:', err);
+        });
     }
   }
 
@@ -494,6 +524,7 @@ export class TelegramAdapter implements Adapter {
         firstName: from?.first_name,
         lastName: from?.last_name,
         isBot: from?.is_bot,
+        languageCode: from?.language_code,
         platform: 'telegram',
       },
       platform: 'telegram',

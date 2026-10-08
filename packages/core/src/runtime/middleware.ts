@@ -1,5 +1,31 @@
 import type { BotContext, Middleware } from '../renderer';
 
+const halted = new WeakSet<BotContext>();
+
+/**
+ * Stop the middleware chain for this update.
+ *
+ * Because {@link compose} calls `next()` automatically when a middleware returns
+ * without calling it, simply "not calling next" can't block an update. Call
+ * `halt(ctx)` instead: once the current middleware returns, no further middleware
+ * runs and the component is not rendered for this update.
+ *
+ * Calling `next()` explicitly after `halt(ctx)` still continues the chain.
+ *
+ * @example
+ * const adminsOnly: Middleware = async (ctx) => {
+ *   if (!ADMINS.includes(ctx.userId)) halt(ctx);
+ * };
+ */
+export function halt(ctx: BotContext): void {
+  halted.add(ctx);
+}
+
+/** Whether {@link halt} was called for this update's context. */
+export function isHalted(ctx: BotContext): boolean {
+  return halted.has(ctx);
+}
+
 /**
  * Compose an array of middleware functions into a single middleware.
  *
@@ -29,7 +55,7 @@ export function compose(middlewares: Middleware[]): Middleware {
       const fn = middlewares[i];
       let nextCalled = false;
       await fn(ctx, () => { nextCalled = true; return dispatch(i + 1); });
-      if (!nextCalled) await dispatch(i + 1);
+      if (!nextCalled && !halted.has(ctx)) await dispatch(i + 1);
     }
     await dispatch(0);
   };

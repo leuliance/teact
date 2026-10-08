@@ -1,0 +1,53 @@
+{
+  "name": "@teactjs/mongodb",
+  "version": "0.2.0-alpha.1",
+  "description": "MongoDB storage driver, session store and plugin for Teact",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "teact",
+    "telegram",
+    "bot",
+    "storage",
+    "mongodb",
+    "mongo"
+  ],
+  "scripts": {
+    "build": "rm -rf dist && bun build ./src/index.ts --outdir ./dist --format esm --target bun --external react --external react/jsx-runtime --external react/jsx-dev-runtime --external @teactjs/core --external @teactjs/storage --external @teactjs/plugin-sdk --external mongodb && tsc --emitDeclarationOnly --outDir dist --declaration --project tsconfig.build.json && bun ../../scripts/fix-dts.ts"
+  },
+  "dependencies": {},
+  "peerDependencies": {
+    "react": "^18.0.0 || ^19.0.0",
+    "@teactjs/core": "^0.2.0-alpha.1",
+    "@teactjs/storage": "^0.2.0-alpha.1",
+    "@teactjs/plugin-sdk": "^0.2.0-alpha.1",
+    "mongodb": "^5.0.0 || ^6.0.0 || ^7.0.0"
+  },
+  "peerDependenciesMeta": {
+    "mongodb": {
+      "optional": true
+    }
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/leuliance/teact.git",
+    "directory": "packages/mongodb"
+  },
+  "homepage": "https://teact-docs.vercel.app",
+  "bugs": {
+    "url": "https://github.com/leuliance/teact/issues"
+  }
+}

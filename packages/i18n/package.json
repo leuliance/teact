@@ -1,0 +1,42 @@
+{
+  "name": "@teactjs/i18n",
+  "version": "0.2.0-alpha.1",
+  "description": "Internationalization for Teact — locale detection & persistence, built-in UI string packs, LanguagePicker and Intl formatting hooks",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./locales": {
+      "types": "./dist/locales/index.d.ts",
+      "import": "./dist/locales/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "rm -rf dist && bun build ./src/index.ts ./src/locales/index.ts --root ./src --outdir ./dist --format esm --target bun --external react --external react/jsx-runtime --external react/jsx-dev-runtime --external i18next --external react-i18next --external '@teactjs/*' && tsc --emitDeclarationOnly --outDir dist --declaration --project tsconfig.build.json && bun ../../scripts/fix-dts.ts"
+  },
+  "dependencies": {},
+  "peerDependencies": {
+    "react": "^18.0.0 || ^19.0.0",
+    "@teactjs/core": "^0.2.0-alpha.1",
+    "@teactjs/ui": "^0.2.0-alpha.1"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/leuliance/teact.git",
+    "directory": "packages/i18n"
+  },
+  "homepage": "https://teact-docs.vercel.app",
+  "bugs": {
+    "url": "https://github.com/leuliance/teact/issues"
+  }
+}

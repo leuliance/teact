@@ -81,3 +81,18 @@ describe('plugin-sdk · end-to-end via createBot + MockAdapter', () => {
     await bot.stop();
   });
 });
+
+describe('plugin-sdk · middleware semantics match the bot pipeline', () => {
+  test('a middleware that returns without next() still reaches the next one', async () => {
+    const order: string[] = [];
+    const plugin = definePlugin({
+      name: 'two-step',
+      setup(ctx) {
+        ctx.middleware(async () => { order.push('a'); });
+        ctx.middleware(async () => { order.push('b'); });
+      },
+    })();
+    await plugin.middleware!({ chatId: '1', userId: '1', platform: 'mock', raw: {}, user: { id: '1', platform: 'mock' } }, async () => { order.push('end'); });
+    expect(order).toEqual(['a', 'b', 'end']);
+  });
+});

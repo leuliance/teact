@@ -11,6 +11,8 @@ export interface User {
   firstName?: string;
   lastName?: string;
   isBot?: boolean;
+  /** IETF language tag reported by the platform (Telegram `language_code`), e.g. `en` or `pt-br`. */
+  languageCode?: string;
   platform: string;
 }
 
@@ -63,6 +65,8 @@ export interface ListenOptions {
  */
 export interface Adapter {
   readonly name: string;
+  /** `false` for adapters that don't talk to a platform (e.g. the testing MockAdapter): no token needed. */
+  readonly requiresToken?: boolean;
   /** Connect to the platform (create the underlying client). Does not start receiving. */
   connect(config: { token: string }): Promise<void>;
   /** Subscribe to a normalized event (e.g. `'message'`, `'callback_query'`). */

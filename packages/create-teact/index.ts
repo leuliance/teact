@@ -11,6 +11,8 @@ import {
   normalizeTemplate,
   TEMPLATE_SELECT_OPTIONS,
   FEATURE_SELECT_OPTIONS,
+  DB_SELECT_OPTIONS,
+  withDatabase,
   type TemplateId,
 } from './lib';
 
@@ -57,14 +59,25 @@ async function main() {
   const template: TemplateId = normalizeTemplate(templateRaw);
 
   const initial = defaultFeaturesForTemplate(template);
-  const features = await p.multiselect({
+  const picked = await p.multiselect({
     message: 'Plugins & integrations (toggle what you need)',
     options: [...FEATURE_SELECT_OPTIONS],
     initialValues: initial,
     required: false,
   }) as string[];
 
-  if (p.isCancel(features)) { p.cancel('Cancelled'); process.exit(0); }
+  if (p.isCancel(picked)) { p.cancel('Cancelled'); process.exit(0); }
+
+  let features = picked;
+  if (features.includes('storage')) {
+    const db = await p.select({
+      message: 'Storage backend',
+      options: [...DB_SELECT_OPTIONS],
+      initialValue: 'file',
+    }) as string;
+    if (p.isCancel(db)) { p.cancel('Cancelled'); process.exit(0); }
+    features = withDatabase(features, db);
+  }
 
   const pm = await p.select({
     message: 'Package manager',

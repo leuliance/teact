@@ -1,0 +1,32 @@
+import type { TeactMessages } from './en';
+
+/** Built-in Korean strings. */
+export const ko: TeactMessages = {
+  yes: "예",
+  no: "아니요",
+  ok: "확인",
+  back: "뒤로",
+  next: "다음",
+  previous: "이전",
+  cancel: "취소",
+  done: "완료",
+  confirm: "확인",
+  close: "닫기",
+  save: "저장",
+  edit: "편집",
+  delete: "삭제",
+  skip: "건너뛰기",
+  loading: "불러오는 중…",
+  error: "문제가 발생했습니다.",
+  tryAgain: "다시 시도",
+  menu: "메뉴",
+  settings: "설정",
+  language: "언어",
+  help: "도움말",
+  search: "검색",
+  pageOf: "{{page}} / {{total}} 페이지",
+  selectLanguage: "언어를 선택하세요",
+  languageChanged: "언어가 {{language}}(으)로 변경되었습니다.",
+  noResults: "결과가 없습니다.",
+  areYouSure: "계속하시겠습니까?",
+};

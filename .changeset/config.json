@@ -3,7 +3,23 @@
   "changelog": "@changesets/cli/changelog",
   "commit": false,
   "fixed": [
-    ["@teactjs/core", "@teactjs/ui", "@teactjs/plugin-sdk", "@teactjs/telegram", "@teactjs/storage", "@teactjs/testing", "@teactjs/cli", "create-teact"]
+    [
+      "@teactjs/core",
+      "@teactjs/ui",
+      "@teactjs/plugin-sdk",
+      "@teactjs/telegram",
+      "@teactjs/storage",
+      "@teactjs/testing",
+      "@teactjs/cli",
+      "create-teact",
+      "@teactjs/redis",
+      "@teactjs/postgres",
+      "@teactjs/sqlite",
+      "@teactjs/mongodb",
+      "@teactjs/cloudflare",
+      "@teactjs/i18n",
+      "@teactjs/plugins"
+    ]
   ],
   "linked": [],
   "access": "public",

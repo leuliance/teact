@@ -1,0 +1,32 @@
+import type { TeactMessages } from './en';
+
+/** Built-in Japanese strings. */
+export const ja: TeactMessages = {
+  yes: "はい",
+  no: "いいえ",
+  ok: "OK",
+  back: "戻る",
+  next: "次へ",
+  previous: "前へ",
+  cancel: "キャンセル",
+  done: "完了",
+  confirm: "確認",
+  close: "閉じる",
+  save: "保存",
+  edit: "編集",
+  delete: "削除",
+  skip: "スキップ",
+  loading: "読み込み中…",
+  error: "問題が発生しました。",
+  tryAgain: "再試行",
+  menu: "メニュー",
+  settings: "設定",
+  language: "言語",
+  help: "ヘルプ",
+  search: "検索",
+  pageOf: "{{page}} / {{total}} ページ",
+  selectLanguage: "言語を選択してください",
+  languageChanged: "言語を{{language}}に変更しました。",
+  noResults: "見つかりませんでした。",
+  areYouSure: "よろしいですか？",
+};

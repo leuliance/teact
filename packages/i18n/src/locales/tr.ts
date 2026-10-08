@@ -1,0 +1,32 @@
+import type { TeactMessages } from './en';
+
+/** Built-in Turkish strings. */
+export const tr: TeactMessages = {
+  yes: "Evet",
+  no: "Hayır",
+  ok: "Tamam",
+  back: "Geri",
+  next: "İleri",
+  previous: "Önceki",
+  cancel: "İptal",
+  done: "Bitti",
+  confirm: "Onayla",
+  close: "Kapat",
+  save: "Kaydet",
+  edit: "Düzenle",
+  delete: "Sil",
+  skip: "Atla",
+  loading: "Yükleniyor…",
+  error: "Bir şeyler ters gitti.",
+  tryAgain: "Tekrar dene",
+  menu: "Menü",
+  settings: "Ayarlar",
+  language: "Dil",
+  help: "Yardım",
+  search: "Ara",
+  pageOf: "Sayfa {{page}}/{{total}}",
+  selectLanguage: "Dilinizi seçin",
+  languageChanged: "Dil {{language}} olarak değiştirildi.",
+  noResults: "Hiçbir şey bulunamadı.",
+  areYouSure: "Emin misiniz?",
+};

@@ -13,6 +13,7 @@
       },
       "devDependencies": {
         "@changesets/cli": "^2.30.0",
+        "@electric-sql/pglite": "^0.5.8",
         "@teactjs/cli": "workspace:*",
         "@types/bun": "latest",
         "@types/react": "^19.0.0",
@@ -22,7 +23,7 @@
     },
     "examples/showcase-bot": {
       "name": "showcase-bot",
-      "version": "0.1.1-alpha.0",
+      "version": "0.1.1-alpha.1",
       "dependencies": {
         "@tanstack/react-query": "^5.95.2",
         "@teactjs/core": "workspace:*",
@@ -42,7 +43,7 @@
     },
     "packages/cli": {
       "name": "@teactjs/cli",
-      "version": "0.2.0-alpha.0",
+      "version": "0.2.0-alpha.1",
       "bin": {
         "teact": "dist/bin.js",
       },
@@ -54,9 +55,18 @@
         "vite-node": "^6.0.0",
       },
     },
+    "packages/cloudflare": {
+      "name": "@teactjs/cloudflare",
+      "version": "0.2.0-alpha.1",
+      "peerDependencies": {
+        "@teactjs/core": "^0.2.0-alpha.1",
+        "@teactjs/storage": "^0.2.0-alpha.1",
+        "react": "^18.0.0 || ^19.0.0",
+      },
+    },
     "packages/core": {
       "name": "@teactjs/core",
-      "version": "0.2.0-alpha.0",
+      "version": "0.2.0-alpha.1",
       "dependencies": {
         "i18next": "^26.0.3",
         "react-i18next": "^17.0.2",
@@ -68,7 +78,7 @@
     },
     "packages/create-teact": {
       "name": "create-teact",
-      "version": "0.2.0-alpha.0",
+      "version": "0.2.0-alpha.1",
       "bin": {
         "create-teact": "index.ts",
       },
@@ -76,25 +86,112 @@
         "@clack/prompts": "^1.1.0",
       },
     },
-    "packages/plugin-sdk": {
-      "name": "@teactjs/plugin-sdk",
-      "version": "0.2.0-alpha.0",
+    "packages/i18n": {
+      "name": "@teactjs/i18n",
+      "version": "0.2.0-alpha.1",
       "peerDependencies": {
-        "@teactjs/core": "^0.2.0-alpha.0",
+        "@teactjs/core": "^0.2.0-alpha.1",
+        "@teactjs/ui": "^0.2.0-alpha.1",
         "react": "^18.0.0 || ^19.0.0",
       },
     },
+    "packages/mongodb": {
+      "name": "@teactjs/mongodb",
+      "version": "0.2.0-alpha.1",
+      "peerDependencies": {
+        "@teactjs/core": "^0.2.0-alpha.1",
+        "@teactjs/plugin-sdk": "^0.2.0-alpha.1",
+        "@teactjs/storage": "^0.2.0-alpha.1",
+        "mongodb": "^5.0.0 || ^6.0.0",
+        "react": "^18.0.0 || ^19.0.0",
+      },
+      "optionalPeers": [
+        "mongodb",
+      ],
+    },
+    "packages/plugin-sdk": {
+      "name": "@teactjs/plugin-sdk",
+      "version": "0.2.0-alpha.1",
+      "peerDependencies": {
+        "@teactjs/core": "^0.2.0-alpha.1",
+        "react": "^18.0.0 || ^19.0.0",
+      },
+    },
+    "packages/plugins": {
+      "name": "@teactjs/plugins",
+      "version": "0.2.0-alpha.1",
+      "peerDependencies": {
+        "@teactjs/core": "^0.2.0-alpha.1",
+        "@teactjs/storage": "^0.2.0-alpha.1",
+        "react": "^18.0.0 || ^19.0.0",
+      },
+      "optionalPeers": [
+        "@teactjs/storage",
+      ],
+    },
+    "packages/postgres": {
+      "name": "@teactjs/postgres",
+      "version": "0.2.0-alpha.1",
+      "peerDependencies": {
+        "@electric-sql/pglite": ">=0.2.0",
+        "@neondatabase/serverless": ">=0.9.0",
+        "@teactjs/core": "^0.2.0-alpha.1",
+        "@teactjs/plugin-sdk": "^0.2.0-alpha.1",
+        "@teactjs/storage": "^0.2.0-alpha.1",
+        "pg": ">=8.0.0",
+        "postgres": ">=3.0.0",
+        "react": "^18.0.0 || ^19.0.0",
+      },
+      "optionalPeers": [
+        "@electric-sql/pglite",
+        "@neondatabase/serverless",
+        "pg",
+        "postgres",
+      ],
+    },
+    "packages/redis": {
+      "name": "@teactjs/redis",
+      "version": "0.2.0-alpha.1",
+      "peerDependencies": {
+        "@teactjs/core": "^0.2.0-alpha.1",
+        "@teactjs/plugin-sdk": "^0.2.0-alpha.1",
+        "@teactjs/storage": "^0.2.0-alpha.1",
+        "@upstash/redis": "^1.0.0",
+        "ioredis": "^5.0.0",
+        "react": "^18.0.0 || ^19.0.0",
+        "redis": "^4.0.0 || ^5.0.0",
+      },
+      "optionalPeers": [
+        "@upstash/redis",
+        "ioredis",
+        "redis",
+      ],
+    },
+    "packages/sqlite": {
+      "name": "@teactjs/sqlite",
+      "version": "0.2.0-alpha.1",
+      "peerDependencies": {
+        "@teactjs/core": "^0.2.0-alpha.1",
+        "@teactjs/plugin-sdk": "^0.2.0-alpha.1",
+        "@teactjs/storage": "^0.2.0-alpha.1",
+        "better-sqlite3": ">=9.0.0",
+        "react": "^18.0.0 || ^19.0.0",
+      },
+      "optionalPeers": [
+        "better-sqlite3",
+      ],
+    },
     "packages/storage": {
       "name": "@teactjs/storage",
-      "version": "0.2.0-alpha.0",
+      "version": "0.2.0-alpha.1",
       "peerDependencies": {
-        "@teactjs/core": "^0.2.0-alpha.0",
+        "@teactjs/core": "^0.2.0-alpha.1",
         "react": "^18.0.0 || ^19.0.0",
       },
     },
     "packages/telegram": {
       "name": "@teactjs/telegram",
-      "version": "0.2.0-alpha.0",
+      "version": "0.2.0-alpha.1",
       "dependencies": {
         "@grammyjs/auto-retry": "^2.0.2",
         "@grammyjs/conversations": "^2.1.1",
@@ -108,17 +205,17 @@
     },
     "packages/testing": {
       "name": "@teactjs/testing",
-      "version": "0.2.0-alpha.0",
+      "version": "0.2.0-alpha.1",
       "peerDependencies": {
-        "@teactjs/core": "^0.1.0-alpha.14",
+        "@teactjs/core": "^0.2.0-alpha.1",
         "react": "^18.0.0 || ^19.0.0",
       },
     },
     "packages/ui": {
       "name": "@teactjs/ui",
-      "version": "0.2.0-alpha.0",
+      "version": "0.2.0-alpha.1",
       "peerDependencies": {
-        "@teactjs/core": "^0.2.0-alpha.0",
+        "@teactjs/core": "^0.2.0-alpha.1",
         "react": "^18.0.0 || ^19.0.0",
       },
     },
@@ -163,6 +260,8 @@
     "@clack/core": ["@clack/core@1.4.2", "", { "dependencies": { "fast-wrap-ansi": "^0.2.0", "sisteransi": "^1.0.5" } }, "sha512-0Ty/1Gfm+Kb07sXcuESjyKfwEhSy4Ns1AgeEisHb/bDY5fWme0tTeTkU14T1Gmcs17YIjB/teiDe4uaCghbYqQ=="],
 
     "@clack/prompts": ["@clack/prompts@1.6.0", "", { "dependencies": { "@clack/core": "1.4.2", "fast-string-width": "^3.0.2", "fast-wrap-ansi": "^0.2.0", "sisteransi": "^1.0.5" } }, "sha512-EYlRokl8szrP9Z25qT5aepMdBjzBvHF9ZEhzIiUBc9guz/T31EqRgvD0QSgZcpE93xiwrr+OkB4nz0BZyF6fSA=="],
+
+    "@electric-sql/pglite": ["@electric-sql/pglite@0.5.8", "", {}, "sha512-n9tsbUOhwx2epK1V0ZG9Ar4SHWUju04dhmzZXiSBXwBoleOvIfals33NAaWgagQVAL4Rbvx/Ptsu3P+pA09f6Q=="],
 
     "@emnapi/core": ["@emnapi/core@1.11.1", "", { "dependencies": { "@emnapi/wasi-threads": "1.2.2", "tslib": "^2.4.0" } }, "sha512-RSvbQmHzdKzNsLYa/wHrbc3KN4sYLKAdPZxqiM2HATqv/SBk2/ENSHpvXGaLOMcsAyz0poEGqkmmKYG3OWiJEQ=="],
 
@@ -284,9 +383,23 @@
 
     "@teactjs/cli": ["@teactjs/cli@workspace:packages/cli"],
 
+    "@teactjs/cloudflare": ["@teactjs/cloudflare@workspace:packages/cloudflare"],
+
     "@teactjs/core": ["@teactjs/core@workspace:packages/core"],
 
+    "@teactjs/i18n": ["@teactjs/i18n@workspace:packages/i18n"],
+
+    "@teactjs/mongodb": ["@teactjs/mongodb@workspace:packages/mongodb"],
+
     "@teactjs/plugin-sdk": ["@teactjs/plugin-sdk@workspace:packages/plugin-sdk"],
+
+    "@teactjs/plugins": ["@teactjs/plugins@workspace:packages/plugins"],
+
+    "@teactjs/postgres": ["@teactjs/postgres@workspace:packages/postgres"],
+
+    "@teactjs/redis": ["@teactjs/redis@workspace:packages/redis"],
+
+    "@teactjs/sqlite": ["@teactjs/sqlite@workspace:packages/sqlite"],
 
     "@teactjs/storage": ["@teactjs/storage@workspace:packages/storage"],
 

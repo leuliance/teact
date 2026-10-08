@@ -61,3 +61,20 @@ describe('MockAdapter', () => {
     expect(adapter.edited).toHaveLength(0);
   });
 });
+
+test('createBot with MockAdapter needs no token', async () => {
+  const { createBot } = await import('../packages/core/src');
+  const React = await import('react');
+  const prev = process.env.TELEGRAM_BOT_TOKEN;
+  delete process.env.TELEGRAM_BOT_TOKEN;
+  try {
+    const adapter = new MockAdapter();
+    const bot = createBot({ component: () => React.createElement('tg-message', { text: 'ok' }), adapter });
+    await bot.start();
+    await adapter.simulateMessage('1', '1', 'hi');
+    expect(adapter.sent.length).toBe(1);
+    await bot.stop();
+  } finally {
+    if (prev !== undefined) process.env.TELEGRAM_BOT_TOKEN = prev;
+  }
+});

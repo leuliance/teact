@@ -51,7 +51,7 @@ describe('ErrorBoundary', () => {
 
     expect(output!.type).toBe('tg-message');
     expect(output!.props.text).toContain('Something went wrong');
-    expect(output!.props.text).toContain('Component exploded');
+    expect(output!.props.text).not.toContain('Component exploded'); // internals are not shown to users
   });
 
   test('shows custom fallback element', async () => {

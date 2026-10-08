@@ -1,6 +1,6 @@
 import React, { Suspense } from 'react';
 import type { FunctionComponent, ReactNode } from 'react';
-import { createRoot, type TeactRoot, type OutputNode, type BotContext, type SessionStore, type Middleware, type Adapter } from '../renderer';
+import { createRoot, type TeactRoot, type OutputNode, type BotContext, type SessionStore, type SessionData, type Middleware, type Adapter } from '../renderer';
 import { CallbackRegistryCtx, ErrorBoundary, type CallbackMap } from '../renderer';
 
 /** Minimal internal Suspense fallback — a raw host element so core never imports @teactjs/ui. */
@@ -206,10 +206,52 @@ interface ChatRoot {
   commitSignal?: () => void;
 }
 
+interface ActiveSession {
+  session: SessionData;
+  /** Chain of pending session writes for this update, in call order. */
+  write: Promise<unknown>;
+}
+
 interface CommandInfo {
   name: string;
   args: string[];
   initialRoute?: string;
+}
+
+/** Options for `bot.fetch(request, options)`. */
+export interface BotFetchOptions {
+  /** Bot token (e.g. `env.TELEGRAM_BOT_TOKEN`). Falls back to `createBot({ token })` / `TELEGRAM_BOT_TOKEN`. */
+  token?: string;
+  /** Webhook secret; requests whose `X-Telegram-Bot-Api-Secret-Token` header differs get a 401. */
+  secretToken?: string;
+  /**
+   * Platform bindings for this request (the Cloudflare Workers `env`). Read them anywhere
+   * with {@link getEnv} — e.g. `new D1Driver(() => getEnv<Env>().DB)` at module scope.
+   */
+  env?: unknown;
+}
+
+let currentEnv: unknown;
+function setEnv(env: unknown) { currentEnv = env; }
+
+/**
+ * The `env` passed to the most recent `bot.fetch(request, { env })` — on Cloudflare
+ * Workers, your bindings (D1, KV, secrets). Lets drivers and stores created at module
+ * scope reach bindings lazily, without importing `cloudflare:workers` (which would break
+ * `bun dev`). Throws if called before the first `bot.fetch` with an `env`.
+ *
+ * @example
+ * export const bot = createBot({
+ *   session: { store: d1SessionStore(() => getEnv<Env>().DB) },
+ *   plugins: [storagePlugin({ driver: new D1Driver(() => getEnv<Env>().DB) })],
+ *   // ...
+ * });
+ */
+export function getEnv<T = Record<string, unknown>>(): T {
+  if (currentEnv === undefined) {
+    throw new Error('[teact] getEnv() has no env yet — pass it with bot.fetch(request, { env }).');
+  }
+  return currentEnv as T;
 }
 
 /** Callback-data prefix used to encode "navigate to this route" buttons. */
@@ -284,13 +326,17 @@ export function createBot(options: CreateBotOptions) {
   // Token is resolved lazily: on serverless (Cloudflare Workers etc.) there is no
   // process.env at module load — bot.fetch(request, { token }) supplies it per request.
   let resolvedToken: string | undefined =
-    options.token ?? (typeof process !== 'undefined' ? process.env?.TELEGRAM_BOT_TOKEN : undefined);
+    options.token ??
+    (typeof process !== 'undefined' ? process.env?.TELEGRAM_BOT_TOKEN : undefined) ??
+    (adapter.requiresToken === false ? 'test-token' : undefined);
 
   function debugLog(...args: any[]) {
     if (debugMode) console.log(`[teact:debug ${new Date().toISOString()}]`, ...args);
   }
 
   const chatRoots = new Map<string, ChatRoot>();
+  // The session of each chat's latest update (see renderForChat).
+  const activeSessions = new Map<string, ActiveSession>();
   // Serializes updates per chat: a chat's next update waits for its previous one to
   // finish rendering + sending. Without this, two rapid messages/callbacks for the same
   // chat interleave and race on the shared ChatRoot (commitSignal, commitMode, handlers).
@@ -359,6 +405,7 @@ export function createBot(options: CreateBotOptions) {
     });
     try {
       let commandInfo: CommandInfo | undefined;
+      let finalStep: (() => Promise<void>) | undefined;
 
       if (botCtx.callbackData?.startsWith('__convo:')) {
         console.warn(
@@ -368,9 +415,14 @@ export function createBot(options: CreateBotOptions) {
         return;
       }
 
+      // Resetting the chat's root (a new command or route button) is deferred to the end of
+      // the middleware pipeline, so an update a middleware halts (rate limit,
+      // maintenance…) leaves the chat's current screen and button handlers intact.
+      let reset = false;
+
       if (botCtx.callbackData?.startsWith(ROUTE_PREFIX)) {
         const routePath = botCtx.callbackData.slice(ROUTE_PREFIX.length);
-        resetChatRoot(botCtx);
+        reset = true;
         commandInfo = { name: '', args: [], initialRoute: routePath };
       } else if (botCtx.text?.startsWith('/')) {
         const [cmdPart, ...args] = botCtx.text.slice(1).split(/\s+/);
@@ -378,23 +430,27 @@ export function createBot(options: CreateBotOptions) {
         const cmdDef = rawCommands[cmdName];
 
         if (cmdDef) {
-          resetChatRoot(botCtx);
+          reset = true;
 
           if (cmdDef.handler != null) {
-            if (typeof cmdDef.handler === 'string') {
-              await adapter.send(Number(botCtx.chatId), buildMessageNode(cmdDef.handler));
-            } else {
-              await cmdDef.handler(buildCommandContext(botCtx, args));
+            const handler = cmdDef.handler;
+            // Handler commands still go through middleware (rate limits, maintenance,
+            // logging, error reporting…); the handler replaces the render step.
+            finalStep = async () => {
+              if (typeof handler === 'string') {
+                await adapter.send(Number(botCtx.chatId), buildMessageNode(handler));
+              } else {
+                await handler(buildCommandContext(botCtx, args));
+              }
+            };
+          } else {
+            let initialRoute: string | undefined;
+            if (cmdDef.deepLink && args.length > 0) {
+              initialRoute = cmdDef.deepLink(args);
             }
-            return;
+            initialRoute ??= cmdDef.route;
+            commandInfo = { name: cmdName, args, initialRoute };
           }
-
-          let initialRoute: string | undefined;
-          if (cmdDef.deepLink && args.length > 0) {
-            initialRoute = cmdDef.deepLink(args);
-          }
-          initialRoute ??= cmdDef.route;
-          commandInfo = { name: cmdName, args, initialRoute };
         }
       }
 
@@ -402,7 +458,10 @@ export function createBot(options: CreateBotOptions) {
       const pipeline = compose([
         ...pluginMiddleware,
         ...userMiddleware,
-        async (ctx) => renderForChat(ctx, commandInfo),
+        async (ctx) => {
+          if (reset) resetChatRoot(ctx);
+          return finalStep ? finalStep() : renderForChat(ctx, commandInfo);
+        },
       ]);
       await pipeline(botCtx, async () => {});
       debugLog(`update processed in ${Date.now() - updateStart}ms`);
@@ -428,25 +487,43 @@ export function createBot(options: CreateBotOptions) {
       chatState = undefined;
     }
 
-    if (botCtx.callbackData && chatState) {
-      const handler = chatState.handlers.get(botCtx.callbackData);
-      if (handler) handler();
-    }
+    // The session for THIS update. It is registered per chat before any handler runs:
+    // onClick handlers were created by an earlier render and hold that render's
+    // updateSession, so updateSession always resolves the chat's *current* session
+    // instead of the object it closed over. Writes are chained so they land in order,
+    // and the whole chain is awaited before we return — on serverless the isolate
+    // freezes once the Response resolves, so a fire-and-forget set() to an async store
+    // (KV, Redis, DB) would be dropped.
+    const active: ActiveSession = { session, write: Promise.resolve() };
+    activeSessions.set(chatKey, active);
 
-    // Track the latest session write so we can await it before returning. On serverless
-    // the isolate freezes once the Response resolves, so a fire-and-forget set() to an
-    // async store (KV, Redis, DB) would be dropped and the session would never persist.
-    let sessionWrite: Promise<unknown> = Promise.resolve();
     const runtimeValue: RuntimeContextValue = {
       botCtx,
       session,
       updateSession(patch) {
-        Object.assign(session, patch);
-        // Snapshot so later mutations of `session` don't leak into an in-flight write.
-        sessionWrite = Promise.resolve(sessionStore.set(chatKey, { ...session }));
+        const current = activeSessions.get(chatKey) ?? active;
+        Object.assign(current.session, patch);
+        // Snapshot so later mutations of the session don't leak into an in-flight write.
+        const snapshot = { ...current.session };
+        current.write = current.write.then(() => sessionStore.set(chatKey, snapshot));
       },
       command: commandInfo ? { name: commandInfo.name, args: commandInfo.args } : null,
     };
+
+    if (botCtx.callbackData) {
+      const handler = chatState?.handlers.get(botCtx.callbackData);
+      if (handler) handler();
+      else if (botCtx.callbackData.startsWith('__cb:')) {
+        // onClick handlers live in this process's memory. After a restart, or on a fresh
+        // serverless isolate, they are gone: the screen is re-rendered from its initial
+        // state instead (in place — see lastMessageId below).
+        console.warn(
+          `[teact] No handler for button "${botCtx.callbackData}" in chat ${botCtx.chatId} (bot restarted or new ` +
+          'serverless instance) — re-rendering the screen. Use route buttons (<Button route="/x" />) or keep ' +
+          'screen state in useSession/useStorage so buttons keep working across instances.',
+        );
+      }
+    }
 
     if (!chatState) {
       const handlers: CallbackMap = new Map();
@@ -456,7 +533,10 @@ export function createBot(options: CreateBotOptions) {
       const root = createRoot((tree: OutputNode) => {
         if (disposed) return;
         const cs = chatRoots.get(chatKey);
-        if (!cs) return;
+        // Ignore commits from a root that is no longer the chat's current one: unmounting
+        // the old root on a reset (new command, route button) commits an empty tree,
+        // which must not be sent through the new root's queue.
+        if (!cs || cs.root !== root) return;
 
         cs.commitQueue = cs.commitQueue.then(async () => {
           if (disposed) return;
@@ -522,6 +602,11 @@ export function createBot(options: CreateBotOptions) {
 
     if (!botCtx.callbackData) {
       chatState.lastMessageId = undefined;
+    } else if (!chatState.lastMessageId && Number(botCtx.messageId)) {
+      // A button press on a root this process didn't render (route button, restart, fresh
+      // serverless isolate): edit the message the button lives on instead of sending a
+      // duplicate below it.
+      chatState.lastMessageId = Number(botCtx.messageId);
     }
 
     chatState.handlers.clear();
@@ -610,7 +695,19 @@ export function createBot(options: CreateBotOptions) {
     await cs.commitQueue;
     // Ensure any session write triggered by this render (or its onClick handler) is
     // durably persisted before we return — critical on serverless (see above).
-    await sessionWrite;
+    await active.write;
+    if (activeSessions.get(chatKey) === active) activeSessions.delete(chatKey);
+  }
+
+  async function registerCommandMenu(): Promise<number> {
+    const botCommands = Object.entries(rawCommands).map(([name, def]) => ({
+      command: name,
+      description: def.description,
+    }));
+    if (botCommands.length === 0) return 0;
+    await adapter.setCommands(botCommands);
+    console.log(`[teact] Registered ${botCommands.length} command(s) with Telegram`);
+    return botCommands.length;
   }
 
   /**
@@ -624,19 +721,20 @@ export function createBot(options: CreateBotOptions) {
       // Auto-load teact.config.ts (fs-based; harmlessly returns {} on serverless/edge).
       loadedConfig = await loadTeactConfig();
 
-      plugins = [...(loadedConfig.plugins ?? []), ...(options.plugins ?? [])];
-      // Drop duplicate plugins (same name registered in both teact.config.ts and
-      // createBot({ plugins })). Otherwise you get two driver instances, doubled
-      // Providers, and duplicated onStart/onStop — the classic dual-instance footgun.
-      const seenPlugins = new Set<string>();
-      plugins = plugins.filter((p) => {
-        if (seenPlugins.has(p.name)) {
-          console.warn(`[teact] Plugin "${p.name}" registered more than once — ignoring the duplicate.`);
+      // A plugin listed in BOTH teact.config.ts and createBot({ plugins }) is loaded once,
+      // and the explicit createBot() copy wins — otherwise you'd get two driver instances,
+      // doubled Providers and duplicated onStart/onStop. Repeats within one list are
+      // intentional (e.g. a per-user and a per-chat rateLimit) and are all kept.
+      const botPlugins = options.plugins ?? [];
+      const botNames = new Set(botPlugins.map((p) => p.name));
+      plugins = [
+        ...(loadedConfig.plugins ?? []).filter((p) => {
+          if (!botNames.has(p.name)) return true;
+          console.warn(`[teact] Plugin "${p.name}" is in both teact.config.ts and createBot({ plugins }) — using the createBot() one.`);
           return false;
-        }
-        seenPlugins.add(p.name);
-        return true;
-      });
+        }),
+        ...botPlugins,
+      ];
       pluginMiddleware = plugins.filter(p => p.middleware).map(p => p.middleware!);
       mergedServices = Object.assign({}, ...plugins.map(p => p.services ?? {}));
       userMiddleware = [...(loadedConfig.middleware ?? []), ...(options.middleware ?? [])];
@@ -662,17 +760,10 @@ export function createBot(options: CreateBotOptions) {
       // Register the platform command menu (skipped on serverless by default — set it
       // once at deploy time instead of on every cold start).
       if (opts?.registerCommands !== false) {
-        const botCommands = Object.entries(rawCommands).map(([name, def]) => ({
-          command: name,
-          description: def.description,
-        }));
-        if (botCommands.length > 0) {
-          try {
-            await adapter.setCommands(botCommands);
-            console.log(`[teact] Registered ${botCommands.length} command(s) with Telegram`);
-          } catch (err) {
-            console.warn('[teact] Could not set bot commands:', err);
-          }
+        try {
+          await registerCommandMenu();
+        } catch (err) {
+          console.warn('[teact] Could not set bot commands:', err);
         }
       }
 
@@ -759,7 +850,13 @@ export function createBot(options: CreateBotOptions) {
      *     bot.fetch(request, { token: env.TELEGRAM_BOT_TOKEN, secretToken: env.WEBHOOK_SECRET }),
      * };
      */
-    async fetch(request: Request, opts?: { token?: string; secretToken?: string }): Promise<Response> {
+    async fetch(request: Request, opts?: BotFetchOptions): Promise<Response> {
+      // Reject requests without the webhook secret before doing any work (no getMe, no
+      // plugin onStart) — anyone can POST to a public worker URL.
+      if (opts?.secretToken && request.headers.get('x-telegram-bot-api-secret-token') !== opts.secretToken) {
+        return new Response('Unauthorized', { status: 401 });
+      }
+      if (opts?.env !== undefined) setEnv(opts.env);
       if (opts?.token) resolvedToken = opts.token;
       await initialize({ registerCommands: false });
       // The in-memory session store is per-isolate; on serverless each request may get
@@ -780,6 +877,17 @@ export function createBot(options: CreateBotOptions) {
         webhookFn = adapter.webhookCallback({ secretToken: opts?.secretToken });
       }
       return webhookFn(request);
+    },
+
+    /**
+     * Register the commands with the platform's command menu (Telegram `setMyCommands`).
+     * `start()` does this automatically; `fetch()` (serverless) doesn't, to avoid a call on
+     * every cold start — run this once after deploying, e.g. from a script or `teact`.
+     * Resolves the number of commands registered.
+     */
+    async setCommands(): Promise<number> {
+      await initialize({ registerCommands: false });
+      return registerCommandMenu();
     },
 
     _chatRoots: chatRoots,

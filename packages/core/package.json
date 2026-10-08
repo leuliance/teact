@@ -4,19 +4,20 @@
   "description": "Teact framework core — createBot, hooks, router, and more",
   "type": "module",
   "main": "dist/index.js",
-  "types": "dist/core/src/index.d.ts",
+  "types": "dist/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/core/src/index.d.ts"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     }
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
-    "build": "bun build ./src/index.ts --outdir ./dist --format esm --target bun --external react --external react/jsx-runtime --external react/jsx-dev-runtime --external react-reconciler --external i18next --external react-i18next --external @teactjs/ui && tsc --emitDeclarationOnly --outDir dist --declaration --project tsconfig.build.json"
+    "build": "rm -rf dist && bun build ./src/index.ts --outdir ./dist --format esm --target bun --external react --external react/jsx-runtime --external react/jsx-dev-runtime --external react-reconciler --external i18next --external react-i18next --external @teactjs/ui && tsc --emitDeclarationOnly --outDir dist --declaration --project tsconfig.build.json && bun ../../scripts/fix-dts.ts"
   },
   "dependencies": {
     "react-reconciler": "^0.31.0",
@@ -26,5 +27,14 @@
   "peerDependencies": {
     "react": "^18.0.0 || ^19.0.0"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/leuliance/teact.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://teact-docs.vercel.app",
+  "bugs": {
+    "url": "https://github.com/leuliance/teact/issues"
+  }
 }

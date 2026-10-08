@@ -1,0 +1,32 @@
+import type { TeactMessages } from './en';
+
+/** Built-in Chinese (Simplified) strings. */
+export const zh: TeactMessages = {
+  yes: "是",
+  no: "否",
+  ok: "确定",
+  back: "返回",
+  next: "下一步",
+  previous: "上一步",
+  cancel: "取消",
+  done: "完成",
+  confirm: "确认",
+  close: "关闭",
+  save: "保存",
+  edit: "编辑",
+  delete: "删除",
+  skip: "跳过",
+  loading: "加载中…",
+  error: "出错了。",
+  tryAgain: "重试",
+  menu: "菜单",
+  settings: "设置",
+  language: "语言",
+  help: "帮助",
+  search: "搜索",
+  pageOf: "第 {{page}} 页，共 {{total}} 页",
+  selectLanguage: "请选择语言",
+  languageChanged: "语言已切换为{{language}}。",
+  noResults: "未找到任何内容。",
+  areYouSure: "你确定吗？",
+};

@@ -33,11 +33,11 @@ export type { UseQueryOptions, UseQueryResult, UseMutationOptions, UseMutationRe
 
 // ---- Runtime (bot engine, hooks, router, plugins) ----
 
-export { createBot, ROUTE_PREFIX } from './runtime';
-export type { CreateBotOptions, CommandContext, CommandDef, ReplyOptions, ReplyButton, ReplyKeyboardButton, WebhookConfig } from './runtime';
+export { createBot, ROUTE_PREFIX, getEnv } from './runtime';
+export type { CreateBotOptions, BotFetchOptions, CommandContext, CommandDef, ReplyOptions, ReplyButton, ReplyKeyboardButton, WebhookConfig } from './runtime';
 
 export { MemorySessionStore } from './runtime';
-export { compose, commandMiddleware } from './runtime';
+export { compose, commandMiddleware, halt, isHalted } from './runtime';
 
 export { createRouter, useNavigate, useParams, useRoute, redirect } from './runtime';
 export type { RouterConfig, NavigateOptions, NavigateMode, BeforeLoadContext, RouteGuard, GuardRedirect, GuardComponent, GuardReply, GuardReplyOptions, GuardButton, RouteValue, CreateRouterOptions, PathParams, RouteCommand, ResolvedRouteCommand } from './runtime';
@@ -95,8 +95,17 @@ export type { ChatInfo, TelegramAccess, MediaSenders } from './runtime';
 export { useOn, useEventData } from './runtime';
 export type { TelegramEvent, EventContext } from './runtime';
 
-export { createI18n, useLocale } from './runtime';
-export type { I18nConfig } from './runtime';
+export {
+  createI18n,
+  useLocale,
+  detectLocale,
+  normalizeLocale,
+  getUserLanguageCode,
+  localeCallbackData,
+  LOCALE_SESSION_KEY,
+  LOCALE_CALLBACK_PREFIX,
+} from './runtime';
+export type { I18nConfig, I18nInstance, I18nLocaleResource } from './runtime';
 
 export { useInvoice } from './runtime';
 export type { InvoiceConfig, InvoiceResult, LabeledPrice, SuccessfulPayment } from './runtime';

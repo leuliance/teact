@@ -21,6 +21,8 @@ export interface EditedMessage {
  */
 export class MockAdapter implements Adapter {
   readonly name = 'mock';
+  /** Tests don't need a bot token. */
+  readonly requiresToken = false;
   private listeners = new Map<string, Set<EventHandler>>();
   private msgIdCounter = 1;
   private inMsgId = 100;
@@ -113,14 +115,17 @@ export class MockAdapter implements Adapter {
     };
   }
 
-  /** Simulate an incoming text message. Each gets a unique messageId, like Telegram. */
-  simulateMessage(chatId: string, userId: string, text: string): Promise<void> {
-    return this.emit('message', makeBotCtx({ chatId, userId, text, messageId: String(this.inMsgId++) }));
+  /**
+   * Simulate an incoming text message. Each gets a unique messageId, like Telegram.
+   * Pass `opts.languageCode` to model the sender's Telegram language.
+   */
+  simulateMessage(chatId: string, userId: string, text: string, opts: SimulateOptions = {}): Promise<void> {
+    return this.emit('message', makeBotCtx({ chatId, userId, text, messageId: String(this.inMsgId++) }, opts));
   }
 
   /** Simulate a callback query (button press). */
-  simulateCallback(chatId: string, userId: string, data: string, messageId?: string): Promise<void> {
-    return this.emit('callback_query', makeBotCtx({ chatId, userId, callbackData: data, messageId: messageId ?? String(this.inMsgId++) }));
+  simulateCallback(chatId: string, userId: string, data: string, messageId?: string, opts: SimulateOptions = {}): Promise<void> {
+    return this.emit('callback_query', makeBotCtx({ chatId, userId, callbackData: data, messageId: messageId ?? String(this.inMsgId++) }, opts));
   }
 
   reset(): void {
@@ -140,10 +145,16 @@ export class MockAdapter implements Adapter {
   }
 }
 
-function makeBotCtx(overrides: Partial<BotContext> & { chatId: string; userId: string }): BotContext {
+/** Extra fields for {@link MockAdapter.simulateMessage} / {@link MockAdapter.simulateCallback}. */
+export interface SimulateOptions {
+  /** Sender's language (Telegram `language_code`), e.g. `'de'` or `'pt-br'`. */
+  languageCode?: string;
+}
+
+function makeBotCtx(overrides: Partial<BotContext> & { chatId: string; userId: string }, opts: SimulateOptions = {}): BotContext {
   return {
     platform: 'mock',
-    user: { id: overrides.userId, firstName: 'Test', platform: 'mock' },
+    user: { id: overrides.userId, firstName: 'Test', platform: 'mock', languageCode: opts.languageCode },
     raw: {},
     ...overrides,
   };

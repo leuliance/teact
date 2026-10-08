@@ -1,0 +1,32 @@
+import type { TeactMessages } from './en';
+
+/** Built-in Amharic strings. */
+export const am: TeactMessages = {
+  yes: "አዎ",
+  no: "አይ",
+  ok: "እሺ",
+  back: "ተመለስ",
+  next: "ቀጣይ",
+  previous: "ቀዳሚ",
+  cancel: "ሰርዝ",
+  done: "ተጠናቋል",
+  confirm: "አረጋግጥ",
+  close: "ዝጋ",
+  save: "አስቀምጥ",
+  edit: "አርትዕ",
+  delete: "አጥፋ",
+  skip: "ዝለል",
+  loading: "በመጫን ላይ…",
+  error: "የሆነ ችግር ተፈጥሯል።",
+  tryAgain: "እንደገና ሞክር",
+  menu: "ምናሌ",
+  settings: "ቅንብሮች",
+  language: "ቋንቋ",
+  help: "እገዛ",
+  search: "ፈልግ",
+  pageOf: "ገጽ {{page}} ከ{{total}}",
+  selectLanguage: "ቋንቋዎን ይምረጡ",
+  languageChanged: "ቋንቋው ወደ {{language}} ተቀይሯል።",
+  noResults: "ምንም አልተገኘም።",
+  areYouSure: "እርግጠኛ ነዎት?",
+};

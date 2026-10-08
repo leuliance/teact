@@ -11,8 +11,9 @@
 #
 # What it does:
 #   - Builds every package
-#   - Publishes each package (in dependency order) under the `alpha` dist-tag,
-#     skipping any version already on npm (so re-runs are safe)
+#   - Publishes each package (in dependency order), skipping any version already on
+#     npm (so re-runs are safe). Prereleases (x.y.z-alpha.N) go out under the `alpha`
+#     dist-tag; stable versions under `latest`.
 #   - Moves the `latest` dist-tag to this version  ← the critical step that makes
 #     `bun create teact` and `npm install @teactjs/*` resolve the new release.
 #     (Publishing with --tag alpha alone never moves `latest`.)
@@ -36,7 +37,7 @@ OTP_FLAG=""
 [[ -n "$OTP" ]] && OTP_FLAG="--otp=$OTP"
 
 # Publish order: dependencies first.
-PACKAGES=(core plugin-sdk ui telegram storage testing cli create-teact)
+PACKAGES=(core plugin-sdk ui telegram storage testing redis postgres sqlite mongodb cloudflare i18n plugins cli create-teact)
 
 # npm package name for each dir (create-teact is unscoped).
 pkg_name() {
@@ -47,7 +48,7 @@ pkg_name() {
 }
 
 VERSION="$(bun --print "require('./packages/core/package.json').version")"
-DIST_TAG="alpha"
+if [[ "${VERSION}" == *-* ]]; then DIST_TAG="alpha"; else DIST_TAG="latest"; fi
 
 echo "──────────────────────────────────────────────"
 echo " Teact release"
@@ -62,8 +63,17 @@ if ! npm whoami >/dev/null 2>&1; then
 fi
 echo "✓ npm user: $(npm whoami)"
 
-if [[ "${VERSION}" != *"-alpha."* ]]; then
-  read -r -p "⚠ Version '${VERSION}' is not an -alpha. Continue? [y/N] " ans
+# Every package must be on the same version (they're released as a fixed group).
+for dir in "${PACKAGES[@]}"; do
+  v="$(bun --print "require('./packages/$dir/package.json').version")"
+  if [[ "$v" != "$VERSION" ]]; then
+    echo "✗ packages/$dir is at $v, expected $VERSION — run 'bun run version' first." >&2
+    exit 1
+  fi
+done
+
+if [[ "${VERSION}" != *-* ]]; then
+  read -r -p "⚠ Publishing STABLE ${VERSION} as 'latest'. Continue? [y/N] " ans
   [[ "$ans" == "y" || "$ans" == "Y" ]] || { echo "Aborted."; exit 1; }
 fi
 

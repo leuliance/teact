@@ -5,14 +5,18 @@ import {
   buildDependencies,
   buildEnvContent,
   getTemplateFiles,
+  withDatabase,
+  databaseOf,
+  DB_SELECT_OPTIONS,
 } from '../packages/create-teact/lib/generate';
 
 describe('scaffolder · dependencies', () => {
   const templates = ['empty', 'counter', 'starter', 'showcase'] as const;
 
-  test('peer version is the 0.2.0-alpha line', () => {
-    // Not pinned to an exact prerelease number — sync-peer-version bumps it each release.
-    expect(TEACT_PEER_VERSION).toMatch(/^\^0\.2\.0-alpha\.\d+$/);
+  test('scaffolds depend on the current @teactjs release', () => {
+    // sync-peer-version keeps this in step with the released version on every `bun run version`.
+    const core = require('../packages/core/package.json') as { version: string };
+    expect(TEACT_PEER_VERSION).toBe(`^${core.version}`);
   });
 
   for (const tpl of templates) {
@@ -95,4 +99,48 @@ describe('scaffolder · generated files', () => {
     expect(all).not.toContain('@teactjs/runtime');
     expect(all).not.toContain("from '@teactjs/react'");
   });
+});
+
+describe('scaffolder · storage backend', () => {
+  test('withDatabase encodes the choice and implies storage', () => {
+    expect(withDatabase([], 'sqlite')).toEqual(['storage', 'db:sqlite']);
+    expect(withDatabase(['storage', 'db:redis'], 'postgres')).toEqual(['storage', 'db:postgres']);
+    expect(withDatabase(['storage'], 'file')).toEqual(['storage']);
+    expect(databaseOf(['storage'])).toBe('file');
+    expect(databaseOf(withDatabase([], 'redis'))).toBe('redis');
+    expect(DB_SELECT_OPTIONS.map((o) => o.value)).toEqual(['file', 'memory', 'sqlite', 'redis', 'postgres']);
+  });
+
+  test('file (default) keeps the JSON file driver and adds no db package', () => {
+    const files = getTemplateFiles('starter', ['storage']);
+    expect(files['src/index.tsx']).toContain("storagePlugin({ driver: 'file', path: '.teact/storage.json' })");
+    const { dependencies } = buildDependencies('starter', ['storage']);
+    expect(Object.keys(dependencies).filter((d) => /sqlite|redis|postgres/.test(d))).toEqual([]);
+  });
+
+  const cases = [
+    ['memory', "storagePlugin({ driver: 'memory' })", [], null],
+    ['sqlite', "import { SqliteDriver } from '@teactjs/sqlite';", ['@teactjs/sqlite'], null],
+    ['redis', "import { RedisDriver } from '@teactjs/redis';", ['@teactjs/redis', 'ioredis'], 'REDIS_URL='],
+    ['postgres', "import { PostgresDriver } from '@teactjs/postgres';", ['@teactjs/postgres', 'postgres'], 'DATABASE_URL='],
+  ] as const;
+
+  for (const [db, snippet, deps, env] of cases) {
+    for (const tpl of ['starter', 'showcase'] as const) {
+      test(`${tpl} + ${db}: wires driver, deps and env`, () => {
+        const features = withDatabase(['storage'], db);
+        const index = getTemplateFiles(tpl, features)['src/index.tsx'];
+        expect(index).toContain(snippet);
+        if (db !== 'memory') {
+          expect(index).toContain('storagePlugin({ driver: db })');
+          // the driver is created before createBot uses it
+          expect(index.indexOf('const db = ')).toBeGreaterThan(-1);
+          expect(index.indexOf('const db = ')).toBeLessThan(index.indexOf('createBot({'));
+        }
+        const { dependencies } = buildDependencies(tpl, features);
+        for (const d of deps) expect(dependencies[d]).toBeTruthy();
+        if (env) expect(buildEnvContent(features)).toContain(env);
+      });
+    }
+  }
 });

@@ -450,11 +450,14 @@ export function useNavigate(): (path: string, opts?: NavigateOptions) => void {
  * @example
  * // Route: '/pokemon/:id'
  * const { id } = useParams<'/pokemon/:id'>();   // id: string, type-checked
+ * const { id } = useParams<{ id: string }>();    // explicit shape also works
  * const params = useParams();                    // Record<string, string> (loose)
  */
-export function useParams<P extends string = never>(): [P] extends [never]
+export function useParams<P extends string | Record<string, string> = never>(): [P] extends [never]
   ? Record<string, string>
-  : PathParams<P> {
+  : P extends string
+    ? PathParams<P>
+    : P {
   const ctx = useContext(RouterCtx);
   if (!ctx) throw new Error('useParams must be used inside a Router');
   return ctx.params as any;

@@ -1,0 +1,32 @@
+import type { TeactMessages } from './en';
+
+/** Built-in Arabic strings. */
+export const ar: TeactMessages = {
+  yes: "نعم",
+  no: "لا",
+  ok: "حسنًا",
+  back: "رجوع",
+  next: "التالي",
+  previous: "السابق",
+  cancel: "إلغاء",
+  done: "تم",
+  confirm: "تأكيد",
+  close: "إغلاق",
+  save: "حفظ",
+  edit: "تعديل",
+  delete: "حذف",
+  skip: "تخطٍّ",
+  loading: "جارٍ التحميل…",
+  error: "حدث خطأ ما.",
+  tryAgain: "حاول مرة أخرى",
+  menu: "القائمة",
+  settings: "الإعدادات",
+  language: "اللغة",
+  help: "المساعدة",
+  search: "بحث",
+  pageOf: "الصفحة {{page}} من {{total}}",
+  selectLanguage: "اختر لغتك",
+  languageChanged: "تم تغيير اللغة إلى {{language}}.",
+  noResults: "لم يتم العثور على أي نتائج.",
+  areYouSure: "هل أنت متأكد؟",
+};
