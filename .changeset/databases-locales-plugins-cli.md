@@ -1,17 +1,19 @@
 ---
-"@teactjs/core": minor
-"@teactjs/storage": minor
-"@teactjs/telegram": minor
-"@teactjs/testing": minor
-"@teactjs/cli": minor
-"create-teact": minor
-"@teactjs/redis": minor
-"@teactjs/postgres": minor
-"@teactjs/sqlite": minor
-"@teactjs/mongodb": minor
-"@teactjs/cloudflare": minor
-"@teactjs/i18n": minor
-"@teactjs/plugins": minor
+"@teactjs/ui": major
+"@teactjs/plugin-sdk": major
+"@teactjs/core": major
+"@teactjs/storage": major
+"@teactjs/telegram": major
+"@teactjs/testing": major
+"@teactjs/cli": major
+"create-teact": major
+"@teactjs/redis": major
+"@teactjs/postgres": major
+"@teactjs/sqlite": major
+"@teactjs/mongodb": major
+"@teactjs/cloudflare": major
+"@teactjs/i18n": major
+"@teactjs/plugins": major
 ---
 
 Databases, locales, production plugins and a much faster CLI.
