@@ -13,9 +13,10 @@ import {
 describe('scaffolder · dependencies', () => {
   const templates = ['empty', 'counter', 'starter', 'showcase'] as const;
 
-  test('peer version is the 0.2.0-alpha line', () => {
-    // Not pinned to an exact prerelease number — sync-peer-version bumps it each release.
-    expect(TEACT_PEER_VERSION).toMatch(/^\^0\.2\.0-alpha\.\d+$/);
+  test('scaffolds depend on the current @teactjs release', () => {
+    // sync-peer-version keeps this in step with the released version on every `bun run version`.
+    const core = require('../packages/core/package.json') as { version: string };
+    expect(TEACT_PEER_VERSION).toBe(`^${core.version}`);
   });
 
   for (const tpl of templates) {
