@@ -129,3 +129,10 @@ describe('Router', () => {
     expect(output!.props.text).toBe('Custom 404!');
   });
 });
+
+// Type-level: both generic forms of useParams are accepted (compile-time check via tsc).
+import type { useParams as UseParamsT } from '../packages/core/src/runtime/router';
+type _FromTemplate = ReturnType<typeof UseParamsT<'/pokemon/:id'>>['id'];
+type _FromShape = ReturnType<typeof UseParamsT<{ id: string }>>['id'];
+const _typeCheck: [_FromTemplate, _FromShape] = ['1', '2'];
+void _typeCheck;

@@ -147,3 +147,18 @@ describe('createTestBot', () => {
     await t.stop();
   });
 });
+
+describe('session store outage', () => {
+  test('reports a session error and tells the user, without rendering on an empty session', async () => {
+    const errors: string[] = [];
+    const t = await createTestBot({
+      component: Counter,
+      onError: (e, i) => errors.push(`${i.source}:${(e as Error).message}`),
+      session: { store: { get: async () => { throw new Error('down'); }, set: async () => {}, delete: async () => {} } },
+    });
+    await t.send('/start');
+    expect(errors).toEqual(['session:down']);
+    expect(t.messages.map((m) => m.text)).toEqual(['⚠️ Something went wrong on our side — please try again in a moment.']);
+    await t.stop();
+  });
+});

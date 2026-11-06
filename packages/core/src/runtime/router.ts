@@ -445,16 +445,20 @@ export function useNavigate(): (path: string, opts?: NavigateOptions) => void {
 /**
  * Read the current route's dynamic parameters.
  *
- * Pass the route template as a type argument to infer param names (no codegen):
+ * Pass the route template as a type argument to infer param names (no codegen), or an
+ * explicit params shape (React Router style):
  *
  * @example
  * // Route: '/pokemon/:id'
- * const { id } = useParams<'/pokemon/:id'>();   // id: string, type-checked
+ * const { id } = useParams<'/pokemon/:id'>();   // id: string, inferred from the template
+ * const { id } = useParams<{ id: string }>();   // explicit shape
  * const params = useParams();                    // Record<string, string> (loose)
  */
-export function useParams<P extends string = never>(): [P] extends [never]
+export function useParams<P extends string | Record<string, string> = never>(): [P] extends [never]
   ? Record<string, string>
-  : PathParams<P> {
+  : P extends string
+    ? PathParams<P>
+    : P {
   const ctx = useContext(RouterCtx);
   if (!ctx) throw new Error('useParams must be used inside a Router');
   return ctx.params as any;

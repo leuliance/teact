@@ -170,7 +170,7 @@ export interface WebhookConfig {
 }
 
 /** Where an error reported to `onError` came from. */
-export type BotErrorSource = 'render' | 'handler' | 'command' | 'send' | 'middleware' | 'plugin';
+export type BotErrorSource = 'render' | 'handler' | 'command' | 'send' | 'middleware' | 'plugin' | 'session';
 
 /**
  * Options for {@link createBot}.
@@ -592,7 +592,18 @@ export function createBot(options: CreateBotOptions) {
   ): Promise<void> {
     const chatKey = chatKeyOf(botCtx);
     const sessionKey = sessionKeyOf(botCtx);
-    const session: SessionData = (await sessionStore.get(sessionKey)) ?? {};
+    let session: SessionData;
+    try {
+      session = (await sessionStore.get(sessionKey)) ?? {};
+    } catch (err) {
+      // The session store is down (Redis/KV outage). Don't render with an empty session —
+      // a later write would overwrite the real one and lose data. Tell the user instead.
+      reportError(err, 'session', botCtx);
+      await adapter
+        .send(botCtx.chatId, buildMessageNode('⚠️ Something went wrong on our side — please try again in a moment.'), { threadId: botCtx.threadId })
+        .catch(() => {});
+      return;
+    }
     let chatState = chatRoots.get(chatKey);
 
     // Recover from a previous render error: rebuild a fresh root so the chat isn't
