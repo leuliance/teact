@@ -25,6 +25,22 @@ const sleep = (ms: number, signal?: AbortSignal) =>
     signal?.addEventListener('abort', () => { clearTimeout(t); reject(signal.reason); }, { once: true });
   });
 
+/**
+ * `fetch` failures surface as an opaque "TypeError: fetch failed" with the real reason in
+ * `cause`. Name the method and the underlying reason so "why can't my bot connect?" is
+ * answerable from the log.
+ */
+function describeNetworkError(method: string, err: any): unknown {
+  if (err instanceof TelegramApiError || err?.name === 'AbortError') return err;
+  const cause = err?.cause;
+  const reason = [cause?.code, cause?.message ?? err?.message].filter(Boolean).join(' ');
+  return new Error(
+    `[teact] Network error calling Telegram ${method}: ${reason || 'request failed'}. ` +
+    'Check your internet connection, proxy settings (Node needs NODE_USE_ENV_PROXY=1 to honour HTTPS_PROXY), or apiRoot.',
+    { cause: err },
+  );
+}
+
 /** True when a param value must be uploaded as multipart (a file, not a URL / file_id). */
 function isFile(v: unknown): v is Blob {
   return typeof Blob !== 'undefined' && v instanceof Blob;
@@ -120,7 +136,8 @@ export function fetchDriver(options: FetchDriverOptions = {}): TelegramDriver {
         try {
           return await callOnce(method, params, opts);
         } catch (err: any) {
-          if (opts?.signal?.aborted || attempt >= maxRetries) throw err;
+          if (opts?.signal?.aborted) throw err;
+          if (attempt >= maxRetries) throw describeNetworkError(method, err);
           if (err instanceof TelegramApiError) {
             const retryAfter = err.parameters?.retry_after;
             if (err.errorCode === 429 && retryAfter != null && retryAfter <= maxRetryAfter) {

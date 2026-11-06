@@ -9,24 +9,25 @@ import { compose } from './middleware';
 import { RouterProvider, CommitModeCtx, type RouterConfig, type CommitModeRef } from './router';
 import type { TeactPlugin } from './plugin';
 import type { TeactConfig } from './config';
-import { readFileSync, existsSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { nodeBuiltin } from './node-builtins';
 
 /** Minimal internal Suspense fallback — a raw host element so core never imports @teactjs/ui. */
 const InternalSuspenseFallback = () =>
   React.createElement('tg-message', { text: '⏳ Loading…' });
 
 // Filesystem is only available on Node/Bun. Serverless/edge (Cloudflare Workers,
-// Deno Deploy, Vercel Edge) has none — every fs call below is guarded so it can't
+// Deno Deploy, Vercel Edge) has none — node built-ins are loaded at runtime (never via a
+// static import, so core bundles for edge targets) and every fs use is guarded so it can't
 // throw there (an uncaught throw would 500 the webhook).
-const HAS_FS = (() => {
+type FsLike = { readFileSync(path: string, enc: 'utf-8'): string; existsSync(path: string): boolean };
+const fs: FsLike | undefined = (() => {
   try {
     // Cloudflare Workers expose this; treat as no-fs even under nodejs_compat.
-    if (typeof navigator !== 'undefined' && (navigator as any).userAgent === 'Cloudflare-Workers') return false;
-    return typeof process !== 'undefined' && typeof (readFileSync as unknown) === 'function';
-  } catch { return false; }
+    if (typeof navigator !== 'undefined' && (navigator as any).userAgent === 'Cloudflare-Workers') return undefined;
+    return nodeBuiltin<FsLike>('node:fs');
+  } catch { return undefined; }
 })();
+const HAS_FS = !!fs?.readFileSync;
 
 // ---- .env auto-loader ----
 
@@ -57,7 +58,7 @@ export function parseEnv(content: string): Record<string, string> {
 function loadEnvFile(): void {
   if (!HAS_FS) return;
   try {
-    const parsed = parseEnv(readFileSync('.env', 'utf-8'));
+    const parsed = parseEnv(fs!.readFileSync('.env', 'utf-8'));
     for (const [key, value] of Object.entries(parsed)) {
       if (process.env[key] === undefined) process.env[key] = value;
     }
@@ -70,12 +71,15 @@ loadEnvFile();
 
 async function loadTeactConfig(): Promise<TeactConfig> {
   if (!HAS_FS) return {};
+  const path = nodeBuiltin<{ resolve(...p: string[]): string }>('node:path');
+  const url = nodeBuiltin<{ pathToFileURL(p: string): URL }>('node:url');
+  if (!path || !url) return {};
   try {
     for (const name of ['teact.config.ts', 'teact.config.js', 'teact.config.mjs']) {
-      const fullPath = resolve(process.cwd(), name);
-      if (existsSync(fullPath)) {
+      const fullPath = path.resolve(process.cwd(), name);
+      if (fs!.existsSync(fullPath)) {
         try {
-          const mod = await import(pathToFileURL(fullPath).href);
+          const mod = await import(/* @vite-ignore */ url.pathToFileURL(fullPath).href);
           console.log(`[teact] Loaded ${name}`);
           return mod.default ?? mod;
         } catch (err) {

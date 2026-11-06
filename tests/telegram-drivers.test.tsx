@@ -307,3 +307,13 @@ describe('polling stop', () => {
     });
   }
 });
+
+describe('fetchDriver network errors', () => {
+  test('name the method and the underlying cause', async () => {
+    const failing = (async () => {
+      throw Object.assign(new TypeError('fetch failed'), { cause: Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:443'), { code: 'ECONNREFUSED' }) });
+    }) as unknown as typeof fetch;
+    const driver = fetchDriver({ fetch: failing, maxRetries: 0 });
+    await expect(driver.init(TOKEN)).rejects.toThrow(/Network error calling Telegram getMe: ECONNREFUSED connect ECONNREFUSED/);
+  });
+});

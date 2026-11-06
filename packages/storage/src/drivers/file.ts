@@ -1,6 +1,17 @@
-import { existsSync, readFileSync, writeFileSync, renameSync, mkdirSync, statSync } from 'fs';
-import { dirname } from 'path';
 import type { StorageDriver } from '../types';
+
+// Node built-ins are loaded at runtime, not imported statically, so @teactjs/storage (and its
+// memory driver) still bundles for edge targets; the file driver simply has no fs there.
+type Fs = typeof import('node:fs');
+const nodeFs: Fs | undefined = (() => {
+  try {
+    return (globalThis as { process?: { getBuiltinModule?: (id: string) => unknown } }).process?.getBuiltinModule?.('node:fs') as Fs | undefined;
+  } catch {
+    return undefined;
+  }
+})();
+const { existsSync, readFileSync, writeFileSync, renameSync, mkdirSync, statSync } = (nodeFs ?? {}) as Fs;
+const dirname = (p: string) => p.replace(/[\\/][^\\/]*$/, '') || '.';
 
 /**
  * Whether this runtime has a writable filesystem. Cloudflare Workers / edge isolates
@@ -13,7 +24,7 @@ const HAS_FS = (() => {
     if (typeof navigator !== 'undefined' && (navigator as { userAgent?: string }).userAgent === 'Cloudflare-Workers') {
       return false;
     }
-    return typeof writeFileSync === 'function' && typeof readFileSync === 'function';
+    return typeof nodeFs?.writeFileSync === 'function' && typeof nodeFs?.readFileSync === 'function';
   } catch {
     return false;
   }
