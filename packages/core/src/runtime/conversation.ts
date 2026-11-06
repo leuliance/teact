@@ -1,4 +1,5 @@
 import React, { useState, useContext, useId, useMemo, useCallback, useRef } from 'react';
+import { sharedContext } from '../renderer/shared-context';
 import { useBot } from './context';
 import { CallbackRegistryCtx } from '../renderer';
 
@@ -491,8 +492,8 @@ export function useForm<T extends Record<string, FormFieldDef>>(
 
 // ---- Contexts ----
 
-const ConvCtx = React.createContext<ConversationState | null>(null);
-const FormCtxInternal = React.createContext<FormResult | null>(null);
+const ConvCtx = sharedContext<ConversationState | null>('conversation', null);
+const FormCtxInternal = sharedContext<FormResult | null>('form', null);
 
 /** Access the nearest `<Conversation>` state from any child component. */
 export function useConversationContext(): ConversationState {

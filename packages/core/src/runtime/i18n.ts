@@ -1,4 +1,5 @@
-import React, { useState, useContext, useCallback, useMemo, createContext } from 'react';
+import React, { useState, useContext, useCallback, useMemo } from 'react';
+import { sharedContext } from '../renderer/shared-context';
 import i18next, { type i18n as I18nextInstance } from 'i18next';
 import { initReactI18next, useTranslation, I18nextProvider } from 'react-i18next';
 import { RuntimeContext } from './context';
@@ -53,7 +54,7 @@ interface LocaleContextValue {
   setLocale: (lng: string) => void;
 }
 
-const LocaleCtx = createContext<LocaleContextValue | null>(null);
+const LocaleCtx = sharedContext<LocaleContextValue | null>('locale', null);
 
 /**
  * Create an i18n instance powered by i18next + react-i18next.

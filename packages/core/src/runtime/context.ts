@@ -1,4 +1,5 @@
 import React, { useContext } from 'react';
+import { sharedContext } from '../renderer/shared-context';
 import type { BotContext, SessionData } from '../renderer';
 
 /** Internal context value provided to all components during a render cycle. */
@@ -9,7 +10,7 @@ export interface RuntimeContextValue {
   command: { name: string; args: string[] } | null;
 }
 
-export const RuntimeContext = React.createContext<RuntimeContextValue | null>(null);
+export const RuntimeContext = sharedContext<RuntimeContextValue | null>('runtime', null);
 
 function useRuntime(): RuntimeContextValue {
   const ctx = useContext(RuntimeContext);

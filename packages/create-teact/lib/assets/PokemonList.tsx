@@ -6,10 +6,22 @@ import { usePokemonList } from '../hooks/usePokemon';
 export function PokemonList() {
   const navigate = useNavigate();
   const [page, setPage] = useState(0);
-  const { data: list, isLoading, isError } = usePokemonList(page);
+  const { data: list, isLoading, isError, refetch } = usePokemonList(page);
 
   if (isLoading) return <Message text="Loading pokemon list..." />;
-  if (isError || !list) return <Message text="Failed to load pokemon list." />;
+  if (isError || !list) {
+    // Always give the user a way out of an error screen.
+    return (
+      <Message text="⚠️ Failed to load the pokemon list. The Pokedex API may be unreachable.">
+        <InlineKeyboard>
+          <ButtonRow>
+            <Button text="🔄 Retry" onClick={() => { void refetch(); }} />
+            <Button text="🏠 Menu" onClick={() => navigate('/')} />
+          </ButtonRow>
+        </InlineKeyboard>
+      </Message>
+    );
+  }
 
   const header = `📋 Pokedex (page ${page + 1})`;
   const items = list.map((p) => `#${p.id} ${p.name}`).join('\n');

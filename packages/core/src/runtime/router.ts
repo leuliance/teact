@@ -1,4 +1,5 @@
-import React, { useState, useContext, useCallback, createContext } from 'react';
+import React, { useState, useContext, useCallback } from 'react';
+import { sharedContext } from '../renderer/shared-context';
 import type { FunctionComponent, ReactElement } from 'react';
 import { RuntimeContext } from './context';
 
@@ -164,9 +165,9 @@ export interface CommitModeRef {
   current: NavigateMode;
 }
 
-export const RouterCtx = createContext<RouterContextValue | null>(null);
+export const RouterCtx = sharedContext<RouterContextValue | null>('router', null);
 
-export const CommitModeCtx = createContext<CommitModeRef>({ current: 'replace' });
+export const CommitModeCtx = sharedContext<CommitModeRef>('commit-mode', { current: 'replace' });
 
 /** Redirect helper for use inside `beforeLoad` guards. */
 export function redirect(path: string): string {
