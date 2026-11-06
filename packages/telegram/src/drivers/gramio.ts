@@ -60,13 +60,29 @@ export function gramioDriver(botOrOptions?: Bot<any, any, any> | GramioDriverOpt
       return (bot.info ?? (await this.call('getMe', {}))) as TgUser;
     },
 
-    async call(method, params) {
+    async call(method, params, callOpts) {
       const api = requireBot().api as unknown as Record<string, (p: unknown) => Promise<unknown>>;
       const fn = api[method];
       if (typeof fn !== 'function') throw new Error(`[teact] GramIO has no Bot API method "${method}".`);
+      const request = fn(params);
+      const signal = callOpts?.signal;
       try {
-        return await fn(params);
+        if (!signal) return await request;
+        // GramIO's API has no per-call AbortSignal, so a 30s long poll would block stop()
+        // (and hot reloads). Race it against the signal instead. Abandoning an in-flight
+        // getUpdates is safe: updates are only confirmed by the NEXT call's offset, so
+        // Telegram redelivers whatever that response contained.
+        if (signal.aborted) throw signal.reason ?? new Error('aborted');
+        return await new Promise((resolve, reject) => {
+          const onAbort = () => reject(signal.reason ?? new Error('aborted'));
+          signal.addEventListener('abort', onAbort, { once: true });
+          request.then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort));
+        });
       } catch (err) {
+        if (signal?.aborted) {
+          request.catch(() => {}); // the abandoned request may still fail later — ignore it
+          throw err;
+        }
         throw toError(method, err);
       }
     },

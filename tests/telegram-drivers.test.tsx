@@ -277,3 +277,33 @@ describe('fetchDriver', () => {
     expect(n).toBe(2);
   });
 });
+
+describe('polling stop', () => {
+  for (const d of DRIVERS) {
+    test(`${d.name}: stop() doesn't wait for an in-flight 30s long poll`, async () => {
+      const tg = fakeTelegram();
+      const hanging = (async (input: any, init?: any) => {
+        const url = typeof input === 'string' ? input : input.url;
+        if (url.endsWith('/getUpdates')) {
+          // A real long poll: only returns when aborted (or after 30s).
+          await new Promise<void>((resolve) => {
+            const t = setTimeout(resolve, 30_000);
+            init?.signal?.addEventListener('abort', () => { clearTimeout(t); resolve(); });
+          });
+          if (init?.signal?.aborted) throw new DOMException('aborted', 'AbortError');
+          return new Response(JSON.stringify({ ok: true, result: [] }));
+        }
+        return tg.fetch(input, init);
+      }) as typeof fetch;
+      const driver = d.make({ ...tg, fetch: hanging });
+      if (d.name === 'gramio') globalThis.fetch = hanging;
+      const adapter = new TelegramAdapter({ driver });
+      await adapter.connect({ token: TOKEN });
+      await adapter.listen({ polling: true });
+      await new Promise((r) => setTimeout(r, 50));
+      const t = Date.now();
+      await adapter.disconnect();
+      expect(Date.now() - t).toBeLessThan(1000);
+    });
+  }
+});
