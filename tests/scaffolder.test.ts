@@ -96,3 +96,16 @@ describe('scaffolder · generated files', () => {
     expect(all).not.toContain("from '@teactjs/react'");
   });
 });
+
+describe('generated JSX', () => {
+  test('no string attribute relies on a "\\n" escape (JSX attribute strings do not process escapes)', () => {
+    for (const template of ['starter', 'counter', 'showcase', 'empty'] as const) {
+      const files = getTemplateFiles(template, ['storage', 'conversations', 'streaming', 'auth', 'payments']);
+      for (const [path, src] of Object.entries(files)) {
+        if (!/\.tsx$/.test(path)) continue;
+        const bad = src.match(/\b[a-zA-Z]+="[^"]*\\n[^"]*"/);
+        expect(bad ? `${template}:${path}: ${bad[0]}` : null).toBeNull();
+      }
+    }
+  });
+});

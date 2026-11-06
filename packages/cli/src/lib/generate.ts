@@ -334,7 +334,7 @@ export function MainMenu() {
   const navigate = useNavigate();
 
   return (
-    <Message text="🤖 Welcome!\\n\\nPick an option:">
+    <Message text={"🤖 Welcome!\\n\\nPick an option:"}>
       <InlineKeyboard>
 ${menuRows.join('\n')}
       </InlineKeyboard>
@@ -350,7 +350,7 @@ export function About() {
   const navigate = useNavigate();
 
   return (
-    <Message text="ℹ️ About\\n\\nBuilt with Teact — React for Telegram bots.\\nhttps://github.com/leuliance/teact">
+    <Message text={"ℹ️ About\\n\\nBuilt with Teact — React for Telegram bots.\\nhttps://github.com/leuliance/teact"}>
       <InlineKeyboard>
         <ButtonRow>
           <Button text="🏠 Menu" onClick={() => navigate('/')} />
@@ -474,7 +474,7 @@ export function MainMenu() {
   const navigate = useNavigate();
 
   return (
-    <Message text="🤖 Teact Showcase\\n\\nExplore routes, deep links, and optional features:">
+    <Message text={"🤖 Teact Showcase\\n\\nExplore routes, deep links, and optional features:"}>
       <InlineKeyboard>
 ${rows.join('\n')}
       </InlineKeyboard>

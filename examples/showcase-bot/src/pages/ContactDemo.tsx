@@ -33,7 +33,7 @@ export function ContactDemo() {
   }
 
   return (
-    <Message text="📱 Share Your Contact\n\nTap the button below — Telegram will ask you to confirm sharing your phone number.">
+    <Message text={"📱 Share Your Contact\n\nTap the button below — Telegram will ask you to confirm sharing your phone number."}>
       <ReplyKeyboard resizeKeyboard oneTimeKeyboard>
         <ReplyRow>
           <RequestContactButton text="📱 Share My Contact" />
