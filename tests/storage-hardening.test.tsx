@@ -60,3 +60,19 @@ describe('useStorage', () => {
     await t.stop();
   });
 });
+
+describe('FileDriver across processes', () => {
+  test('two drivers on one file merge per key; shutdown flush does not clobber', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'teact-'));
+    const file = join(dir, 'store.json');
+    const a = new FileDriver(file); // e.g. the dev server
+    const b = new FileDriver(file); // e.g. a script or a hot-reloaded instance
+    a.set('theme', 'dark');
+    b.set('page', 10);              // b must not drop a's key
+    expect(a.get<number>('page')).toBe(10);  // a sees b's write
+    a.set('theme', 'light');        // and a must not drop b's key
+    a.flush();                      // shutdown: must not rewrite a stale snapshot
+    b.flush();
+    expect(JSON.parse(readFileSync(file, 'utf-8'))).toEqual({ theme: 'light', page: 10 });
+  });
+});

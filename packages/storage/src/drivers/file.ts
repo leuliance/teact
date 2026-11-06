@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync, renameSync, mkdirSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync, renameSync, mkdirSync, statSync } from 'fs';
 import { dirname } from 'path';
 import type { StorageDriver } from '../types';
 
@@ -30,6 +30,12 @@ export class FileDriver implements StorageDriver {
   private data = new Map<string, any>();
   private path: string;
   private warnedNoFs = false;
+  // Identity (mtime + size) of the file as we last read/wrote it. When it changes, another
+  // process wrote the store, and we re-read before reading or writing — so processes
+  // sharing a file merge per key instead of the last writer wiping everyone else's keys.
+  private seen = '';
+  // Set when a write failed; flush() (called on shutdown) retries only then.
+  private dirty = false;
 
   constructor(path: string) {
     this.path = path;
@@ -44,7 +50,24 @@ export class FileDriver implements StorageDriver {
     this.load();
   }
 
+  private fileId(): string {
+    try {
+      const st = statSync(this.path);
+      return `${st.mtimeMs}:${st.size}`;
+    } catch {
+      return '';
+    }
+  }
+
+  /** Re-read the store if another process changed it since we last looked. */
+  private refresh(): void {
+    if (!HAS_FS || this.dirty) return;
+    const id = this.fileId();
+    if (id !== this.seen) this.load();
+  }
+
   private load() {
+    this.seen = this.fileId();
     if (!existsSync(this.path)) return;
     try {
       const parsed = JSON.parse(readFileSync(this.path, 'utf-8'));
@@ -62,8 +85,17 @@ export class FileDriver implements StorageDriver {
     }
   }
 
-  /** Persist synchronously and atomically. No-op (with a one-time warning) when fs is absent. */
+  /**
+   * Retry a failed write. Every set/delete already persists synchronously, so this is a
+   * no-op unless the last write failed — importantly, it never rewrites a stale snapshot
+   * over data other processes have written since.
+   */
   flush(): void {
+    if (this.dirty) this.write();
+  }
+
+  /** Persist synchronously and atomically. No-op (with a one-time warning) when fs is absent. */
+  private write(): void {
     if (!HAS_FS) {
       if (!this.warnedNoFs) {
         this.warnedNoFs = true;
@@ -76,34 +108,42 @@ export class FileDriver implements StorageDriver {
       const tmp = `${this.path}.${(typeof process !== 'undefined' && process.pid) || 0}.tmp`;
       writeFileSync(tmp, JSON.stringify(Object.fromEntries(this.data), null, 2));
       renameSync(tmp, this.path); // atomic on the same filesystem
+      this.seen = this.fileId();
+      this.dirty = false;
     } catch (err) {
+      this.dirty = true;
       console.error('[teact/storage] Failed to write:', err);
     }
   }
 
   get<T>(key: string): T | undefined {
+    this.refresh();
     return this.data.get(key);
   }
 
   set<T>(key: string, value: T): void {
+    this.refresh();
     this.data.set(key, value);
-    this.flush();
+    this.write();
   }
 
   delete(key: string): void {
-    if (this.data.delete(key)) this.flush();
+    this.refresh();
+    if (this.data.delete(key)) this.write();
   }
 
   has(key: string): boolean {
+    this.refresh();
     return this.data.has(key);
   }
 
   clear(): void {
     this.data.clear();
-    this.flush();
+    this.write();
   }
 
   keys(): string[] {
+    this.refresh();
     return [...this.data.keys()];
   }
 }
