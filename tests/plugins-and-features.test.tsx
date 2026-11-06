@@ -234,3 +234,19 @@ describe('inlineQueryPlugin', () => {
     await bot.stop();
   });
 });
+
+describe('block layout', () => {
+  test('Divider / Alert / List / a second Message start on their own line', async () => {
+    const { Divider, Alert, List, ListItem } = await import('../packages/ui/src');
+    const tree = await renderTree(
+      <>
+        <Message text="intro" />
+        <Divider length={3} />
+        <Alert variant="info" title="Note">body</Alert>
+        <List><ListItem>a</ListItem></List>
+        <Message text="end" />
+      </>,
+    );
+    expect(serializeOutput(tree).text).toBe('intro\n───\nℹ️ Note\nbody\n• a\nend');
+  });
+});

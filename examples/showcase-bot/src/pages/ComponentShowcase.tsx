@@ -152,7 +152,7 @@ export function ComponentShowcase() {
     <Message text={'🧪 Component Showcase\n\nExplore every Teact component in a guided tour.\nButtons below demo URL openers, Mini Apps, deep links, and navigate modes.'}>
       <InlineKeyboard>
         <InlineKeyboard.Row>
-          <Button text="▸ Start Tour" conversation={showcase} variant="primary" />
+          <Button text="🎬 Start Tour" conversation={showcase} variant="primary" />
         </InlineKeyboard.Row>
         <InlineKeyboard.Row>
           <Button text="🌐 Open URL" url="https://telegram.org" />

@@ -192,9 +192,19 @@ function walk(node: OutputNode, out: TelegramSendPayload, segs: TextSegment[]): 
   const lit = (text: string) => { if (text) segs.push({ text, literal: true }); };
   const raw = (text: string) => segs.push({ text, literal: false });
   const tag = (text: string) => segs.push({ text, literal: false, tag: true });
+  // Block elements (Alert, List, Divider, a second <Message> in a fragment) start on their
+  // own line — otherwise they're glued onto the previous text ("…end of text────────").
+  const block = () => {
+    for (let i = segs.length - 1; i >= 0; i--) {
+      if (segs[i].tag || segs[i].text === '') continue;
+      if (!segs[i].text.endsWith('\n')) raw('\n');
+      return;
+    }
+  };
 
   switch (node.type) {
     case 'tg-message': {
+      block();
       // If the user picked a parse mode, their `text` is verbatim (their escaping job);
       // otherwise it's a literal that we escape if formatting later forces HTML.
       if (node.props.text) {
@@ -496,6 +506,7 @@ function walk(node: OutputNode, out: TelegramSendPayload, segs: TextSegment[]): 
     }
 
     case 'tg-alert': {
+      block();
       if (node.props.heading) lit(node.props.heading);
       raw('\n');
       for (const c of node.children) walk(c, out, segs);
@@ -505,6 +516,7 @@ function walk(node: OutputNode, out: TelegramSendPayload, segs: TextSegment[]): 
 
     case 'tg-list': {
       const ordered = node.props.ordered === true;
+      block();
       node.children.forEach((c, i) => {
         raw(ordered ? `${i + 1}. ` : '• ');
         walk(c, out, segs);
@@ -519,6 +531,7 @@ function walk(node: OutputNode, out: TelegramSendPayload, segs: TextSegment[]): 
     }
 
     case 'tg-divider': {
+      block();
       if (node.props.text) lit(node.props.text); else raw('────────────────────');
       raw('\n');
       break;
