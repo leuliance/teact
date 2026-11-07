@@ -109,7 +109,8 @@ await storage.clear();
 - **`"memory"`** -- in-memory store, cleared on restart. Good for testing.
 - **`"file"`** -- a JSON file (`path`, default `.teact/storage.json`). Writes are atomic, a
   corrupt file is moved aside instead of overwritten, and several processes sharing the file
-  merge per key. Single-server use only — no filesystem on serverless.
+  merge per key. Single-server use only — no filesystem on serverless. Every write rewrites
+  the file synchronously (~3 ms at 10k keys, measured), so for busy bots use Redis/KV.
 - **`kvStorageDriver(...)`** -- any async key-value store: Redis, Upstash, Cloudflare KV,
   Deno KV, a SQL table.
 

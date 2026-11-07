@@ -117,7 +117,8 @@ export class FileDriver implements StorageDriver {
     try {
       mkdirSync(dirname(this.path), { recursive: true });
       const tmp = `${this.path}.${(typeof process !== 'undefined' && process.pid) || 0}.tmp`;
-      writeFileSync(tmp, JSON.stringify(Object.fromEntries(this.data), null, 2));
+      // Compact JSON: the whole store is rewritten per write, so size is speed.
+      writeFileSync(tmp, JSON.stringify(Object.fromEntries(this.data)));
       renameSync(tmp, this.path); // atomic on the same filesystem
       this.seen = this.fileId();
       this.dirty = false;
