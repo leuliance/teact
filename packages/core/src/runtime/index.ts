@@ -71,5 +71,5 @@ export type { TelegramEvent, EventContext } from './event-hooks';
 export { createI18n, useLocale } from './i18n';
 export type { I18nConfig } from './i18n';
 
-export { useInvoice } from './invoice';
+export { useInvoice, validateInvoice } from './invoice';
 export type { InvoiceConfig, InvoiceResult, LabeledPrice, SuccessfulPayment } from './invoice';

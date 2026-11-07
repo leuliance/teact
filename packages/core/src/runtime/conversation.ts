@@ -1,6 +1,6 @@
-import React, { useState, useContext, useId, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useContext, useEffect, useId, useMemo, useCallback, useRef } from 'react';
 import { sharedContext } from '../renderer/shared-context';
-import { useBot } from './context';
+import { useBot, useSession } from './context';
 import { CallbackRegistryCtx } from '../renderer';
 
 // ---- Validation ----
@@ -31,7 +31,7 @@ export interface SchemaLike {
 export type Validator = ValidateFn | SchemaLike;
 
 function runValidation(validator: Validator, value: string): true | string {
-  if (typeof validator === 'function') return validator(value);
+  if (typeof validator === 'function') return toVerdict(validator(value));
   if (typeof validator === 'object' && 'safeParse' in validator) {
     const r = validator.safeParse(value);
     return r.success ? true : ((r as any).error?.issues?.[0]?.message ?? 'Invalid input');
@@ -84,6 +84,38 @@ export interface FormActions<K extends string = string> {
 
 interface UseConversationOptions {
   validate?: (key: string, value: string) => true | string;
+  /**
+   * Stable id for persisting in-progress answers in the session (so a restart or another
+   * serverless instance continues the form). `useForm` and steps mode default to the field
+   * names; imperative forms are persisted only when an `id` is given.
+   */
+  id?: string;
+}
+
+/** Session key prefix for in-progress form state. */
+const FORM_SESSION_PREFIX = '__teact_form:';
+/** `/cmd` or `/cmd@bot` — never taken as a form answer. */
+const COMMAND_RE = /^\/[A-Za-z0-9_]+(@\w+)?(\s|$)/;
+const INVALID_INPUT = 'Invalid input';
+
+/**
+ * Which hook consumed the text of an update. When two forms are on screen, one message
+ * answers only ONE of them (the first to claim it).
+ */
+const consumedBy = new WeakMap<object, string>();
+
+interface PersistedForm {
+  a: Record<string, string>;
+  k: string | null;
+  m: 'text' | 'callback';
+  o?: string;
+}
+
+/** Normalize a validator result: only `true` accepts; anything else is a visible error. */
+function toVerdict(result: unknown): true | string {
+  if (result === true) return true;
+  if (typeof result === 'string' && result.trim()) return result;
+  return INVALID_INPUT;
 }
 
 export interface ConversationState<K extends string = string> {
@@ -167,19 +199,38 @@ export function useConversation(config?: StepsConfig | UseConversationOptions): 
   const steps = stepsMode ? config as StepsConfig : undefined;
   const opts = stepsMode ? undefined : config as UseConversationOptions | undefined;
 
-  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const bot = useBot();
+  const [session, updateSession] = useSession();
+  const hookId = useId();
+  // React's useId is a global counter on client roots — not stable across restarts — so the
+  // persistence key comes from an explicit id or the step names. Imperative forms without
+  // an `id` are not persisted.
+  const stableId = opts?.id ?? (stepsMode ? Object.keys(config as StepsConfig).join(',') : undefined);
+  const persistKey = stableId ? `${FORM_SESSION_PREFIX}${stableId}` : undefined;
+  // Restore an in-progress form (restart / another serverless instance) — unless this mount
+  // was triggered by a command such as /start, which means "start over".
+  const [restored] = useState<PersistedForm | null>(() => {
+    const saved = persistKey ? (session?.[persistKey] as PersistedForm | undefined) : undefined;
+    if (!saved || typeof saved !== 'object' || !saved.a || COMMAND_RE.test(bot.text ?? '')) return null;
+    return saved;
+  });
+  const [answers, setAnswers] = useState<Record<string, string>>(() => ({ ...(restored?.a ?? {}) }));
   const [lastError, setLastError] = useState<string | null>(null);
+  const [cursor, setCursor] = useState<string | null>(null);
   // Activation tracking lives in REFS, not state. `renderStep()` (which activates the
   // current step) runs inside the child <Form>/<Conversation>, so doing setState there
   // would warn "update X while rendering a different component". Mutating refs during
   // render is safe; re-renders are still driven by setAnswers/setLastError.
-  const activeKeyRef = useRef<string | null>(null);
-  const waitModeRef = useRef<'text' | 'callback'>('text');
+  const activeKeyRef = useRef<string | null>(restored?.k ?? null);
+  const waitModeRef = useRef<'text' | 'callback'>(restored?.m ?? 'text');
+  // Restored: the CURRENT message may be the answer, so nothing is marked processed yet.
   const processedMsgIdRef = useRef('');
+  // In shared chats, the user who started the form — only they can answer it.
+  const ownerRef = useRef<string | null>(restored?.o ?? null);
+  const shared = !!bot.chatType && bot.chatType !== 'private';
+  const isOwner = !shared || ownerRef.current === null || ownerRef.current === bot.userId;
 
-  const bot = useBot();
   const registry = useContext(CallbackRegistryCtx);
-  const hookId = useId();
   const text = bot.text;
   const callbackData = bot.callbackData;
   const msgId = bot.messageId ?? '';
@@ -200,9 +251,24 @@ export function useConversation(config?: StepsConfig | UseConversationOptions): 
   }, [steps, opts?.validate]);
 
   const active = activeKeyRef.current;
-  if (active && !(active in answers) && msgId !== processedMsgIdRef.current) {
+  const claimedByOther = (() => {
+    const by = consumedBy.get(bot);
+    return by !== undefined && by !== hookId;
+  })();
+  if (
+    active && !(active in answers) && msgId !== processedMsgIdRef.current &&
+    isOwner && !claimedByOther && !(text && COMMAND_RE.test(text))
+  ) {
     if (waitModeRef.current === 'text' && text && !callbackData) {
-      const result = validateFn?.(active, text) ?? true;
+      consumedBy.set(bot, hookId);
+      let result: true | string;
+      try {
+        result = validateFn ? toVerdict(validateFn(active, text)) : true;
+      } catch (err) {
+        // A buggy validator must not crash the screen (and wipe earlier answers).
+        console.error(`[teact] Validator for "${active}" threw — treating the input as invalid:`, err);
+        result = INVALID_INPUT;
+      }
       if (result === true) {
         setAnswers({ ...answers, [active]: text });
         activeKeyRef.current = null;
@@ -212,6 +278,7 @@ export function useConversation(config?: StepsConfig | UseConversationOptions): 
       }
       processedMsgIdRef.current = msgId;
     } else if (waitModeRef.current === 'callback' && text && !callbackData) {
+      consumedBy.set(bot, hookId);
       setLastError('Please pick an option from the buttons above.');
       processedMsgIdRef.current = msgId;
     }
@@ -220,6 +287,7 @@ export function useConversation(config?: StepsConfig | UseConversationOptions): 
   const setFn = useCallback((key: string, value: string) => {
     setAnswers(prev => ({ ...prev, [key]: value }));
     if (activeKeyRef.current === key) activeKeyRef.current = null;
+    setCursor(c => (c === key ? null : c));
     setLastError(null);
   }, []);
 
@@ -231,27 +299,35 @@ export function useConversation(config?: StepsConfig | UseConversationOptions): 
     return (!cur || cur in answers) && !(key in answers);
   }
 
-  function activateText(key: string) {
+  function activate(key: string, mode: 'text' | 'callback') {
+    if (activeKeyRef.current === key && !(key in answers)) {
+      waitModeRef.current = mode;
+      return; // already waiting (e.g. restored after a restart) — keep the current message answerable
+    }
     if (canActivate(key)) {
       activeKeyRef.current = key;
-      waitModeRef.current = 'text';
+      waitModeRef.current = mode;
       processedMsgIdRef.current = msgId;
+      if (shared && ownerRef.current === null) ownerRef.current = bot.userId;
     }
   }
 
+  function activateText(key: string) {
+    activate(key, 'text');
+  }
+
   function buildAsk(key: string, questionText: string, options: AskOption[][]): React.ReactElement {
-    if (canActivate(key)) {
-      activeKeyRef.current = key;
-      waitModeRef.current = 'callback';
-      processedMsgIdRef.current = msgId;
-    }
+    activate(key, 'callback');
+    // In a shared chat, only the form's owner gets working buttons (a tap by anyone else
+    // finds no handler — the engine re-renders as the tapper before dispatching).
+    const ownerView = !shared || ownerRef.current === null || ownerRef.current === bot.userId;
 
     const rows = options.map((row, ri) => {
       const buttons = row.map((opt, ci) => {
         const optText = typeof opt === 'string' ? opt : opt.text;
         const optValue = typeof opt === 'string' ? opt : opt.value;
         const cbId = `__ask:${hookId}:${key}:${ri}:${ci}`;
-        registry?.handlers.set(cbId, () => setFn(key, optValue));
+        if (ownerView) registry?.handlers.set(cbId, () => setFn(key, optValue));
         return React.createElement('tg-button', { key: `${ri}:${ci}`, text: optText, callbackData: cbId });
       });
       return React.createElement('tg-button-row', { key: String(ri) }, ...buttons);
@@ -263,7 +339,27 @@ export function useConversation(config?: StepsConfig | UseConversationOptions): 
     );
   }
 
-  const currentKey = stepKeys.find(k => !(k in answers)) ?? null;
+  const currentKey = (cursor && stepKeys.includes(cursor) && !(cursor in answers) ? cursor : null)
+    ?? stepKeys.find(k => !(k in answers)) ?? null;
+
+  // Persist in-progress state to the session so a restart / another instance continues the
+  // form. Finished (or idle) forms are removed again.
+  const lastPersisted = useRef<string | undefined>(restored ? JSON.stringify(restored) : undefined);
+  useEffect(() => {
+    if (!persistKey) return;
+    const k = activeKeyRef.current;
+    const inProgress = k !== null && !(k in answers);
+    const next: PersistedForm | undefined = inProgress
+      ? { a: answers, k, m: waitModeRef.current, ...(ownerRef.current ? { o: ownerRef.current } : {}) }
+      : undefined;
+    const serialized = next ? JSON.stringify(next) : undefined;
+    if (serialized === lastPersisted.current) return;
+    lastPersisted.current = serialized;
+    (updateSession as (p: Record<string, unknown>, o?: { rerender?: boolean }) => void)(
+      { [persistKey]: next },
+      { rerender: false },
+    );
+  });
 
   function renderStep(): React.ReactElement | null {
     if (!steps || !currentKey) return null;
@@ -311,7 +407,9 @@ export function useConversation(config?: StepsConfig | UseConversationOptions): 
   }
 
   function goTo(key: string) {
+    if (!stepKeys.includes(key)) return;
     clearStep(key);
+    setCursor(key);
   }
 
   function canGoBack(): boolean {
@@ -348,14 +446,25 @@ export function useConversation(config?: StepsConfig | UseConversationOptions): 
     step: currentKey ? stepKeys.indexOf(currentKey) : stepKeys.length,
     current: currentKey,
     complete: stepsMode ? currentKey === null && stepKeys.length > 0 : false,
-    isWaiting: activeKeyRef.current !== null,
+    // Getter: read after prompt()/ask()/render() activated the step in this render.
+    get isWaiting() {
+      const k = activeKeyRef.current;
+      return k !== null && !(k in answers);
+    },
     lastError,
     data: answers,
     render: render as ConversationState['render'],
     back,
     goTo,
     canGoBack,
-    reset: () => { setAnswers({}); activeKeyRef.current = null; waitModeRef.current = 'text'; setLastError(null); },
+    reset: () => {
+      setAnswers({});
+      setCursor(null);
+      activeKeyRef.current = null;
+      waitModeRef.current = 'text';
+      ownerRef.current = null;
+      setLastError(null);
+    },
   } as ConversationState;
 }
 
@@ -420,14 +529,18 @@ export function useForm<T extends Record<string, FormFieldDef>>(
   schema: T,
 ): FormResult<Extract<keyof T, string>> {
   const conv = useConversation({
+    id: `form:${Object.keys(schema).join(',')}`,
     validate(key, value) {
       const field = schema[key];
       if (!field?.validate) return true;
       return runValidation(field.validate, value);
     },
   });
-  const keys = useMemo(() => Object.keys(schema) as (keyof T & string)[], []);
-  const currentKey = keys.find(k => !conv.has(k));
+  // Recomputed every render: fields can appear conditionally (e.g. a <Form.Field> added later).
+  const keys = Object.keys(schema) as (keyof T & string)[];
+  const [cursor, setCursor] = useState<string | null>(null);
+  const currentKey = (cursor && keys.includes(cursor) && !conv.has(cursor) ? cursor : undefined)
+    ?? keys.find(k => !conv.has(k));
   const complete = !currentKey;
 
   function renderStep(): React.ReactElement | null {
@@ -462,7 +575,9 @@ export function useForm<T extends Record<string, FormFieldDef>>(
   }
 
   function goTo(key: Extract<keyof T, string>) {
+    if (!keys.includes(key)) return;
     conv.clear(key);
+    setCursor(key);
   }
 
   function render(onComplete?: () => React.ReactElement): React.ReactElement | null {
@@ -486,7 +601,7 @@ export function useForm<T extends Record<string, FormFieldDef>>(
     back,
     goTo,
     canGoBack,
-    reset: () => conv.reset(),
+    reset: () => { setCursor(null); conv.reset(); },
   };
 }
 
@@ -571,10 +686,9 @@ function ConversationRoot({ children, value }: {
   value?: ConversationState;
 }): React.ReactElement {
   const configRef = React.useRef<StepsConfig | undefined>(undefined);
-  const built = React.useRef(false);
 
-  if (!built.current) {
-    built.current = true;
+  // Rebuilt every render, so steps that appear conditionally are picked up.
+  {
     const config: StepsConfig = {};
     React.Children.forEach(children, child => {
       if (!React.isValidElement(child)) return;
@@ -664,10 +778,9 @@ function FormRoot({ children, value }: {
   value?: FormResult;
 }): React.ReactElement {
   const schemaRef = React.useRef<Record<string, FormFieldDef> | undefined>(undefined);
-  const built = React.useRef(false);
 
-  if (!built.current) {
-    built.current = true;
+  // Rebuilt every render, so fields that appear conditionally are picked up.
+  {
     const schema: Record<string, FormFieldDef> = {};
     React.Children.forEach(children, child => {
       if (!React.isValidElement(child)) return;

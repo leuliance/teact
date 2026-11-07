@@ -157,13 +157,24 @@ still answered with 200 — otherwise Telegram redelivers the same update foreve
 
 ## Payments
 
-`pre_checkout_query` is answered automatically (approve). Decide yourself:
+`pre_checkout_query` is answered automatically (approve), before anything else runs. Decide
+yourself — return `true` to approve or a message to decline. A handler that throws or takes
+longer than 8s declines (Telegram's deadline is 10s):
 
 ```ts
 new TelegramAdapter({
   onPreCheckout: async (q) => (await stockAvailable(q.invoice_payload)) ? true : "Sold out, sorry!",
+  // Flexible invoices (isFlexible + needShippingAddress): return options or a decline message.
+  onShippingQuery: (q) =>
+    q.shipping_address.country_code === "US"
+      ? [{ id: "std", title: "Standard", prices: [{ label: "Shipping", amount: 500 }] }]
+      : "We only ship to the US.",
 });
 ```
+
+`useInvoice` validates invoices before calling Telegram, ignores double taps while an invoice is
+pending, and exposes `reset()`. For Telegram Stars use `currency: "XTR"` with a single price and
+no `providerToken`.
 
 ## Conversations plugin
 

@@ -108,5 +108,5 @@ export type { TelegramEvent, EventContext } from './runtime';
 export { createI18n, useLocale } from './runtime';
 export type { I18nConfig } from './runtime';
 
-export { useInvoice } from './runtime';
+export { useInvoice, validateInvoice } from './runtime';
 export type { InvoiceConfig, InvoiceResult, LabeledPrice, SuccessfulPayment } from './runtime';

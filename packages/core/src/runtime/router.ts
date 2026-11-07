@@ -217,6 +217,14 @@ function parseRoute(path: string, component: FunctionComponent<any>, beforeLoad?
   };
 }
 
+function safeDecode(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value; // a hand-typed malformed escape (e.g. "100%") — keep it raw
+  }
+}
+
 function matchRoute(
   routes: RouteDefinition[],
   path: string,
@@ -229,7 +237,7 @@ function matchRoute(
     if (m) {
       const params: Record<string, string> = {};
       r.paramNames.forEach((name, i) => {
-        params[name] = m[i + 1];
+        params[name] = safeDecode(m[i + 1]);
       });
       return { route: r, params };
     }
@@ -297,7 +305,7 @@ function resolveRoute(
         return { guardElement: result, params: p, path: cur };
       }
       if (result && typeof result === 'object') {
-        if ('redirect' in result) {
+        if ('redirect' in result && (result as GuardRedirect).redirect !== currentPath) {
           currentPath = (result as GuardRedirect).redirect;
           continue;
         }

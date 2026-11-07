@@ -41,6 +41,36 @@
 - Sessions/storage hardened: unserializable values rejected up front, memory sessions are
   copies and swept, session-store outages answer "try again", late writes finish on serverless.
 - SECURITY warnings when a webhook runs without a secret token.
+- Payments: `useInvoice` ignores double taps / concurrent sends, validates invoices locally
+  (`validateInvoice`: integer positive amounts, payload ≤128 bytes, tips, Stars rules), never
+  sends a provider token for Stars (`providerToken` is optional), and gains `reset()`.
+  Pre-checkout queries are answered first (a crashing listener can't block them), time out
+  to a decline after 8s, and only an explicit `true` approves. New `onShippingQuery` option
+  for flexible invoices (unanswered shipping queries are declined with a warning).
+- Forms (`useForm` / `useConversation` / `<Form>` / `<Conversation>`): only the user who
+  started a form can answer it in groups; a stale/double tap can't answer the next question;
+  progress survives restarts and serverless instances (stored in the session); `/commands`
+  are never taken as answers; throwing or falsy validators show "Invalid input"; fields added
+  later are picked up; `goTo()` can jump forward; `isWaiting` is accurate; one message answers
+  only one of two visible forms.
+- Conversations plugin: owner-only answers/taps/cancel in groups, per forum topic, own-contact
+  check for `requestContact`, slow handlers no longer freeze the chat (`conversation.signal`),
+  `/cmd@other_bot` ignored, non-message updates pass through, long streams continue in a new
+  message.
+- Router: route params are URL-encoded (a param like `1/delete` can't hijack another route);
+  taps on a screen you navigated past with `push` are ignored; long callback aliases persist in
+  the session store (work after restarts) and work inside forum topics.
+- The default error screen no longer shows `error.message` to users (it goes to `onError`).
+- `bot.broadcast` de-duplicates chat ids and only counts messages actually sent.
+- Rendering: formatting components under a Markdown `parseMode` switch to HTML (with a
+  warning) instead of producing invalid markup; over-long HTML text falls back to safe plain
+  text; truncation never splits emoji; notifications clamp to 200 chars; media-group captions
+  clamp to 1024; one-item media groups keep parse mode/spoiler; warnings for >100 inline
+  buttons, >8 per row, dropped keyboards, and poll limits.
+- Hooks: `useQuery` tracks loading/error per key (no stuck spinner after switching keys);
+  `useMutation` — the latest call wins; `useStream().stop()` flushes pending text;
+  `useDeepLink().payload` only returns valid payloads; `<Pagination>`/`usePagination` clamp.
+- `inlineQueryPlugin` drops duplicate result ids (Telegram rejects the whole answer otherwise).
 
 ### Breaking changes & migration
 - `grammy` is no longer a dependency of `@teactjs/telegram`. To keep using grammY:

@@ -41,9 +41,28 @@ export interface TelegramAdapterConfig {
    * message to decline. Telegram requires an answer within 10 seconds. @default approve all
    */
   onPreCheckout?: (query: NonNullable<TgUpdate['pre_checkout_query']>) => true | string | Promise<true | string>;
+  /**
+   * Answer Telegram's `shipping_query` (flexible invoices with `isFlexible` +
+   * `needShippingAddress`). Return the available shipping options, or an error message to
+   * decline (e.g. "We don't ship to your country"). @default decline with a warning
+   */
+  onShippingQuery?: (
+    query: NonNullable<TgUpdate['shipping_query']>,
+  ) => ShippingOption[] | string | Promise<ShippingOption[] | string>;
   /** Max concurrently processed updates while polling. @default 100 */
   concurrency?: number;
 }
+
+/** A shipping option for flexible invoices (`answerShippingQuery`). */
+export interface ShippingOption {
+  id: string;
+  title: string;
+  prices: { label: string; amount: number }[];
+}
+
+/** Telegram drops a pre-checkout query that isn't answered within 10s; decline before that. */
+const PRE_CHECKOUT_TIMEOUT_MS = 8_000;
+const DECLINE_MESSAGE = 'Payment could not be processed. Please try again.';
 
 /** Back-compat alias. */
 export type ListenOptionsCompat = ListenOptions;
@@ -143,6 +162,17 @@ export class TelegramAdapter implements Adapter {
     for (const handler of this.listeners.get(event) ?? []) await (handler as any)(payload);
   }
 
+  /** Emit to raw-update listeners; one crashing listener never blocks the update. */
+  private async emitSafe(event: string, payload: any): Promise<void> {
+    for (const handler of this.listeners.get(event) ?? []) {
+      try {
+        await (handler as any)(payload);
+      } catch (err) {
+        console.error(`[telegram] '${event}' listener threw:`, err);
+      }
+    }
+  }
+
   /** Create the client and fetch the bot's identity. Does not start receiving updates. */
   async connect(config: { token?: string } = {}): Promise<void> {
     if (this.connected) return;
@@ -181,13 +211,13 @@ export class TelegramAdapter implements Adapter {
 
   private async dispatch(update: TgUpdate, native?: unknown): Promise<void> {
     const kind = Object.keys(update).find((k) => k !== 'update_id') ?? 'unknown';
-    // Raw-update listeners (`adapter.on('update', …)` / `adapter.on('update:inline_query', …)`).
-    await this.emit('update', update);
-    await this.emit(`update:${kind}`, update);
+    // Payment queries are time-critical (10s deadline): answer before anything else runs.
+    if (update.pre_checkout_query) await this.answerPreCheckout(update.pre_checkout_query);
+    if (update.shipping_query) await this.answerShipping(update.shipping_query);
 
-    if (update.pre_checkout_query) {
-      await this.answerPreCheckout(update.pre_checkout_query);
-    }
+    // Raw-update listeners (`adapter.on('update', …)` / `adapter.on('update:inline_query', …)`).
+    await this.emitSafe('update', update);
+    await this.emitSafe(`update:${kind}`, update);
 
     const ctx = this.mapUpdate(update, kind, native);
     if (!ctx) {
@@ -235,20 +265,53 @@ export class TelegramAdapter implements Adapter {
   }
 
   private async answerPreCheckout(query: NonNullable<TgUpdate['pre_checkout_query']>): Promise<void> {
-    let verdict: true | string = true;
-    try {
-      verdict = this.config.onPreCheckout ? await this.config.onPreCheckout(query) : true;
-    } catch (err) {
-      console.error('[telegram] onPreCheckout threw — declining the payment:', err);
-      verdict = 'Payment could not be processed. Please try again.';
+    let verdict: unknown = true;
+    if (this.config.onPreCheckout) {
+      try {
+        verdict = await withTimeout(Promise.resolve(this.config.onPreCheckout(query)), PRE_CHECKOUT_TIMEOUT_MS);
+      } catch (err) {
+        console.error('[telegram] onPreCheckout failed or timed out — declining the payment:', err);
+        verdict = DECLINE_MESSAGE;
+      }
+    }
+    // Only an explicit `true` approves; anything else (false, undefined, '') declines with a
+    // non-empty message — Telegram rejects an answer with ok=false and no error_message.
+    const ok = verdict === true;
+    const message = typeof verdict === 'string' && verdict.trim() ? verdict : DECLINE_MESSAGE;
+    if (!ok && typeof verdict !== 'string') {
+      console.warn(`[telegram] onPreCheckout returned ${String(verdict)} — return true to approve or an error message to decline. Declining.`);
     }
     await this.driver
       .call('answerPreCheckoutQuery', {
         pre_checkout_query_id: query.id,
-        ok: verdict === true,
-        ...(verdict === true ? {} : { error_message: verdict }),
+        ok,
+        ...(ok ? {} : { error_message: message }),
       })
       .catch((err) => console.error('[telegram] answerPreCheckoutQuery failed:', err));
+  }
+
+  private async answerShipping(query: NonNullable<TgUpdate['shipping_query']>): Promise<void> {
+    let result: ShippingOption[] | string = "Shipping isn't available for this order.";
+    if (this.config.onShippingQuery) {
+      try {
+        result = await withTimeout(Promise.resolve(this.config.onShippingQuery(query)), PRE_CHECKOUT_TIMEOUT_MS);
+      } catch (err) {
+        console.error('[telegram] onShippingQuery failed or timed out — declining:', err);
+        result = DECLINE_MESSAGE;
+      }
+    } else {
+      console.warn('[telegram] Received a shipping_query but no `onShippingQuery` is configured — declining. Pass onShippingQuery to TelegramAdapter for flexible invoices.');
+    }
+    const ok = Array.isArray(result) && result.length > 0;
+    await this.driver
+      .call('answerShippingQuery', {
+        shipping_query_id: query.id,
+        ok,
+        ...(ok
+          ? { shipping_options: result }
+          : { error_message: typeof result === 'string' && result.trim() ? result : DECLINE_MESSAGE }),
+      })
+      .catch((err) => console.error('[telegram] answerShippingQuery failed:', err));
   }
 
   /** Normalize a raw update into a Teact `BotContext`, or `null` if it has no chat to render into. */
@@ -453,4 +516,12 @@ export class TelegramAdapter implements Adapter {
   async setCommands(commands: { command: string; description: string }[]): Promise<void> {
     await this.driver.call('setMyCommands', { commands });
   }
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`timed out after ${ms}ms`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }

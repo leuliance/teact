@@ -5,7 +5,7 @@
 // `@teactjs/telegram/grammy` and `@teactjs/telegram/gramio`.
 
 export { TelegramAdapter, DEFAULT_ALLOWED_UPDATES } from './adapter';
-export type { TelegramAdapterConfig, WebhookConfig } from './adapter';
+export type { TelegramAdapterConfig, WebhookConfig, ShippingOption } from './adapter';
 
 export type { TelegramDriver, UpdateSink, CallOptions } from './driver';
 export { fetchDriver } from './drivers/fetch';

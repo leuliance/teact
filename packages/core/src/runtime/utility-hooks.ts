@@ -91,9 +91,11 @@ export interface DeepLink {
 export function useDeepLink(): DeepLink {
   const bot = useBot();
   const command = useCommand();
-  const payload = command?.name === 'start' && command.args.length > 0
+  const raw = command?.name === 'start' && command.args.length > 0
     ? command.args[0]
     : /^\/start(?:@\S+)?\s+(\S+)/.exec(bot.text ?? '')?.[1];
+  // Only payloads a real deep link could carry — anything else was hand-typed.
+  const payload = raw != null && PAYLOAD_RE.test(raw) ? raw : undefined;
   return {
     payload,
     link(p, opts) {

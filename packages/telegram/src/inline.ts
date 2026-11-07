@@ -114,13 +114,24 @@ export function inlineQueryPlugin(
         try {
           const answer = await handler(query);
           const a: InlineAnswer = Array.isArray(answer) ? { results: answer } : answer;
+          // Telegram rejects the whole answer if two results share an id: keep the first.
+          const seen = new Set<unknown>();
+          const results = a.results.filter((r) => {
+            if (r.id == null) return true;
+            if (seen.has(r.id)) return false;
+            seen.add(r.id);
+            return true;
+          });
+          if (results.length < a.results.length) {
+            console.warn(`[teact] inlineQueryPlugin returned ${a.results.length - results.length} result(s) with a duplicate id; duplicates dropped.`);
+          }
           // Telegram rejects more than 50 results per answer.
-          if (a.results.length > 50) {
-            console.warn(`[teact] inlineQueryPlugin returned ${a.results.length} results; Telegram allows 50 — use nextOffset to paginate.`);
+          if (results.length > 50) {
+            console.warn(`[teact] inlineQueryPlugin returned ${results.length} results; Telegram allows 50 — use nextOffset to paginate.`);
           }
           await tg.api.call('answerInlineQuery', stripUndef({
             inline_query_id: query.id,
-            results: a.results.slice(0, 50),
+            results: results.slice(0, 50),
             cache_time: a.cacheTime,
             is_personal: a.isPersonal,
             next_offset: a.nextOffset,

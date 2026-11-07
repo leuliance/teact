@@ -237,6 +237,11 @@ interface ChatRoot {
   chatId: string;
   threadId?: number;
   lastMessageId?: number;
+  /**
+   * Messages this root moved past with `navigate(…, { mode: 'push' })`. They still show
+   * buttons, but the handlers now belong to the newer screen — taps on them are ignored.
+   */
+  pastMessageIds: Set<number>;
   commitQueue: Promise<void>;
   commitMode: CommitModeRef;
   /** The user the UI was last rendered for (whose handlers are registered). */
@@ -269,6 +274,10 @@ export const ROUTE_PREFIX = '__route:';
 
 /** Prefix for callback data shortened to fit Telegram's 64-byte limit. */
 const ALIAS_PREFIX = '__h:';
+/** Session-store key holding a chat's callback aliases, so they survive restarts / instances. */
+const ALIAS_STORE_PREFIX = '__teact_aliases:';
+const MAX_ALIASES_PER_CHAT = 1000;
+const MAX_PERSISTED_ALIASES = 300;
 const MAX_CALLBACK_BYTES = 64;
 
 /** Safety timeout for awaiting a render commit; see renderForChat for why it's generous. */
@@ -470,21 +479,68 @@ export function createBot(options: CreateBotOptions) {
     }
   }
 
-  /** Replace callback data over the platform limit with a short, stable alias. */
-  function shortenCallbackData(chatKey: string, node: OutputNode): void {
-    if (node.type === 'tg-button' && typeof node.props.callbackData === 'string') {
-      const data: string = node.props.callbackData;
-      if (utf8.encode(data).length > MAX_CALLBACK_BYTES) {
-        const alias = `${ALIAS_PREFIX}${shortHash(data)}`;
-        let map = callbackAliases.get(chatKey);
-        if (!map) callbackAliases.set(chatKey, (map = new Map()));
-        map.delete(alias);
-        map.set(alias, data);
-        if (map.size > 1000) map.delete(map.keys().next().value as string);
-        node.props = { ...node.props, callbackData: alias };
+  /**
+   * Aliases are per CHAT (not per forum topic): `bot.send(chatId, …, { threadId })` and the
+   * tap coming back from that topic must agree on the key.
+   */
+  const aliasKeyOf = (platform: string, chatId: string | number) => `${platform}:${chatId}`;
+
+  /**
+   * Replace callback data over the platform limit with a short, stable alias. New aliases
+   * are also persisted to the session store, so a tap that reaches a restarted bot or
+   * another serverless instance can still be expanded.
+   */
+  function shortenCallbackData(aliasKey: string, node: OutputNode): void {
+    let added = false;
+    const walk = (n: OutputNode) => {
+      if (n.type === 'tg-button' && typeof n.props.callbackData === 'string') {
+        const data: string = n.props.callbackData;
+        if (utf8.encode(data).length > MAX_CALLBACK_BYTES) {
+          const alias = `${ALIAS_PREFIX}${shortHash(data)}`;
+          let map = callbackAliases.get(aliasKey);
+          if (!map) callbackAliases.set(aliasKey, (map = new Map()));
+          if (!map.has(alias)) added = true;
+          map.delete(alias);
+          map.set(alias, data);
+          if (map.size > MAX_ALIASES_PER_CHAT) map.delete(map.keys().next().value as string);
+          n.props = { ...n.props, callbackData: alias };
+        }
       }
+      for (const child of n.children) walk(child);
+    };
+    walk(node);
+    if (added) persistAliases(aliasKey);
+  }
+
+  function persistAliases(aliasKey: string): void {
+    const map = callbackAliases.get(aliasKey);
+    if (!map) return;
+    const recent = [...map].slice(-MAX_PERSISTED_ALIASES);
+    work.track(
+      Promise.resolve()
+        .then(() => sessionStore.set(`${ALIAS_STORE_PREFIX}${aliasKey}`, { aliases: Object.fromEntries(recent) }))
+        .catch((err) => debugLog('could not persist callback aliases', { error: (err as Error)?.message })),
+    );
+  }
+
+  /** Expand a shortened callback, consulting the session store when this instance never saw it. */
+  async function resolveAlias(aliasKey: string, alias: string): Promise<string | undefined> {
+    const known = callbackAliases.get(aliasKey)?.get(alias);
+    if (known) return known;
+    try {
+      const stored = await sessionStore.get(`${ALIAS_STORE_PREFIX}${aliasKey}`);
+      const aliases = stored?.aliases;
+      if (!aliases || typeof aliases !== 'object') return undefined;
+      let map = callbackAliases.get(aliasKey);
+      if (!map) callbackAliases.set(aliasKey, (map = new Map()));
+      for (const [k, v] of Object.entries(aliases as Record<string, unknown>)) {
+        if (typeof v === 'string' && !map.has(k)) map.set(k, v);
+      }
+      return map.get(alias);
+    } catch (err) {
+      debugLog('could not load callback aliases', { error: (err as Error)?.message });
+      return undefined;
     }
-    for (const child of node.children) shortenCallbackData(chatKey, child);
   }
 
   function buildCommandContext(botCtx: BotContext, args: string[]): CommandContext {
@@ -532,7 +588,7 @@ export function createBot(options: CreateBotOptions) {
       updateType: incoming.updateType ?? (incoming.callbackData != null ? 'callback_query' : 'message'),
     };
     if (botCtx.callbackData?.startsWith(ALIAS_PREFIX)) {
-      const original = callbackAliases.get(chatKey)?.get(botCtx.callbackData);
+      const original = await resolveAlias(aliasKeyOf(botCtx.platform, botCtx.chatId), botCtx.callbackData);
       if (original) botCtx = { ...botCtx, callbackData: original };
     }
 
@@ -680,7 +736,7 @@ export function createBot(options: CreateBotOptions) {
           cs.commitSignal?.();
           return;
         }
-        shortenCallbackData(chatKey, tree);
+        shortenCallbackData(aliasKeyOf(botCtx.platform, chatId), tree);
 
         cs.commitQueue = cs.commitQueue.then(async () => {
           if (disposed) return;
@@ -698,9 +754,15 @@ export function createBot(options: CreateBotOptions) {
                 if (cs.lastMessageId) await adapter.clearButtons(chatId, cs.lastMessageId);
                 break;
               }
-              case 'push':
+              case 'push': {
+                const previous = cs.lastMessageId;
                 await send();
+                if (previous && previous !== cs.lastMessageId) {
+                  cs.pastMessageIds.add(previous);
+                  if (cs.pastMessageIds.size > 200) cs.pastMessageIds.delete(cs.pastMessageIds.values().next().value as number);
+                }
                 break;
+              }
               case 'stack': {
                 if (cs.lastMessageId) await adapter.clearButtons(chatId, cs.lastMessageId);
                 await send();
@@ -732,7 +794,7 @@ export function createBot(options: CreateBotOptions) {
       });
 
       chatState = {
-        root, handlers, chatId, threadId, lastMessageId: undefined,
+        root, handlers, chatId, threadId, lastMessageId: undefined, pastMessageIds: new Set(),
         commitQueue: Promise.resolve(), commitMode, runtime: { current: runtimeValue },
         labels: new Map(),
       };
@@ -878,11 +940,22 @@ export function createBot(options: CreateBotOptions) {
       let data: string | undefined = botCtx.callbackData;
       const current = chatState.labels.get(data);
       const tappedLabel = botCtx.callbackLabel;
-      if (tappedLabel !== undefined && current !== tappedLabel) {
+      if (botCtx.messageId && chatState.pastMessageIds.has(Number(botCtx.messageId))) {
+        // A button on a screen the user navigated past (push): its positional callback ids
+        // now belong to the newer screen — running one would act on the wrong item.
+        debugLog('tap on a pushed-past message — ignoring', { messageId: botCtx.messageId });
+        data = undefined;
+      } else if (tappedLabel !== undefined && current !== tappedLabel) {
         // Callback ids are positional (React useId), so a restored/other-instance render can
         // number the same button differently. Fall back to the label: run the button only if
         // EXACTLY one button in the user's current view carries the label they tapped.
-        const byLabel = [...chatState.labels].filter(([, label]) => label === tappedLabel).map(([d]) => d);
+        // Form option buttons (`__ask:<hook>:<field>:r:c`) only fall back within the SAME
+        // question: a stale/double tap on q1's "Yes" must never answer q2's "Yes".
+        const askScope = (d: string) => (d.startsWith('__ask:') ? d.replace(/:\d+:\d+$/, '') : null);
+        const tappedScope = askScope(botCtx.callbackData);
+        const byLabel = [...chatState.labels]
+          .filter(([d, label]) => label === tappedLabel && askScope(d) === tappedScope)
+          .map(([d]) => d);
         data = byLabel.length === 1 ? byLabel[0] : undefined;
         if (!data) debugLog('tapped button is not on the current screen — ignoring', { tapped: tappedLabel, now: current });
       }
@@ -1221,7 +1294,7 @@ export function createBot(options: CreateBotOptions) {
       const id = String(chatId);
       const tree = typeof content === 'string' ? buildMessageNode(content) : await renderStatic(content, id);
       if (!tree) return undefined;
-      shortenCallbackData(`${adapter.name}:${id}`, tree);
+      shortenCallbackData(aliasKeyOf(adapter.name, id), tree);
       return adapter.send(id, tree, opts);
     },
 
@@ -1242,7 +1315,8 @@ export function createBot(options: CreateBotOptions) {
       opts: { perSecond?: number; onProgress?: (done: number, total: number) => void; signal?: AbortSignal } = {},
     ): Promise<{ sent: number; failed: { chatId: string; error: unknown }[] }> {
       await initialize({ registerCommands: false });
-      const ids = [...chatIds].map(String);
+      // De-duplicated: `[1, '1']` must not message the same user twice.
+      const ids = [...new Set([...chatIds].map(String))];
       const interval = 1000 / Math.max(1, Math.min(opts.perSecond ?? 25, 30));
       const template = typeof content === 'string' ? buildMessageNode(content) : await renderStatic(content, ids[0] ?? '0');
       const result = { sent: 0, failed: [] as { chatId: string; error: unknown }[] };
@@ -1254,9 +1328,9 @@ export function createBot(options: CreateBotOptions) {
         try {
           // Fresh node copies per chat: callback aliasing reassigns node props.
           const tree = cloneTree(template);
-          shortenCallbackData(`${adapter.name}:${id}`, tree);
-          await adapter.send(id, tree);
-          result.sent++;
+          shortenCallbackData(aliasKeyOf(adapter.name, id), tree);
+          // Only count messages the platform actually accepted (empty content sends nothing).
+          if ((await adapter.send(id, tree)) !== undefined) result.sent++;
         } catch (error) {
           result.failed.push({ chatId: id, error });
         }

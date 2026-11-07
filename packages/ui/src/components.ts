@@ -5,7 +5,9 @@ import { CallbackRegistryCtx, ROUTE_PREFIX } from '@teactjs/core';
 function buildRoutePath(route: string, params?: Record<string, string | number>): string {
   if (!params) return route;
   return route.replace(/:([A-Za-z0-9_]+)/g, (_, key) =>
-    params[key] != null ? String(params[key]) : `:${key}`,
+    // Encoded so a value like "1/delete" or "../admin" stays ONE segment — it can never
+    // steer the link to a different route. The router decodes params on match.
+    params[key] != null ? encodeURIComponent(String(params[key])) : `:${key}`,
   );
 }
 
@@ -768,6 +770,8 @@ export function usePagination<T>(all: readonly T[], opts: { pageSize?: number; i
   const [rawPage, setPage] = useState(opts.initialPage ?? 1);
   // Clamp if the list shrank underneath us.
   const page = Math.min(Math.max(1, rawPage), pageCount);
+  // Persist the clamp so a list that grows back doesn't jump to the stale out-of-range page.
+  if (page !== rawPage) setPage(page);
   const goTo = useCallback((p: number) => setPage(Math.min(Math.max(1, p), pageCount)), [pageCount]);
   const items = useMemo(() => all.slice((page - 1) * pageSize, page * pageSize), [all, page, pageSize]);
   return {
@@ -794,8 +798,9 @@ export interface PaginationProps {
 /**
  * A `‹ 2 / 5 ›` navigation row. Must be inside `<InlineKeyboard>`. Renders nothing for a single page.
  */
-export function Pagination({ page, pageCount, onChange, showEdges }: PaginationProps): React.ReactNode {
+export function Pagination({ page: rawPage, pageCount, onChange, showEdges }: PaginationProps): React.ReactNode {
   if (pageCount <= 1) return null;
+  const page = Math.min(Math.max(1, rawPage), pageCount);
   const edges = showEdges ?? pageCount > 3;
   const noop = () => {};
   const buttons: React.ReactElement[] = [];

@@ -81,6 +81,8 @@ export interface Conversation {
 
   /** The current chat ID. */
   chatId: number;
+  /** Aborted when the conversation is cancelled (command, timeout, replacement, bot stop). Pass it to fetch/LLM calls. */
+  signal: AbortSignal;
   /** Bot API access: `conversation.api.sendMessage({ chat_id, text })`. */
   api: TelegramApi;
   /** The Telegram chat object of the update that started the conversation. */
@@ -148,7 +150,12 @@ interface Waiter {
 
 interface Session {
   name: string;
+  /** User who started the conversation — the only one allowed to answer it. */
+  ownerId: string;
   waiter: Waiter | null;
+  /** Owner messages that arrived while the handler was busy (not waiting); consumed by the next wait. */
+  backlog: BotContext[];
+  abort: AbortController;
   /** Resolves when the handler next blocks on input (or finishes). */
   idle: { promise: Promise<void>; resolve: () => void };
   /** Maps `__cq:` callback ids of the current ask() to option values. */
@@ -165,12 +172,33 @@ function deferred() {
 
 let askSeq = 0;
 
+/** Max time an update holds the chat while the handler runs before it next waits for input. */
+const IDLE_CAP_MS = 200;
+const MAX_BACKLOG = 20;
+
 function isCommand(ctx: BotContext): boolean {
   return !!ctx.text?.startsWith('/');
 }
 
 function commandName(text: string): string {
   return text.slice(1).split(/\s+/)[0].split('@')[0].toLowerCase();
+}
+
+/** True when the command is addressed to a different bot (`/cmd@other_bot`). */
+function isForOtherBot(ctx: BotContext): boolean {
+  const mention = ctx.text?.slice(1).split(/\s+/)[0].split('@')[1];
+  return !!mention && !!ctx.botUsername && mention.toLowerCase() !== ctx.botUsername.toLowerCase();
+}
+
+function isOwner(session: Session, ctx: BotContext): boolean {
+  return String(ctx.userId) === session.ownerId;
+}
+
+/** Wait for `p`, but at most `ms`. */
+function capped(p: Promise<void>, ms: number): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const t = new Promise<void>((r) => { timer = setTimeout(r, ms); });
+  return Promise.race([p, t]).finally(() => clearTimeout(timer));
 }
 
 function message(ctx: BotContext): any {
@@ -185,8 +213,20 @@ function createConversation(session: Session, start: BotContext, timeoutMs: numb
   const thread = start.threadId != null ? { message_thread_id: start.threadId } : {};
   const target = { chat_id: chatId, ...thread };
 
-  function waitFor(filter: (ctx: BotContext) => boolean): Promise<BotContext> {
+  const ensureActive = () => {
+    if (session.cancelled) throw new ConversationCancelledError('already cancelled');
+  };
+
+  function waitFor(userFilter: (ctx: BotContext) => boolean): Promise<BotContext> {
     if (session.cancelled) return Promise.reject(new ConversationCancelledError('already cancelled'));
+    // Only the user who started the conversation can answer it.
+    const filter = (ctx: BotContext) => isOwner(session, ctx) && userFilter(ctx);
+    // An answer may already have arrived while the handler was busy.
+    const idx = session.backlog.findIndex(filter);
+    if (idx >= 0) {
+      const [ctx] = session.backlog.splice(idx, 1);
+      return Promise.resolve(ctx);
+    }
     return new Promise<BotContext>((resolve, reject) => {
       const waiter: Waiter = { filter, resolve, reject };
       waiter.timer = setTimeout(() => session.cancel('timed out'), timeoutMs);
@@ -201,6 +241,7 @@ function createConversation(session: Session, start: BotContext, timeoutMs: numb
   const conversation: Conversation = {
     chatId,
     api,
+    signal: session.abort.signal,
     chat: start.raw?.message?.chat ?? start.raw?.callback_query?.message?.chat ?? { id: chatId },
     raw: { ctx: start },
     waitFor,
@@ -208,6 +249,7 @@ function createConversation(session: Session, start: BotContext, timeoutMs: numb
     async prompt(question, opts) {
       let promptText = question;
       for (;;) {
+        ensureActive();
         await api.sendMessage({ ...target, text: promptText });
         const reply = (await waitFor(text)).text!;
         const check = opts?.validate ? runValidation(opts.validate, reply) : true;
@@ -217,6 +259,7 @@ function createConversation(session: Session, start: BotContext, timeoutMs: numb
     },
 
     async send(t, opts) {
+      ensureActive();
       await api.sendMessage({ ...target, text: t, parse_mode: opts?.parse_mode });
     },
 
@@ -230,6 +273,7 @@ function createConversation(session: Session, start: BotContext, timeoutMs: numb
     },
 
     async ask(question, options) {
+      ensureActive();
       const nonce = (++askSeq).toString(36);
       session.askValues.clear();
       const inline_keyboard = options.map((row, ri) =>
@@ -240,23 +284,35 @@ function createConversation(session: Session, start: BotContext, timeoutMs: numb
         }),
       );
       const sent = await api.sendMessage({ ...target, text: question, reply_markup: { inline_keyboard } });
-      const picked = await waitFor((ctx) => !!ctx.callbackData && session.askValues.has(ctx.callbackData));
+      // Remove the buttons so the same question can't be answered twice (or after a cancel).
+      const clearButtons = () =>
+        api.editMessageReplyMarkup({ chat_id: chatId, message_id: sent.message_id, reply_markup: { inline_keyboard: [] } }).catch(() => {});
+      let picked: BotContext;
+      try {
+        picked = await waitFor((ctx) => !!ctx.callbackData && session.askValues.has(ctx.callbackData));
+      } catch (err) {
+        session.askValues.clear();
+        await clearButtons();
+        throw err;
+      }
       const value = session.askValues.get(picked.callbackData!)!;
       session.askValues.clear();
-      // Remove the buttons so the same question can't be answered twice.
-      await api.editMessageReplyMarkup({ chat_id: chatId, message_id: sent.message_id, reply_markup: { inline_keyboard: [] } }).catch(() => {});
+      await clearButtons();
       return value;
     },
 
     async stream(source, opts) {
+      ensureActive();
       const throttle = opts?.throttleMs ?? 1000;
+      const LIMIT = 4096;
       let acc = '';
+      /** Offset in `acc` where the current message starts. */
+      let base = 0;
       let shown = '';
       let messageId: number | undefined;
       let last = 0;
-      const flush = async () => {
-        const t = acc.trim() ? acc.slice(0, 4096) : '…';
-        if (t === shown) return;
+      const show = async (t: string) => {
+        if (!t.trim() || t === shown) return;
         if (messageId == null) {
           messageId = (await api.sendMessage({ ...target, text: t })).message_id;
         } else {
@@ -267,40 +323,79 @@ function createConversation(session: Session, start: BotContext, timeoutMs: numb
         shown = t;
         last = Date.now();
       };
-      for await (const chunk of source) {
-        acc += chunk;
-        if (messageId == null || Date.now() - last >= throttle) await flush();
+      const flush = async () => {
+        // Text past Telegram's limit: finalize the current message, continue in a new one.
+        while (acc.length - base > LIMIT) {
+          let cut = base + LIMIT;
+          const code = acc.charCodeAt(cut - 1);
+          if (code >= 0xd800 && code <= 0xdbff) cut--; // don't split a surrogate pair
+          await show(acc.slice(base, cut));
+          base = cut;
+          messageId = undefined;
+          shown = '';
+        }
+        await show(acc.slice(base));
+      };
+      const signal = session.abort.signal;
+      const aborted = new Promise<never>((_, reject) => {
+        const fail = () => reject(new ConversationCancelledError('stream interrupted'));
+        if (signal.aborted) fail();
+        else signal.addEventListener('abort', fail, { once: true });
+      });
+      aborted.catch(() => {});
+      const it = source[Symbol.asyncIterator]();
+      try {
+        for (;;) {
+          ensureActive();
+          const step = await Promise.race([it.next(), aborted]);
+          if (step.done) break;
+          acc += step.value;
+          if (messageId == null || Date.now() - last >= throttle) await flush();
+        }
+      } catch (err) {
+        if (session.cancelled) void Promise.resolve(it.return?.()).catch(() => {});
+        throw err;
       }
+      ensureActive();
       await flush();
     },
 
-    async replyWithPhoto(src, opts) { await api.sendPhoto({ ...target, photo: src, ...opts }); },
-    async replyWithVideo(src, opts) { await api.sendVideo({ ...target, video: src, ...opts }); },
-    async replyWithAnimation(src, opts) { await api.sendAnimation({ ...target, animation: src, ...opts }); },
-    async replyWithVoice(src, opts) { await api.sendVoice({ ...target, voice: src, ...opts }); },
-    async replyWithAudio(src, opts) { await api.sendAudio({ ...target, audio: src, ...opts }); },
-    async replyWithVideoNote(src, opts) { await api.sendVideoNote({ ...target, video_note: src, ...opts }); },
-    async replyWithSticker(src, opts) { await api.sendSticker({ ...target, sticker: src, ...opts }); },
-    async replyWithDocument(src, opts) { await api.sendDocument({ ...target, document: src, ...opts }); },
-    async replyWithContact(phone_number, first_name, opts) { await api.sendContact({ ...target, phone_number, first_name, ...opts }); },
-    async replyWithLocation(latitude, longitude, opts) { await api.sendLocation({ ...target, latitude, longitude, ...opts }); },
-    async replyWithVenue(latitude, longitude, title, address, opts) { await api.sendVenue({ ...target, latitude, longitude, title, address, ...opts }); },
-    async replyWithMediaGroup(media) { await api.sendMediaGroup({ ...target, media }); },
+    async replyWithPhoto(src, opts) { ensureActive(); await api.sendPhoto({ ...target, photo: src, ...opts }); },
+    async replyWithVideo(src, opts) { ensureActive(); await api.sendVideo({ ...target, video: src, ...opts }); },
+    async replyWithAnimation(src, opts) { ensureActive(); await api.sendAnimation({ ...target, animation: src, ...opts }); },
+    async replyWithVoice(src, opts) { ensureActive(); await api.sendVoice({ ...target, voice: src, ...opts }); },
+    async replyWithAudio(src, opts) { ensureActive(); await api.sendAudio({ ...target, audio: src, ...opts }); },
+    async replyWithVideoNote(src, opts) { ensureActive(); await api.sendVideoNote({ ...target, video_note: src, ...opts }); },
+    async replyWithSticker(src, opts) { ensureActive(); await api.sendSticker({ ...target, sticker: src, ...opts }); },
+    async replyWithDocument(src, opts) { ensureActive(); await api.sendDocument({ ...target, document: src, ...opts }); },
+    async replyWithContact(phone_number, first_name, opts) { ensureActive(); await api.sendContact({ ...target, phone_number, first_name, ...opts }); },
+    async replyWithLocation(latitude, longitude, opts) { ensureActive(); await api.sendLocation({ ...target, latitude, longitude, ...opts }); },
+    async replyWithVenue(latitude, longitude, title, address, opts) { ensureActive(); await api.sendVenue({ ...target, latitude, longitude, title, address, ...opts }); },
+    async replyWithMediaGroup(media) { ensureActive(); await api.sendMediaGroup({ ...target, media }); },
     async replyWithPoll(question, options, opts) {
+      ensureActive();
       await api.sendPoll({ ...target, question, options: options.map((o) => ({ text: o })), ...opts });
     },
 
     async requestContact(promptText, buttonText = '📱 Share Contact') {
-      await api.sendMessage({
-        ...target, text: promptText,
-        reply_markup: { keyboard: [[{ text: buttonText, request_contact: true }]], resize_keyboard: true, one_time_keyboard: true },
-      });
-      const c = message(await waitFor((ctx) => !!message(ctx)?.contact)).contact;
+      ensureActive();
+      const reply_markup = { keyboard: [[{ text: buttonText, request_contact: true }]], resize_keyboard: true, one_time_keyboard: true };
+      await api.sendMessage({ ...target, text: promptText, reply_markup });
+      let c: any;
+      for (;;) {
+        const ctx = await waitFor((x) => !!message(x)?.contact);
+        c = message(ctx).contact;
+        // Only accept the sender's OWN contact (the request_contact button) — not a forwarded
+        // or typed-in card, which could carry anyone's number.
+        if (c.user_id != null && String(c.user_id) === String(ctx.userId)) break;
+        await api.sendMessage({ ...target, text: `⚠️ Please use the button to share your own number.\n\n${promptText}`, reply_markup });
+      }
       await api.sendMessage({ ...target, text: '✓', reply_markup: { remove_keyboard: true } });
       return { phone_number: c.phone_number, first_name: c.first_name, last_name: c.last_name, user_id: c.user_id };
     },
 
     async requestLocation(promptText, buttonText = '📍 Share Location') {
+      ensureActive();
       await api.sendMessage({
         ...target, text: promptText,
         reply_markup: { keyboard: [[{ text: buttonText, request_location: true }]], resize_keyboard: true, one_time_keyboard: true },
@@ -357,7 +452,12 @@ export function conversationsPlugin(configOrDefs?: ConversationsConfig | Convers
     return merged;
   }
 
-  const keyOf = (ctx: BotContext) => `${ctx.platform}:${ctx.chatId}`;
+  // One conversation per chat (and forum topic) in private chats; per USER in shared chats,
+  // so one member can't answer, tap through or cancel someone else's conversation.
+  const keyOf = (ctx: BotContext) => {
+    const shared = ctx.chatType ? ctx.chatType !== 'private' : String(ctx.chatId).startsWith('-');
+    return `${ctx.platform}:${ctx.chatId}${ctx.threadId != null ? `#${ctx.threadId}` : ''}${shared ? `:${ctx.userId}` : ''}`;
+  };
 
   async function start(name: string, ctx: BotContext): Promise<void> {
     const def = defs().get(name);
@@ -377,14 +477,19 @@ export function conversationsPlugin(configOrDefs?: ConversationsConfig | Convers
 
     const session: Session = {
       name,
+      ownerId: String(ctx.userId),
       waiter: null,
+      backlog: [],
+      abort: new AbortController(),
       idle: deferred(),
       askValues: new Map(),
       cancelled: false,
       cancel(reason) {
         if (this.cancelled) return;
         this.cancelled = true;
+        this.backlog = [];
         if (sessions.get(key) === this) sessions.delete(key);
+        this.abort.abort(new ConversationCancelledError(reason));
         const w = this.waiter;
         this.waiter = null;
         if (w) {
@@ -397,7 +502,9 @@ export function conversationsPlugin(configOrDefs?: ConversationsConfig | Convers
     sessions.set(key, session);
 
     const conversation = createConversation(session, ctx, timeoutMs);
-    def.handler(conversation)
+    // Promise.resolve().then(): a sync handler (or one throwing synchronously) still gets cleaned up.
+    Promise.resolve()
+      .then(() => def.handler(conversation))
       .catch(async (err) => {
         if (err instanceof ConversationCancelledError) return;
         console.error(`[teact] Conversation "${name}" failed:`, err);
@@ -408,8 +515,10 @@ export function conversationsPlugin(configOrDefs?: ConversationsConfig | Convers
         session.waiter = null;
         session.idle.resolve();
       });
-    // Return once the handler is waiting for input (or done) — its sends are complete.
-    await session.idle.promise;
+    // Return once the handler is waiting for input (or done) — its sends are complete. Capped,
+    // so a slow stretch (LLM call, hung fetch) doesn't hold the chat lock: /cancel and other
+    // updates stay responsive while the handler keeps running in the background.
+    await capped(session.idle.promise, IDLE_CAP_MS);
   }
 
   const middleware: Middleware = async (ctx, next) => {
@@ -418,8 +527,11 @@ export function conversationsPlugin(configOrDefs?: ConversationsConfig | Convers
       return false;
     }
 
-    if (ctx.text && isCommand(ctx)) {
-      const cmd = commandName(ctx.text);
+    const isMsg = ctx.updateType == null || ctx.updateType === 'message';
+    const command = isMsg && !!ctx.text && isCommand(ctx) && !isForOtherBot(ctx);
+
+    if (command) {
+      const cmd = commandName(ctx.text!);
       for (const [name, def] of defs()) {
         if (def.command?.toLowerCase() === cmd) {
           await start(name, ctx);
@@ -429,9 +541,14 @@ export function conversationsPlugin(configOrDefs?: ConversationsConfig | Convers
     }
 
     const session = sessions.get(keyOf(ctx));
-    if (!session) return;
+    if (!session) {
+      // A leftover ask() button (conversation ended / timed out, or someone else's) — swallow it
+      // so it doesn't fall through to the React tree.
+      if (ctx.callbackData?.startsWith(ASK_PREFIX)) return false;
+      return;
+    }
 
-    if (isCommand(ctx) && cfg.cancelOnCommand !== false) {
+    if (command && cfg.cancelOnCommand !== false && isOwner(session, ctx)) {
       session.cancel(`command ${ctx.text}`);
       return;
     }
@@ -442,14 +559,20 @@ export function conversationsPlugin(configOrDefs?: ConversationsConfig | Convers
       session.waiter = null;
       session.idle = deferred();
       waiter.resolve(ctx);
-      await session.idle.promise;
+      await capped(session.idle.promise, IDLE_CAP_MS);
       return false;
     }
 
     // Stale buttons of an earlier ask() — swallow so they don't reach the React tree.
     if (ctx.callbackData?.startsWith(ASK_PREFIX)) return false;
-    // Other buttons (the app's own UI) keep working mid-conversation.
-    if (ctx.callbackData) return next();
+    // Other buttons (the app's own UI) and non-message updates (poll answers, membership,
+    // reactions…) keep working mid-conversation.
+    if (ctx.callbackData || !isMsg) return next();
+    // The handler is busy (not waiting yet): keep the owner's message for its next wait.
+    if (!waiter && isOwner(session, ctx) && !isCommand(ctx)) {
+      session.backlog.push(ctx);
+      if (session.backlog.length > MAX_BACKLOG) session.backlog.shift();
+    }
     // Non-matching messages while a conversation is active are swallowed: the user is
     // talking to the conversation, not to the React tree.
     return false;

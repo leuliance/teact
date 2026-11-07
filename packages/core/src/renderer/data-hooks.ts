@@ -55,15 +55,33 @@ function fresh(key: string, staleTime: number) {
   return cached && Date.now() - cached.fetchedAt < staleTime ? cached : undefined;
 }
 
+interface QueryState<T> {
+  key: string;
+  data: T | undefined;
+  error: Error | undefined;
+  isLoading: boolean;
+}
+
 export function useQuery<T>(options: UseQueryOptions<T>): UseQueryResult<T> {
   const { key: userKey, fn, enabled = true, staleTime = 30_000, refetchInterval = 0, scope = 'chat' } = options;
   const runtime = useContext(RuntimeContext);
   const key = scope === 'chat' && runtime ? `${runtime.botCtx.platform}:${runtime.botCtx.chatId}::${userKey}` : userKey;
-  const [state, setState] = useState<{ key: string; data: T | undefined }>(() => ({ key, data: fresh(key, staleTime)?.data }));
-  // A new key must not keep showing the previous key's data.
-  const data = state.key === key ? state.data : fresh(key, staleTime)?.data;
-  const [error, setError] = useState<Error | undefined>();
-  const [isLoading, setIsLoading] = useState(data === undefined && enabled);
+  // data / error / loading are tracked together, per key: a new key must not keep showing
+  // the previous key's data, error or loading flag.
+  const [state, setState] = useState<QueryState<T>>(() => ({
+    key,
+    data: fresh(key, staleTime)?.data,
+    error: undefined,
+    isLoading: enabled && !fresh(key, staleTime),
+  }));
+  const current: QueryState<T> = state.key === key
+    ? state
+    : (() => {
+        // Not fetched under this key yet (or served straight from the cache).
+        const cached = fresh(key, staleTime);
+        return { key, data: cached?.data, error: undefined, isLoading: enabled && !cached };
+      })();
+  const { data, error, isLoading } = current;
   const mountedRef = useRef(true);
   // Latest fn without making `refetch` (and the interval) change identity every render.
   const fnRef = useRef(fn);
@@ -82,8 +100,11 @@ export function useQuery<T>(options: UseQueryOptions<T>): UseQueryResult<T> {
     const controller = new AbortController();
     controllerRef.current = controller;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    setIsLoading(true);
-    setError(undefined);
+    setState((s) =>
+      // Bail out (no re-render) when we're already loading this key without an error.
+      s.key === requestKey && s.isLoading && !s.error
+        ? s
+        : { key: requestKey, data: s.key === requestKey ? s.data : undefined, error: undefined, isLoading: true });
     const run = (async () => {
       try {
         const timedOut = new Promise<never>((_, reject) => {
@@ -99,14 +120,19 @@ export function useQuery<T>(options: UseQueryOptions<T>): UseQueryResult<T> {
         const result = await Promise.race([fnRef.current({ signal: controller.signal }), timedOut]);
         cacheSet(requestKey, result);
         // Ignore results for a key we've since moved away from.
-        if (mountedRef.current && keyRef.current === requestKey) setState({ key: requestKey, data: result });
+        if (controllerRef.current !== controller) return; // superseded by a newer refetch
+        if (mountedRef.current && keyRef.current === requestKey) {
+          setState({ key: requestKey, data: result, error: undefined, isLoading: false });
+        }
       } catch (err) {
         if (controller.signal.aborted && controller.signal.reason?.name !== 'TimeoutError') return; // superseded/unmounted
-        if (mountedRef.current && keyRef.current === requestKey) setError(err instanceof Error ? err : new Error(String(err)));
+        if (mountedRef.current && keyRef.current === requestKey) {
+          const e = err instanceof Error ? err : new Error(String(err));
+          setState((s) => ({ key: requestKey, data: s.key === requestKey ? s.data : undefined, error: e, isLoading: false }));
+        }
       } finally {
         if (timer) clearTimeout(timer);
         if (controllerRef.current === controller) controllerRef.current = null;
-        if (mountedRef.current && keyRef.current === requestKey) setIsLoading(false);
       }
     })();
     // On serverless, keep the request alive until the data has arrived and re-rendered.
@@ -165,29 +191,41 @@ export function useMutation<T, V = void>(options: UseMutationOptions<T, V>): Use
   const [succeeded, setSucceeded] = useState(false);
   const optionsRef = useRef(options);
   optionsRef.current = options;
+  // Latest call wins for data/error; isLoading is true while ANY call is in flight.
+  const seqRef = useRef(0);
+  const inFlightRef = useRef(0);
 
   const mutate = useCallback(async (variables: V): Promise<T | undefined> => {
     const { fn, onSuccess, onError } = optionsRef.current;
+    const seq = ++seqRef.current;
+    inFlightRef.current++;
     setIsLoading(true);
     setError(undefined);
     try {
       const result = await fn(variables);
-      setData(result);
-      setSucceeded(true);
+      if (seq === seqRef.current) {
+        setData(result);
+        setError(undefined);
+        setSucceeded(true);
+      }
       onSuccess?.(result);
       return result;
     } catch (err) {
       const e = err instanceof Error ? err : new Error(String(err));
-      setError(e);
-      setSucceeded(false);
+      if (seq === seqRef.current) {
+        setError(e);
+        setSucceeded(false);
+      }
       onError?.(e);
       return undefined;
     } finally {
-      setIsLoading(false);
+      inFlightRef.current--;
+      setIsLoading(inFlightRef.current > 0);
     }
   }, []);
 
   const reset = useCallback(() => {
+    seqRef.current++;
     setData(undefined);
     setError(undefined);
     setIsLoading(false);

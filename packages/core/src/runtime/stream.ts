@@ -45,11 +45,16 @@ export function useStream(opts?: { throttleMs?: number }): UseStreamResult {
   const throttle = opts?.throttleMs ?? 1000;
   const generationRef = useRef(0);
   const iteratorRef = useRef<AsyncIterator<string> | null>(null);
+  /** Text accumulated by the active stream (may be ahead of `text` inside the throttle window). */
+  const pendingRef = useRef<string | null>(null);
 
   const stop = useCallback(() => {
     generationRef.current++;
     const it = iteratorRef.current;
     iteratorRef.current = null;
+    // Flush whatever arrived inside the current throttle window.
+    if (pendingRef.current !== null) setText(pendingRef.current);
+    pendingRef.current = null;
     // Tell the producer to clean up (closes fetch streams / LLM requests).
     it?.return?.().catch(() => {});
     setIsStreaming(false);
@@ -64,8 +69,6 @@ export function useStream(opts?: { throttleMs?: number }): UseStreamResult {
   const startStream = useCallback((source: AsyncIterable<string>) => {
     stop();
     const id = ++generationRef.current;
-    const iterator = source[Symbol.asyncIterator]();
-    iteratorRef.current = iterator;
     setIsStreaming(true);
     setError(null);
     setText('');
@@ -74,10 +77,19 @@ export function useStream(opts?: { throttleMs?: number }): UseStreamResult {
       let accumulated = '';
       let lastFlush = 0;
       try {
+        // Inside the try: a source whose iterator factory throws surfaces as `error`.
+        const iterator = source[Symbol.asyncIterator]();
+        if (generationRef.current !== id) {
+          iterator.return?.().catch(() => {});
+          return;
+        }
+        iteratorRef.current = iterator;
+        pendingRef.current = '';
         for (;;) {
           const { value, done } = await iterator.next();
           if (done || generationRef.current !== id) break;
           accumulated += value;
+          pendingRef.current = accumulated;
           const now = Date.now();
           if (now - lastFlush >= throttle) {
             setText(accumulated);
@@ -89,6 +101,7 @@ export function useStream(opts?: { throttleMs?: number }): UseStreamResult {
       } finally {
         if (generationRef.current === id) {
           iteratorRef.current = null;
+          pendingRef.current = null;
           setText(accumulated);
           setIsStreaming(false);
         }

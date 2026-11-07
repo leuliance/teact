@@ -31,9 +31,12 @@ export function compose(middlewares: Middleware[]): Middleware {
         return;
       }
       const fn = middlewares[i];
-      let nextCalled = false;
-      const result = await fn(ctx, () => { nextCalled = true; return dispatch(i + 1); });
-      if (!nextCalled && result !== false) await dispatch(i + 1);
+      let downstream: Promise<void> | undefined;
+      const result = await fn(ctx, () => (downstream = dispatch(i + 1)));
+      // A middleware that calls next() without awaiting it must not detach the rest of
+      // the chain (the per-chat lock and serverless settle wait for this promise).
+      if (downstream) await downstream;
+      else if (result !== false) await dispatch(i + 1);
     }
     await dispatch(0);
   };
