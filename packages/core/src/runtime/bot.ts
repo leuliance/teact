@@ -643,8 +643,12 @@ export function createBot(options: CreateBotOptions) {
       updateSession(patch) {
         Object.assign(session, patch);
         // Snapshot so later mutations of `session` don't leak into an in-flight write.
-        sessionWrite = Promise.resolve(sessionStore.set(sessionKey, { ...session }))
-          .catch((err) => reportError(err, 'plugin', botCtx));
+        // Tracked: a write after the first render (e.g. once data loaded) goes to Redis over
+        // TCP or a KV binding — not fetch — and must still finish before serverless freezes.
+        sessionWrite = work.track(
+          Promise.resolve(sessionStore.set(sessionKey, { ...session }))
+            .catch((err) => reportError(err, 'session', botCtx)),
+        );
       },
       command: commandInfo ? { name: commandInfo.name, args: commandInfo.args } : null,
     };

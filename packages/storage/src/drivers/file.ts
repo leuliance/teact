@@ -133,8 +133,21 @@ export class FileDriver implements StorageDriver {
   }
 
   set<T>(key: string, value: T): void {
+    if (value === undefined) return this.delete(key);
+    // Validate BEFORE touching the store: an unserializable value (BigInt, circular, …)
+    // kept in memory would make every later write fail. Store the JSON form, so what you
+    // read back now is exactly what survives a restart (e.g. a Date becomes a string).
+    let json: string;
+    try {
+      json = JSON.stringify(value);
+    } catch (err) {
+      throw new TypeError(`[teact/storage] Value for "${key}" can't be serialized to JSON: ${(err as Error).message}`);
+    }
+    if (json === undefined) {
+      throw new TypeError(`[teact/storage] Value for "${key}" can't be serialized to JSON (got ${typeof value}).`);
+    }
     this.refresh();
-    this.data.set(key, value);
+    this.data.set(key, JSON.parse(json));
     this.write();
   }
 

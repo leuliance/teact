@@ -10,6 +10,7 @@ import type { SessionData, SessionStore } from '../renderer';
 export class MemorySessionStore implements SessionStore {
   private store = new Map<string, { data: SessionData; expiresAt: number }>();
   private ttl: number;
+  private lastSweep = Date.now();
 
   /** @param ttl - Time-to-live in milliseconds (default: 24 hours). */
   constructor(ttl = 24 * 60 * 60 * 1000) {
@@ -23,11 +24,15 @@ export class MemorySessionStore implements SessionStore {
       this.store.delete(key);
       return null;
     }
-    return entry.data;
+    // A copy, like any external store would return: mutating it without saving must not
+    // "work" in development and then silently lose data on Redis/KV in production.
+    return structuredClone(entry.data);
   }
 
   async set(key: string, data: SessionData): Promise<void> {
-    this.store.set(key, { data, expiresAt: Date.now() + this.ttl });
+    this.store.set(key, { data: structuredClone(data), expiresAt: Date.now() + this.ttl });
+    // Expired sessions of chats that never come back would otherwise live forever.
+    if (Date.now() - this.lastSweep > Math.min(this.ttl, 60_000)) this.cleanup();
   }
 
   async delete(key: string): Promise<void> {
@@ -40,6 +45,7 @@ export class MemorySessionStore implements SessionStore {
 
   cleanup(): void {
     const now = Date.now();
+    this.lastSweep = now;
     for (const [key, entry] of this.store) {
       if (now > entry.expiresAt) this.store.delete(key);
     }
