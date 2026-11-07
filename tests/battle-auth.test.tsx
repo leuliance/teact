@@ -202,3 +202,34 @@ describe('useAuth misuse', () => {
     await t.stop();
   });
 });
+
+describe('route guard redirects', () => {
+  test('a denied navigation is not "pending": logging in later must not teleport the user', async () => {
+    const { useSession } = await import('../packages/core/src');
+    function Home() {
+      const [session, setSession] = useSession<{ token?: string }>();
+      const navigate = useNavigate();
+      return (
+        <Message text={`home (${session.token ? 'in' : 'out'})`}>
+          <InlineKeyboard>
+            <Button text="members" onClick={() => navigate('/members')} />
+            <Button text="login" onClick={() => setSession({ token: 't' })} />
+          </InlineKeyboard>
+        </Message>
+      );
+    }
+    const router = createRouter({
+      '/': Home,
+      '/members': { component: () => <Message text="members area" />, beforeLoad: ({ session }) => (session.token ? undefined : redirect('/')) },
+    });
+    const t = await createTestBot({ router });
+    await t.send('hi');
+    await t.click('members');             // denied → home
+    expect(t.lastMessage?.text).toBe('home (out)');
+    await t.click('login');               // must stay on home
+    expect(t.lastMessage?.text).toBe('home (in)');
+    await t.click('members');             // now allowed
+    expect(t.lastMessage?.text).toBe('members area');
+    await t.stop();
+  });
+});

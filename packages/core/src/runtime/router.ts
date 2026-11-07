@@ -392,6 +392,13 @@ export function RouterProvider({
     user: runtime?.botCtx.user ?? null,
     chatId: runtime?.botCtx.chatId ?? null,
   });
+  // A guard redirect REPLACES the navigation: remember where we actually are. Otherwise the
+  // denied path stays "pending" and a later state change (e.g. logging in) re-runs the
+  // guard and teleports the user there without them asking.
+  if (resolved && 'route' in resolved && resolved.path !== nav.path) {
+    setNav((prev) => (prev.path === nav.path ? { ...prev, path: resolved.path } : prev));
+  }
+
   const providerValue = { path: nav.path, params: {} as Record<string, string>, navigate };
 
   if (!resolved) {
