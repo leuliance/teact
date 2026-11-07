@@ -78,6 +78,12 @@ if (loading) return <Message text="⏳" />;
 Writes are applied immediately (optimistic) and persisted in the background. On serverless,
 `bot.fetch` waits for pending reads and writes before the runtime freezes.
 
+Updater functions (`setCount((n) => n + 1)`) are applied to the freshest stored value, and
+writes to one key are queued within an instance. Across instances (serverless isolates,
+several servers) a read-modify-write can still race. Cloudflare KV is also eventually
+consistent, so for exact counters under concurrency use an atomic backend operation (Redis
+`INCR`, a Durable Object, a SQL `UPDATE … SET n = n + 1`).
+
 Values must be JSON-serializable. A `BigInt` or a circular object throws a clear error on
 `set`; `undefined` deletes the key.
 

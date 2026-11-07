@@ -129,7 +129,8 @@ describe('async storage drivers (Redis / KV style)', () => {
     await sleep(100);
     expect(a.lastMessage?.text).toBe('favs=');
     await a.click('add'); await a.click('add'); await a.click('add'); // rapid updates — no lost writes
-    await sleep(150);
+    expect(a.lastMessage?.text).toBe('favs=1,2,3'); // optimistic, immediately
+    await sleep(400);                                // three queued get+set round trips
     expect(a.lastMessage?.text).toBe('favs=1,2,3');
     expect(JSON.parse(kv.data.get('teact:storage:mock:1:favs')!)).toEqual([1, 2, 3]);
     await a.stop();
@@ -207,5 +208,28 @@ describe('async storage drivers (Redis / KV style)', () => {
     const kv = fakeKV(0);
     kv.data.set('teact:storage:k', '{not json');
     expect(await kvStorageDriver(kv).get('k')).toBeUndefined();
+  });
+});
+
+describe('async storage across instances', () => {
+  test("an updater never applies to a stale cached value (no counter going backwards)", async () => {
+    const { storagePlugin, useStorage, kvStorageDriver } = await import('../packages/storage/src');
+    const data = new Map<string, string>();
+    const backend = { get: async (k: string) => data.get(k) ?? null, set: async (k: string, v: string) => { data.set(k, v); }, delete: async (k: string) => { data.delete(k); } };
+    function Counter() {
+      const [n, setN] = useStorage('n', 0);
+      return <Message text={`n=${n}`}><InlineKeyboard><Button text="+" onClick={() => setN((v) => v + 1)} /></InlineKeyboard></Message>;
+    }
+    // Two "isolates": separate driver instances (separate caches) over one backend.
+    const a = await createTestBot({ component: Counter, plugins: [storagePlugin({ driver: kvStorageDriver(backend) })] });
+    const b = await createTestBot({ component: Counter, plugins: [storagePlugin({ driver: kvStorageDriver(backend) })] });
+    await a.send('hi'); await b.send('hi');          // both cache n=0
+    await new Promise((r) => setTimeout(r, 50));
+    await a.click('+'); await a.click('+'); await a.click('+'); // backend: 3
+    await new Promise((r) => setTimeout(r, 50));
+    await b.click('+');                               // b's cache still says 0
+    await new Promise((r) => setTimeout(r, 50));
+    expect(data.get('teact:storage:mock:1:n')).toBe('4'); // not 1
+    await a.stop(); await b.stop();
   });
 });

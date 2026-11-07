@@ -39,7 +39,9 @@ const isPromise = (v: unknown): v is Promise<unknown> => !!v && typeof (v as Pro
 // first read resolves; writes update the cache immediately (optimistic) and persist after.
 type Entry = { value: unknown; loaded: boolean; loading?: Promise<void>; at: number };
 /** Cached async values are revalidated in the background after this long (other instances may write). */
-const REVALIDATE_MS = 30_000;
+const REVALIDATE_MS = 1_000;
+// Per-driver, per-key write queues: writes to one key within an instance never race.
+const writeQueues = new WeakMap<StorageDriver, Map<string, Promise<unknown>>>();
 const asyncCache = new WeakMap<StorageDriver, Map<string, Entry>>();
 const cacheOf = (driver: StorageDriver) => {
   let m = asyncCache.get(driver);
@@ -133,15 +135,37 @@ export function useStorage<T>(
   );
 
   const setAndPersist = useCallback((next: T | ((prev: T) => T)) => {
-    const resolved = typeof next === 'function' ? (next as (p: T) => T)(read().value) : next;
-    const result = driver.set(scopedKey, resolved);
-    if (isPromise(result)) {
-      // Optimistic: show the new value now, persist in the background (tracked, so a
-      // serverless request waits for it).
-      cacheOf(driver).set(scopedKey, { value: resolved, loaded: true, at: Date.now() });
-      tracker?.track(result.catch((err) => console.error(`[teact/storage] Failed to save "${scopedKey}":`, err)));
+    const update = typeof next === 'function' ? (next as (p: T) => T) : () => next;
+    if (!asyncCache.get(driver)?.has(scopedKey)) {
+      // Sync driver: the store is the source of truth — apply and write directly.
+      driver.set(scopedKey, update(read().value));
+      notify(driver, scopedKey);
+      return;
     }
+    // Async driver. Show the result now (optimistic, from the cache)…
+    const cache = cacheOf(driver);
+    cache.set(scopedKey, { value: update(read().value), loaded: true, at: Date.now() });
     notify(driver, scopedKey);
+    // …but persist the updater applied to the FRESHEST stored value: another instance
+    // (serverless isolate, server) may have written since we cached — applying `n => n + 1`
+    // to a stale 1 would overwrite a newer 3. Writes per key are queued within an instance.
+    let queues = writeQueues.get(driver);
+    if (!queues) writeQueues.set(driver, (queues = new Map()));
+    const prev = queues.get(scopedKey) ?? Promise.resolve();
+    const job: Promise<void> = prev.then(async () => {
+      const stored = await driver.get<T>(scopedKey);
+      const value = update(stored === undefined ? defaultRef.current : (stored as T));
+      await driver.set(scopedKey, value);
+      // Only the last queued write updates what's shown — earlier ones would briefly roll
+      // the optimistic value back.
+      if (queues!.get(scopedKey) === job) {
+        cache.set(scopedKey, { value, loaded: true, at: Date.now() });
+        notify(driver, scopedKey);
+      }
+    }).catch((err) => console.error(`[teact/storage] Failed to save "${scopedKey}":`, err));
+    queues.set(scopedKey, job);
+    job.finally(() => { if (queues!.get(scopedKey) === job) queues!.delete(scopedKey); });
+    tracker?.track(job);
   }, [driver, scopedKey, read, tracker]);
 
   const status = useMemo(() => ({ loading: snapshot.loading }), [snapshot.loading]);
