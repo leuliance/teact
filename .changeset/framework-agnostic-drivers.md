@@ -30,6 +30,18 @@
 - i18n locale persists in the session and is auto-detected from the user's Telegram language;
   `useQuery` caches per chat by default (`scope: 'global'` to share).
 
+- Auth is per user in group chats: a tap only runs a button the tapper would see themselves
+  (non-admins can't trigger admin-only buttons on an admin's message); route guards receive
+  `user` and `chatId`; a guard redirect replaces the navigation (no later "teleport").
+- Taps survive restarts and serverless instances: a fresh instance re-renders before
+  dispatching, the tapped label is verified (stale buttons can't hit a different action), and
+  the router reopens the user's last screen (`__teact_route` in the session).
+- Storage: async drivers (Redis/KV) work — `kvStorageDriver`, loading state, optimistic writes,
+  updaters applied to the freshest value; `useStorage(key, default, { scope: 'chat'|'user'|'global' })`.
+- Sessions/storage hardened: unserializable values rejected up front, memory sessions are
+  copies and swept, session-store outages answer "try again", late writes finish on serverless.
+- SECURITY warnings when a webhook runs without a secret token.
+
 ### Breaking changes & migration
 - `grammy` is no longer a dependency of `@teactjs/telegram`. To keep using grammY:
   `bun add grammy` and `new TelegramAdapter({ driver: grammyDriver() })`.
@@ -41,5 +53,10 @@
 - `Conversation.raw` is `{ ctx }` (the Teact context). `conversation.api` uses params objects.
 - `streamPlugin()` is a deprecated no-op — streaming is built in. Remove it.
 - Commands now run *after* middleware/plugins (so auth and rate limits apply to them).
+- **Sessions are per user inside group chats** by default (`platform:chat:user`); private chats
+  are unchanged. Return `` `${ctx.platform}:${ctx.chatId}` `` from `session.getKey` for one
+  shared group session.
+- `StorageDriver` methods may return promises; `useStorage` returns a third tuple element
+  (`{ loading }`). `FileDriver.flush()` no longer rewrites the file unless a write failed.
 - `Adapter.connect` receives an optional token; `canEdit`/`send` take optional
   `messageId`/`{ threadId }` arguments (custom adapters keep working).
