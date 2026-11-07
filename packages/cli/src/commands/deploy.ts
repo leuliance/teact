@@ -42,15 +42,24 @@ function wranglerConfig(name: string): string {
   ) + '\n';
 }
 
-const VERCEL_ENTRY = `// Vercel Function — your Teact bot as a serverless webhook.
+const VERCEL_ENTRY = `// Vercel Function (Edge runtime) — your Teact bot as a serverless webhook.
+// Edge functions are bundled by Vercel, so your app's imports resolve exactly like in dev.
 // src/index.tsx exports the bot and only calls bot.start() when run directly
 // (\`if (import.meta.main)\`), so importing it here does NOT start polling.
 import { bot } from '../src/index';
 
-export function POST(request: Request): Promise<Response> {
+export const config = { runtime: 'edge' };
+
+export default function handler(
+  request: Request,
+  context?: { waitUntil(promise: Promise<unknown>): void },
+): Promise<Response> {
   return bot.fetch(request, {
     token: process.env.TELEGRAM_BOT_TOKEN,
     secretToken: process.env.WEBHOOK_SECRET,
+    // Reply to Telegram at once; keep the function alive until the bot has finished
+    // reacting (data loading, follow-up edits).
+    waitUntil: context ? (p) => context.waitUntil(p) : undefined,
   });
 }
 `;

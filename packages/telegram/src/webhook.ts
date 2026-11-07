@@ -80,7 +80,11 @@ export async function serveWebhook(
     return { close: async () => { server.stop(true); } };
   }
 
-  const { createServer } = await import('node:http');
+  // Loaded at runtime (not via import) so edge bundlers never see a node:http reference.
+  const http = (globalThis as { process?: { getBuiltinModule?: (id: string) => unknown } })
+    .process?.getBuiltinModule?.('node:http') as typeof import('node:http') | undefined;
+  if (!http) throw new Error('[telegram] Self-hosted webhooks need Node or Bun (node:http). On serverless, use bot.fetch(request).');
+  const { createServer } = http;
   const server = createServer(async (req, res) => {
     try {
       const chunks: Buffer[] = [];

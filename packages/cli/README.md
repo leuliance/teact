@@ -86,7 +86,7 @@ platform's deploy command.
 | Target | Creates | Deploys with |
 |--------|---------|--------------|
 | `cloudflare` (default) | `src/worker.ts`, `wrangler.jsonc` | `wrangler deploy` |
-| `vercel` | `api/telegram.ts` (POST handler) | `vercel deploy --prod` |
+| `vercel` | `api/telegram.ts` (bundled Edge function), `vercel.json` | `vercel deploy --prod` |
 
 Your entry must `export const bot = createBot(...)` and start polling only with
 `if (import.meta.main) bot.start()`. Use a durable session store (e.g. `kvSessionStore`) —

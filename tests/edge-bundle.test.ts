@@ -15,6 +15,8 @@ describe('edge bundles', () => {
       expect(result.success).toBe(true);
       const code = (await Promise.all(result.outputs.map((o) => o.text()))).join('\n');
       expect(code.match(/from\s*["'](node:)?(fs|path|url|http|os|crypto)["']/g)).toBeNull();
+      // Dynamic imports count too — Vercel Edge rejects any node: reference in the bundle.
+      expect(code.match(/import\(\s*["']node:[a-z]+["']\s*\)/g)).toBeNull();
     });
   }
 });

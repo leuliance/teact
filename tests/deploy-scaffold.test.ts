@@ -31,12 +31,12 @@ function makeProject(): string {
 const webhookRequest = () => new Request('https://example.com/api', { method: 'POST', body: JSON.stringify({ text: 'hi' }) });
 
 describe('teact deploy scaffolds working entries', () => {
-  test('vercel: api/telegram.ts exports a POST handler that serves the bot', async () => {
+  test('vercel: api/telegram.ts is a bundled Edge function that serves the bot', async () => {
     const dir = makeProject();
     process.chdir(dir);
     await deployCommand('vercel', {});
     const src = readFileSync(join(dir, 'api/telegram.ts'), 'utf-8');
-    expect(src).toContain('export function POST(request: Request)');
+    expect(src).toContain("export const config = { runtime: 'edge' };");
     // Never serve the project root (where .env lives) as a static site.
     const vercelJson = JSON.parse(readFileSync(join(dir, 'vercel.json'), 'utf-8'));
     expect(vercelJson.outputDirectory).toBe('public');
@@ -44,7 +44,9 @@ describe('teact deploy scaffolds working entries', () => {
     process.env.TELEGRAM_BOT_TOKEN = 'test-token';
     const fn = await import(join(dir, 'api/telegram.ts'));
     const { adapter } = await import(join(dir, 'src/index.ts'));
-    const res: Response = await fn.POST(webhookRequest());
+    const pending: Promise<unknown>[] = [];
+    const res: Response = await fn.default(webhookRequest(), { waitUntil: (p: Promise<unknown>) => pending.push(p) });
+    await Promise.all(pending);
     expect(res.status).toBe(200);
     expect(adapter.getLastSent()?.output.props.text).toBe('deployed ok');
   });
