@@ -98,3 +98,114 @@ describe('serverless: late session writes are waited for', () => {
     await bot.stop();
   });
 });
+
+describe('async storage drivers (Redis / KV style)', () => {
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  /** An async KV with latency, like Redis over the network. */
+  function fakeKV(latency = 30) {
+    const data = new Map<string, string>();
+    return {
+      data,
+      get: async (k: string) => { await sleep(latency); return data.get(k) ?? null; },
+      set: async (k: string, v: string) => { await sleep(latency); data.set(k, v); },
+      delete: async (k: string) => { await sleep(latency); data.delete(k); },
+      keys: async (p: string) => [...data.keys()].filter((k) => k.startsWith(p)),
+    };
+  }
+
+  test('shows the default while loading, then the stored value; survives restart', async () => {
+    const { storagePlugin, useStorage, kvStorageDriver } = await import('../packages/storage/src');
+    const kv = fakeKV();
+    function Favs() {
+      const [favs, setFavs, { loading }] = useStorage<number[]>('favs', []);
+      return (
+        <Message text={loading ? 'loading…' : `favs=${favs.join(',')}`}>
+          <InlineKeyboard><Button text="add" onClick={() => setFavs((p) => [...p, p.length + 1])} /></InlineKeyboard>
+        </Message>
+      );
+    }
+    const a = await createTestBot({ component: Favs, plugins: [storagePlugin({ driver: kvStorageDriver(kv) })] });
+    await a.send('hi');
+    await sleep(100);
+    expect(a.lastMessage?.text).toBe('favs=');
+    await a.click('add'); await a.click('add'); await a.click('add'); // rapid updates — no lost writes
+    await sleep(150);
+    expect(a.lastMessage?.text).toBe('favs=1,2,3');
+    expect(JSON.parse(kv.data.get('teact:storage:mock:1:favs')!)).toEqual([1, 2, 3]);
+    await a.stop();
+    // "restart": a new driver instance over the same backend (no shared cache)
+    const b = await createTestBot({ component: Favs, plugins: [storagePlugin({ driver: kvStorageDriver(kv) })] });
+    await b.send('hi');
+    await sleep(100);
+    expect(b.lastMessage?.text).toBe('favs=1,2,3');
+    await b.stop();
+  });
+
+  test("scope: 'user' keeps group members apart; 'global' is shared by every chat", async () => {
+    const { storagePlugin, useStorage, MemoryDriver } = await import('../packages/storage/src');
+    const driver = new MemoryDriver();
+    function Prefs() {
+      const [mine, setMine] = useStorage('theme', 'light', { scope: 'user' });
+      const [hits, setHits] = useStorage('hits', 0, { scope: 'global' });
+      return (
+        <Message text={`${mine} ${hits}`}>
+          <InlineKeyboard>
+            <Button text="dark" onClick={() => setMine('dark')} />
+            <Button text="hit" onClick={() => setHits((h) => h + 1)} />
+          </InlineKeyboard>
+        </Message>
+      );
+    }
+    const t = await createTestBot({ component: Prefs, chatId: '-100', userId: '1', plugins: [storagePlugin({ driver })] });
+    await t.send('hi');
+    await t.click('dark');
+    await t.click('hit');
+    await t.adapter.simulateMessage('-100', '2', 'hi'); // another member
+    expect(t.lastMessage?.text).toBe('light 1');
+    await t.adapter.simulateMessage('555', '3', 'hi');  // a different chat
+    expect(t.adapter.getLastSent()?.output.props.text ?? '').toBe('light 1');
+    await t.stop();
+  });
+
+  test('serverless: the async write finishes before the request ends', async () => {
+    const { createBot } = await import('../packages/core/src');
+    const { MockAdapter } = await import('../packages/testing/src');
+    const { storagePlugin, useStorage, kvStorageDriver } = await import('../packages/storage/src');
+    const kv = fakeKV(400);
+    function Visit() {
+      const [n, setN, { loading }] = useStorage('visits', 0);
+      React.useEffect(() => { if (!loading) setN((v) => v + 1); }, [loading]);
+      return <Message text={`visits=${n}`} />;
+    }
+    const bot = createBot({ adapter: new MockAdapter(), component: Visit, token: 't', plugins: [storagePlugin({ driver: kvStorageDriver(kv) })] });
+    await bot.fetch(new Request('https://x/', { method: 'POST', body: JSON.stringify({ text: 'hi' }) }));
+    expect(kv.data.get('teact:storage:mock:1:visits')).toBe('1');
+    await bot.stop();
+  });
+
+  test('a failing backend shows the default and logs — no crash', async () => {
+    const { storagePlugin, useStorage, kvStorageDriver } = await import('../packages/storage/src');
+    const errors: string[] = [];
+    const orig = console.error;
+    console.error = (...a: unknown[]) => { errors.push(a.map(String).join(' ')); };
+    try {
+      const broken = kvStorageDriver({ get: async () => { throw new Error('ECONNREFUSED'); }, set: async () => { throw new Error('ECONNREFUSED'); }, delete: async () => {} });
+      function P() { const [v] = useStorage('x', 'fallback'); return <Message text={v} />; }
+      const t = await createTestBot({ component: P, plugins: [storagePlugin({ driver: broken })] });
+      await t.send('hi');
+      await sleep(50);
+      expect(t.lastMessage?.text).toBe('fallback');
+      await t.stop();
+    } finally {
+      console.error = orig;
+    }
+    expect(errors.some((e) => e.includes('ECONNREFUSED'))).toBe(true);
+  });
+
+  test('corrupt JSON in the backend is treated as missing', async () => {
+    const { kvStorageDriver } = await import('../packages/storage/src');
+    const kv = fakeKV(0);
+    kv.data.set('teact:storage:k', '{not json');
+    expect(await kvStorageDriver(kv).get('k')).toBeUndefined();
+  });
+});

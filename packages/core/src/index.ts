@@ -29,6 +29,9 @@ export type { TeactRoot, OutputNode, User, BotContext, SessionData, SessionStore
 export { ErrorBoundary, CallbackRegistryCtx } from './renderer';
 export type { ErrorBoundaryProps, CallbackHandler, CallbackMap } from './renderer';
 export { useQuery, useMutation } from './renderer';
+// Lets plugins register background work so serverless requests wait for it.
+export { WorkTrackerCtx, WorkTracker } from './renderer';
+export type { SettleOptions } from './renderer';
 export type { UseQueryOptions, UseQueryResult, UseMutationOptions, UseMutationResult } from './renderer';
 
 // ---- Runtime (bot engine, hooks, router, plugins) ----

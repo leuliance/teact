@@ -1,10 +1,16 @@
+type MaybePromise<T> = T | Promise<T>;
+
+/**
+ * A storage backend. Methods may be synchronous (memory, file) or return promises
+ * (Redis, Cloudflare KV, a database) — `useStorage` handles both.
+ */
 export interface StorageDriver {
-  get<T>(key: string): T | undefined;
-  set<T>(key: string, value: T): void;
-  delete(key: string): void;
-  has(key: string): boolean;
-  clear(): void;
-  keys(): string[];
+  get<T>(key: string): MaybePromise<T | undefined>;
+  set<T>(key: string, value: T): MaybePromise<void>;
+  delete(key: string): MaybePromise<void>;
+  has(key: string): MaybePromise<boolean>;
+  clear(): MaybePromise<void>;
+  keys(): MaybePromise<string[]>;
 }
 
 export interface StoragePluginOptions {
