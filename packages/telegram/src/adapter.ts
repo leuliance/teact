@@ -334,6 +334,9 @@ export class TelegramAdapter implements Adapter {
       const port = cfg.port ?? 3000;
       const path = cfg.path ?? '/webhook';
       const url = `${cfg.domain.replace(/\/+$/, '')}${path}`;
+      if (!cfg.secretToken) {
+        console.warn('[telegram] SECURITY: webhook without secretToken — anyone who learns the URL can send forged updates (e.g. pretend to be an admin). Set webhook.secretToken.');
+      }
       this.server = await serveWebhook(this.webhookCallback({ secretToken: cfg.secretToken }), port, path);
       await this.driver.call('setWebhook', {
         url,

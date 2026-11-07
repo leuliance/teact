@@ -36,6 +36,11 @@ export async function webhookCommand(action: string, url: string | undefined, op
       const secret = opts.secret ?? readEnvVar(projectRoot, 'WEBHOOK_SECRET');
       const body: Record<string, unknown> = { url };
       if (secret) body.secret_token = secret;
+      else {
+        log('⚠ SECURITY: no secret token. Anyone who learns this URL can send forged updates');
+        log('  (e.g. pretend to be an admin). Use --secret <random> or WEBHOOK_SECRET in .env, and the');
+        log('  same value in your deployment (bot.fetch(req, { secretToken })).');
+      }
       if (opts.drop) body.drop_pending_updates = true;
       const r = await callApi(token, 'setWebhook', body);
       if (r.ok) {

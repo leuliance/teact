@@ -1176,6 +1176,13 @@ export function createBot(options: CreateBotOptions) {
         if (!adapter.webhookCallback) {
           throw new Error('[teact] The configured adapter does not support serverless webhooks (no webhookCallback).');
         }
+        if (!opts?.secretToken) {
+          console.warn(
+            '[teact] SECURITY: bot.fetch() has no webhook secret — anyone who learns this URL can send forged ' +
+            'updates (e.g. pretend to be an admin). Pass bot.fetch(request, { secretToken }) and register the same ' +
+            'value with `teact webhook set <url> --secret <value>`.',
+          );
+        }
         webhookFn = adapter.webhookCallback({ secretToken: opts?.secretToken });
       }
       const settleOpts = opts?.settle;

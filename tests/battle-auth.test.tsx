@@ -233,3 +233,22 @@ describe('route guard redirects', () => {
     await t.stop();
   });
 });
+
+describe('webhook secret', () => {
+  test('bot.fetch without a secret warns about forged updates (once)', async () => {
+    const { createBot } = await import('../packages/core/src');
+    const { MockAdapter } = await import('../packages/testing/src');
+    const warns: string[] = [];
+    const orig = console.warn;
+    console.warn = (...a: unknown[]) => { warns.push(a.map(String).join(' ')); };
+    try {
+      const bot = createBot({ adapter: new MockAdapter(), component: () => <Message text="x" />, token: 't' });
+      const req = () => new Request('https://x/', { method: 'POST', body: JSON.stringify({ text: 'hi' }) });
+      await bot.fetch(req()); await bot.fetch(req());
+      await bot.stop();
+    } finally {
+      console.warn = orig;
+    }
+    expect(warns.filter((w) => w.includes('SECURITY') && w.includes('forged'))).toHaveLength(1);
+  });
+});
