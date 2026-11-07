@@ -42,6 +42,11 @@ export interface BotContext {
   updateType?: string;
   /** The bot's own username (e.g. "my_bot"), available after connection. */
   botUsername?: string;
+  /**
+   * Kind of chat: `'private'` (1:1 with the user), or a shared chat such as `'group'`,
+   * `'supergroup'`, `'channel'`. In shared chats sessions default to per-user.
+   */
+  chatType?: string;
   /** Message thread (forum topic) the update belongs to, if any. */
   threadId?: number;
   /**

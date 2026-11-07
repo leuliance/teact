@@ -66,7 +66,12 @@ function createGuardReply(text: string, options?: GuardReplyOptions): GuardReply
 export interface BeforeLoadContext {
   path: string;
   params: Record<string, string>;
+  /** The requesting user's session (per user in groups). */
   session: Record<string, any>;
+  /** The user whose update is being handled — authorize against this, not the chat. */
+  user: { id: string; username?: string; firstName?: string } | null;
+  /** The chat the route is rendering in. */
+  chatId: string | null;
   /** Send a message (with optional buttons) instead of loading the route. */
   reply: (text: string, options?: GuardReplyOptions) => GuardReply;
 }
@@ -252,6 +257,7 @@ function resolveRoute(
   config: RouterConfig,
   path: string,
   session: Record<string, any>,
+  who: { user: BeforeLoadContext['user']; chatId: string | null } = { user: null, chatId: null },
 ): ResolvedRoute | GuardOverride | null {
   const MAX_REDIRECTS = 5;
   let currentPath = path;
@@ -266,6 +272,8 @@ function resolveRoute(
           path: currentPath,
           params: match.params,
           session,
+          user: who.user,
+          chatId: who.chatId,
           reply: createGuardReply,
         });
       } catch (err) {
@@ -380,7 +388,10 @@ export function RouterProvider({
     [commitMode],
   );
 
-  const resolved = resolveRoute(config, nav.path, runtime?.session ?? {});
+  const resolved = resolveRoute(config, nav.path, runtime?.session ?? {}, {
+    user: runtime?.botCtx.user ?? null,
+    chatId: runtime?.botCtx.chatId ?? null,
+  });
   const providerValue = { path: nav.path, params: {} as Record<string, string>, navigate };
 
   if (!resolved) {

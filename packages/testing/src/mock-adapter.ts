@@ -139,6 +139,8 @@ export class MockAdapter implements Adapter {
     return {
       platform: 'mock',
       user: { id: overrides.userId, firstName: 'Test', platform: 'mock' },
+      // Telegram convention: group/channel chat ids are negative.
+      chatType: overrides.chatId.startsWith('-') ? 'group' : 'private',
       api: this.api,
       raw: { update_id: this.updateId++ },
       ...overrides,

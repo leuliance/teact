@@ -201,8 +201,9 @@ export interface CreateBotOptions {
     /** TTL for the default in-memory store, in ms. */
     ttl?: number;
     /**
-     * Derive the session key from an update. Defaults to one session per chat. Use
-     * `(ctx) => \`${ctx.chatId}:${ctx.userId}\`` for per-user sessions in groups.
+     * Derive the session key from an update. Defaults to one session per private chat and
+     * one per user inside groups (`platform:chat:user`). Return `\`${ctx.platform}:${ctx.chatId}\``
+     * for a single session shared by the whole group.
      */
     getKey?: (ctx: BotContext) => string;
   };
@@ -238,6 +239,10 @@ interface ChatRoot {
   lastMessageId?: number;
   commitQueue: Promise<void>;
   commitMode: CommitModeRef;
+  /** The user the UI was last rendered for (whose handlers are registered). */
+  viewerId?: string;
+  /** Set during a silent pre-render: commits are not sent. */
+  silent?: boolean;
   /** The runtime (session, botCtx) of the update currently being processed. */
   runtime: { current: RuntimeContextValue };
   /** Set when a render threw; the next update rebuilds a fresh root to recover. */
@@ -437,8 +442,13 @@ export function createBot(options: CreateBotOptions) {
 
   const chatKeyOf = (ctx: { platform: string; chatId: string; threadId?: number }) =>
     `${ctx.platform}:${ctx.chatId}${ctx.threadId != null ? `:${ctx.threadId}` : ''}`;
+  // Default session key: one session per private chat (= per user), and per USER inside
+  // shared chats — so one member's login, language or cart never leaks to the others.
   const sessionKeyOf = (ctx: BotContext) =>
-    options.session?.getKey?.(ctx) ?? `${ctx.platform}:${ctx.chatId}`;
+    options.session?.getKey?.(ctx) ??
+    (ctx.chatType && ctx.chatType !== 'private'
+      ? `${ctx.platform}:${ctx.chatId}:${ctx.userId}`
+      : `${ctx.platform}:${ctx.chatId}`);
 
   function resetChatRoot(ctx: BotContext) {
     const chatKey = chatKeyOf(ctx);
@@ -648,6 +658,11 @@ export function createBot(options: CreateBotOptions) {
         if (disposed) return;
         const cs = chatRoots.get(chatKey);
         if (!cs || cs.root !== root) return;
+        if (cs.silent) {
+          // Pre-render for authorization only: register handlers, send nothing.
+          cs.commitSignal?.();
+          return;
+        }
         shortenCallbackData(chatKey, tree);
 
         cs.commitQueue = cs.commitQueue.then(async () => {
@@ -718,9 +733,123 @@ export function createBot(options: CreateBotOptions) {
       if (Number.isFinite(id) && id > 0) chatState.lastMessageId = id;
     }
 
-    // Dispatch the click BEFORE clearing handlers: the map holds the previous render's
-    // handlers, which is what the tapped button was rendered with.
+    const buildElement = (): React.ReactElement => {
+      let rootElement: React.ReactElement;
+
+      if (options.router) {
+        const initialPath = commandInfo?.initialRoute ?? options.router.defaultRoute;
+        rootElement = React.createElement(RouterProvider, { config: options.router, initialPath });
+      } else {
+        rootElement = React.createElement(options.component!, {});
+      }
+
+      for (const plugin of plugins) {
+        if (plugin.Provider) {
+          rootElement = React.createElement(plugin.Provider, null, rootElement);
+        }
+      }
+
+      if (options.providers) {
+        rootElement = React.createElement(options.providers, null, rootElement);
+      }
+
+      const errorChat = chatState.chatId;
+      const wrappedElement = React.createElement(
+        ErrorBoundary,
+        {
+          onError: (err: Error) => {
+            reportError(err, 'render', { ...botCtx, chatId: errorChat });
+            // Mark the root so the NEXT update rebuilds it fresh. Otherwise the
+            // ErrorBoundary stays in its error state forever and sticks the chat.
+            const cs = chatRoots.get(chatKey);
+            if (cs) cs.errored = true;
+          },
+        },
+        React.createElement(
+          Suspense,
+          { fallback: React.createElement(InternalSuspenseFallback, null) },
+          rootElement,
+        ),
+      );
+
+      const element = React.createElement(
+        WorkTrackerCtx.Provider,
+        { value: work },
+        React.createElement(
+        ServicesCtx.Provider,
+        { value: mergedServices },
+        React.createElement(
+          CallbackRegistryCtx.Provider,
+          { value: { handlers: chatState.handlers } },
+          React.createElement(
+            RuntimeBridge,
+            { value: runtimeValue, current: chatState.runtime },
+            React.createElement(
+              CommitModeCtx.Provider,
+              { value: chatState.commitMode },
+              wrappedElement,
+            ),
+          ),
+        ),
+        ),
+      );
+      return element;
+    };
+
+    const renderAndWait = async (silent = false): Promise<void> => {
+      const cs = chatState!;
+      cs.silent = silent;
+      try {
+        // The reconciler commits asynchronously (scheduleMicrotask), so we can't await
+        // commitQueue immediately — the send task isn't appended until onCommit runs. Instead
+        // wait for onCommit to signal (send task queued), THEN drain the queue for the actual
+        // send/edit. Critical on serverless/edge: once bot.fetch() resolves its Response the
+        // isolate may freeze, so the send must complete before we return.
+        let commitTimer: ReturnType<typeof setTimeout> | undefined;
+        const committed = new Promise<void>((resolve) => {
+          cs.commitSignal = resolve;
+          // Backstop only: renderForChat always renders a fresh element (new context
+          // identities), so the root always commits and commitSignal always fires. This
+          // timer just prevents a permanent hang in the pathological no-commit case
+          // (e.g. disposed mid-render). It must be long enough never to cut off a real
+          // (possibly Suspense-delayed) commit.
+          commitTimer = setTimeout(() => {
+            debugLog('commit backstop fired — no commit observed', { chatId: botCtx.chatId });
+            resolve();
+          }, COMMIT_BACKSTOP_MS);
+        });
+        cs.root.render(buildElement());
+        await committed;
+        if (commitTimer) clearTimeout(commitTimer);
+        cs.commitSignal = undefined;
+        // Drain: a commit can enqueue follow-up work (effects that set state synchronously,
+        // a click handler's late commit). Keep awaiting until the queue stops growing.
+        for (let i = 0; i < 10; i++) {
+          const queued = cs.commitQueue;
+          await queued;
+          await new Promise((r) => setTimeout(r, 0));
+          if (cs.commitQueue === queued) break;
+        }
+      } finally {
+        cs.silent = false;
+      }
+    };
+
+    debugLog('rendering', { chatId: botCtx.chatId, hasRouter: !!options.router, plugins: plugins.length });
+
     if (botCtx.updateType === 'callback_query' && botCtx.callbackData) {
+      // In groups the UI is shared, but what a user may DO depends on who they are. If
+      // someone other than the user this UI was last rendered for taps a button, first
+      // re-render (silently — nothing is sent) as the tapper and dispatch against THEIR
+      // handlers: a user can only trigger buttons they would see themselves. Without
+      // this, a non-admin could tap an admin-only button on the admin's message.
+      const crossUser = chatState.viewerId !== undefined && chatState.viewerId !== botCtx.userId;
+      if (crossUser) {
+        chatState.handlers.clear();
+        await renderAndWait(true);
+      }
+      // Dispatch BEFORE clearing handlers: the map holds the handlers of the render the
+      // tapped button came from (or, for a cross-user tap, of the tapper's own view).
       const handler = chatState.handlers.get(botCtx.callbackData);
       if (handler) {
         try {
@@ -733,105 +862,13 @@ export function createBot(options: CreateBotOptions) {
           reportError(err, 'handler', botCtx);
         }
       } else {
-        debugLog('no handler for callback data', botCtx.callbackData);
+        debugLog('no handler for callback data (stale, or not visible to this user)', botCtx.callbackData);
       }
     }
 
     chatState.handlers.clear();
-
-    let rootElement: React.ReactElement;
-
-    if (options.router) {
-      const initialPath = commandInfo?.initialRoute ?? options.router.defaultRoute;
-      rootElement = React.createElement(RouterProvider, { config: options.router, initialPath });
-    } else {
-      rootElement = React.createElement(options.component!, {});
-    }
-
-    for (const plugin of plugins) {
-      if (plugin.Provider) {
-        rootElement = React.createElement(plugin.Provider, null, rootElement);
-      }
-    }
-
-    if (options.providers) {
-      rootElement = React.createElement(options.providers, null, rootElement);
-    }
-
-    const errorChat = chatState.chatId;
-    const wrappedElement = React.createElement(
-      ErrorBoundary,
-      {
-        onError: (err: Error) => {
-          reportError(err, 'render', { ...botCtx, chatId: errorChat });
-          // Mark the root so the NEXT update rebuilds it fresh. Otherwise the
-          // ErrorBoundary stays in its error state forever and sticks the chat.
-          const cs = chatRoots.get(chatKey);
-          if (cs) cs.errored = true;
-        },
-      },
-      React.createElement(
-        Suspense,
-        { fallback: React.createElement(InternalSuspenseFallback, null) },
-        rootElement,
-      ),
-    );
-
-    const element = React.createElement(
-      WorkTrackerCtx.Provider,
-      { value: work },
-      React.createElement(
-      ServicesCtx.Provider,
-      { value: mergedServices },
-      React.createElement(
-        CallbackRegistryCtx.Provider,
-        { value: { handlers: chatState.handlers } },
-        React.createElement(
-          RuntimeBridge,
-          { value: runtimeValue, current: chatState.runtime },
-          React.createElement(
-            CommitModeCtx.Provider,
-            { value: chatState.commitMode },
-            wrappedElement,
-          ),
-        ),
-      ),
-      ),
-    );
-
-    debugLog('rendering', { chatId: botCtx.chatId, hasRouter: !!options.router, plugins: plugins.length });
-
-    // The reconciler commits asynchronously (scheduleMicrotask), so we can't await
-    // commitQueue immediately — the send task isn't appended until onCommit runs. Instead
-    // wait for onCommit to signal (send task queued), THEN drain the queue for the actual
-    // send/edit. Critical on serverless/edge: once bot.fetch() resolves its Response the
-    // isolate may freeze, so the send must complete before we return.
-    const cs = chatState;
-    let commitTimer: ReturnType<typeof setTimeout> | undefined;
-    const committed = new Promise<void>((resolve) => {
-      cs.commitSignal = resolve;
-      // Backstop only: renderForChat always renders a fresh element (new context
-      // identities), so the root always commits and commitSignal always fires. This
-      // timer just prevents a permanent hang in the pathological no-commit case
-      // (e.g. disposed mid-render). It must be long enough never to cut off a real
-      // (possibly Suspense-delayed) commit.
-      commitTimer = setTimeout(() => {
-        debugLog('commit backstop fired — no commit observed', { chatId: botCtx.chatId });
-        resolve();
-      }, COMMIT_BACKSTOP_MS);
-    });
-    cs.root.render(element);
-    await committed;
-    if (commitTimer) clearTimeout(commitTimer);
-    cs.commitSignal = undefined;
-    // Drain: a commit can enqueue follow-up work (effects that set state synchronously,
-    // a click handler's late commit). Keep awaiting until the queue stops growing.
-    for (let i = 0; i < 10; i++) {
-      const queued = cs.commitQueue;
-      await queued;
-      await new Promise((r) => setTimeout(r, 0));
-      if (cs.commitQueue === queued) break;
-    }
+    chatState.viewerId = botCtx.userId;
+    await renderAndWait();
     // Ensure any session write triggered by this render (or its onClick handler) is
     // durably persisted before we return — critical on serverless (see above).
     await sessionWrite;

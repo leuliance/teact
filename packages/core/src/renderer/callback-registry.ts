@@ -2,7 +2,7 @@ import React from 'react';
 import { sharedContext } from './shared-context';
 
 /** A button click handler. Async handlers are awaited before the update finishes. */
-export type CallbackHandler = () => void | Promise<void>;
+export type CallbackHandler = () => unknown;
 export type CallbackMap = Map<string, CallbackHandler>;
 
 /**

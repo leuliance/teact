@@ -269,6 +269,7 @@ export class TelegramAdapter implements Adapter {
       user: toUser(from ?? msg.from),
       messageId: String(msg.message_id),
       threadId: msg.is_topic_message ? msg.message_thread_id : undefined,
+      chatType: msg.chat.type,
     });
 
     switch (kind) {
@@ -290,22 +291,22 @@ export class TelegramAdapter implements Adapter {
       case 'poll_answer': {
         const user = update.poll_answer!.user;
         if (!user) return null;
-        return { ...base, chatId: String(user.id), userId: String(user.id), user: toUser(user) };
+        return { ...base, chatId: String(user.id), userId: String(user.id), user: toUser(user), chatType: 'private' };
       }
       case 'pre_checkout_query':
       case 'shipping_query': {
         const from = update[kind]!.from;
-        return { ...base, chatId: String(from.id), userId: String(from.id), user: toUser(from) };
+        return { ...base, chatId: String(from.id), userId: String(from.id), user: toUser(from), chatType: 'private' };
       }
       case 'my_chat_member':
       case 'chat_member':
       case 'chat_join_request': {
         const u = update[kind]!;
-        return { ...base, chatId: String(u.chat.id), userId: String(u.from.id), user: toUser(u.from) };
+        return { ...base, chatId: String(u.chat.id), userId: String(u.from.id), user: toUser(u.from), chatType: u.chat.type };
       }
       case 'message_reaction': {
         const r = update.message_reaction!;
-        return { ...base, chatId: String(r.chat.id), userId: String(r.user?.id ?? r.chat.id), user: toUser(r.user) };
+        return { ...base, chatId: String(r.chat.id), userId: String(r.user?.id ?? r.chat.id), user: toUser(r.user), chatType: r.chat.type };
       }
       default:
         return null;

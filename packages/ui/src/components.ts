@@ -114,7 +114,7 @@ export type ButtonVariant = 'default' | 'primary' | 'destructive' | 'outline';
 export interface ButtonProps {
   text: string;
   variant?: ButtonVariant;
-  onClick?: string | (() => void | Promise<void>);
+  onClick?: string | (() => unknown);
   url?: string;
   conversation?: string;
   /** Navigate to this route when tapped (declarative alternative to `onClick={() => navigate(...)}`). */
@@ -814,8 +814,8 @@ export function Pagination({ page, pageCount, onChange, showEdges }: PaginationP
 export interface ConfirmProps {
   /** The question. */
   text: string;
-  onConfirm: () => void | Promise<void>;
-  onCancel?: () => void | Promise<void>;
+  onConfirm: () => unknown;
+  onCancel?: () => unknown;
   confirmText?: string;
   cancelText?: string;
   /** Show the confirm button as destructive (✕ prefix). */
