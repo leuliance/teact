@@ -173,7 +173,8 @@ export async function createTestBot(options: TestBotOptions): Promise<TestBot> {
         const button = all[i].buttons.flat().find((b) => labelMatches(b.text, label));
         if (!button) continue;
         if (button.data == null) throw new Error(`[teact/testing] Button "${button.text}" is a URL/web-app button — it can't be clicked.`);
-        await adapter.simulateCallback(chatId, userId, button.data, String(all[i].id));
+        // Report the tapped label like Telegram does, so the engine's stale-button check runs.
+        await adapter.simulateCallback(chatId, userId, button.data, String(all[i].id), { callbackLabel: button.text });
         return lastTouched();
       }
       const visible = all.at(-1)?.buttons.map((r) => r.map((b) => `"${b.text}"`).join(' ')).join(' | ') || '(none)';

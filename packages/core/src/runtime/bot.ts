@@ -6,7 +6,7 @@ import { RuntimeContext, type RuntimeContextValue } from './context';
 import { ServicesCtx, type ServiceMap } from './services';
 import { MemorySessionStore } from './session';
 import { compose } from './middleware';
-import { RouterProvider, CommitModeCtx, type RouterConfig, type CommitModeRef } from './router';
+import { RouterProvider, CommitModeCtx, ROUTE_SESSION_KEY, type RouterConfig, type CommitModeRef } from './router';
 import type { TeactPlugin } from './plugin';
 import type { TeactConfig } from './config';
 import { nodeBuiltin } from './node-builtins';
@@ -243,6 +243,8 @@ interface ChatRoot {
   viewerId?: string;
   /** Set during a silent pre-render: commits are not sent. */
   silent?: boolean;
+  /** Button labels of the last committed render, by (original) callback data. */
+  labels: Map<string, string>;
   /** The runtime (session, botCtx) of the update currently being processed. */
   runtime: { current: RuntimeContextValue };
   /** Set when a render threw; the next update rebuilds a fresh root to recover. */
@@ -326,6 +328,15 @@ function cloneTree(node: OutputNode): OutputNode {
   return { type: node.type, props: node.props, children: node.children.map(cloneTree) };
 }
 
+/** Map each button's (original) callback data to its label. */
+function collectLabels(node: OutputNode, out = new Map<string, string>()): Map<string, string> {
+  if (node.type === 'tg-button' && typeof node.props.callbackData === 'string' && typeof node.props.text === 'string') {
+    out.set(node.props.callbackData, node.props.text);
+  }
+  for (const c of node.children) collectLabels(c, out);
+  return out;
+}
+
 /** Parse `/cmd@bot arg1 arg2` → `{ name, mention, args }` (or null if not a command). */
 function parseCommand(text: string | undefined): { name: string; mention?: string; args: string[] } | null {
   if (!text?.startsWith('/')) return null;
@@ -349,11 +360,11 @@ function RuntimeBridge({ value, current, children }: {
   const ctxValue = useMemo<RuntimeContextValue>(
     () => ({
       ...value,
-      updateSession(patch) {
+      updateSession(patch, opts) {
         // Always write into the CURRENT update's session: a button handler captured this
         // function during the previous render, but runs during the next update.
-        current.current.updateSession(patch);
-        bump();
+        current.current.updateSession(patch, opts);
+        if (opts?.rerender !== false) bump();
       },
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -662,8 +673,10 @@ export function createBot(options: CreateBotOptions) {
         if (disposed) return;
         const cs = chatRoots.get(chatKey);
         if (!cs || cs.root !== root) return;
+        cs.labels = collectLabels(tree);
         if (cs.silent) {
-          // Pre-render for authorization only: register handlers, send nothing.
+          // Pre-render only (authorization / restoring a fresh root): register handlers,
+          // send nothing.
           cs.commitSignal?.();
           return;
         }
@@ -721,6 +734,7 @@ export function createBot(options: CreateBotOptions) {
       chatState = {
         root, handlers, chatId, threadId, lastMessageId: undefined,
         commitQueue: Promise.resolve(), commitMode, runtime: { current: runtimeValue },
+        labels: new Map(),
       };
       chatRoots.set(chatKey, chatState);
     }
@@ -741,7 +755,10 @@ export function createBot(options: CreateBotOptions) {
       let rootElement: React.ReactElement;
 
       if (options.router) {
-        const initialPath = commandInfo?.initialRoute ?? options.router.defaultRoute;
+        // A fresh root (new serverless instance, restarted bot) reopens the screen the user
+        // was on — remembered in the session by the router. Commands and route buttons win.
+        const remembered = typeof session[ROUTE_SESSION_KEY] === 'string' ? (session[ROUTE_SESSION_KEY] as string) : undefined;
+        const initialPath = commandInfo?.initialRoute ?? remembered ?? options.router.defaultRoute;
         rootElement = React.createElement(RouterProvider, { config: options.router, initialPath });
       } else {
         rootElement = React.createElement(options.component!, {});
@@ -847,14 +864,31 @@ export function createBot(options: CreateBotOptions) {
       // re-render (silently — nothing is sent) as the tapper and dispatch against THEIR
       // handlers: a user can only trigger buttons they would see themselves. Without
       // this, a non-admin could tap an admin-only button on the admin's message.
+      // The same pre-render restores a FRESH root (a serverless instance that never rendered
+      // this chat, or a restarted bot): without it there are no handlers and the tap is lost.
       const crossUser = chatState.viewerId !== undefined && chatState.viewerId !== botCtx.userId;
-      if (crossUser) {
+      const freshRoot = chatState.viewerId === undefined;
+      if (crossUser || freshRoot) {
         chatState.handlers.clear();
         await renderAndWait(true);
       }
+      // Only run the handler if the tapped button is still the same button: after a restart,
+      // a fresh instance or on an old message, the same callback data can now belong to a
+      // different button (positional ids) — e.g. "#1 bulbasaur" vs "#11 caterpie".
+      let data: string | undefined = botCtx.callbackData;
+      const current = chatState.labels.get(data);
+      const tappedLabel = botCtx.callbackLabel;
+      if (tappedLabel !== undefined && current !== tappedLabel) {
+        // Callback ids are positional (React useId), so a restored/other-instance render can
+        // number the same button differently. Fall back to the label: run the button only if
+        // EXACTLY one button in the user's current view carries the label they tapped.
+        const byLabel = [...chatState.labels].filter(([, label]) => label === tappedLabel).map(([d]) => d);
+        data = byLabel.length === 1 ? byLabel[0] : undefined;
+        if (!data) debugLog('tapped button is not on the current screen — ignoring', { tapped: tappedLabel, now: current });
+      }
       // Dispatch BEFORE clearing handlers: the map holds the handlers of the render the
       // tapped button came from (or, for a cross-user tap, of the tapper's own view).
-      const handler = chatState.handlers.get(botCtx.callbackData);
+      const handler = data ? chatState.handlers.get(data) : undefined;
       if (handler) {
         try {
           // Async handlers are awaited so their work (and state updates) lands within this

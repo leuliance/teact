@@ -35,6 +35,12 @@ export interface BotContext {
   text?: string;
   callbackData?: string;
   /**
+   * The label of the tapped button as the user saw it, when the platform reports it. The
+   * engine only runs a click handler if this matches the button currently at that position,
+   * so a stale or shifted button can never trigger a different action.
+   */
+  callbackLabel?: string;
+  /**
    * The kind of update that produced this context, e.g. `'message'`, `'callback_query'`,
    * `'edited_message'`, `'poll_answer'`. Defaults to `'message'` / `'callback_query'`
    * (inferred from `callbackData`) when an adapter doesn't set it.

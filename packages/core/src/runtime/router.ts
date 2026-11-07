@@ -1,4 +1,4 @@
-import React, { useState, useContext, useCallback } from 'react';
+import React, { useState, useContext, useCallback, useEffect } from 'react';
 import { sharedContext } from '../renderer/shared-context';
 import type { FunctionComponent, ReactElement } from 'react';
 import { RuntimeContext } from './context';
@@ -169,6 +169,9 @@ interface RouterContextValue {
 export interface CommitModeRef {
   current: NavigateMode;
 }
+
+/** Session key under which the router remembers the current path (restored on fresh roots). */
+export const ROUTE_SESSION_KEY = '__teact_route';
 
 export const RouterCtx = sharedContext<RouterContextValue | null>('router', null);
 
@@ -398,6 +401,15 @@ export function RouterProvider({
   if (resolved && 'route' in resolved && resolved.path !== nav.path) {
     setNav((prev) => (prev.path === nav.path ? { ...prev, path: resolved.path } : prev));
   }
+
+  // Remember where the user is, so a fresh root (serverless instance, restart) reopens it.
+  const effectivePath = resolved && 'route' in resolved ? resolved.path : nav.path;
+  useEffect(() => {
+    if (runtime && runtime.session[ROUTE_SESSION_KEY] !== effectivePath) {
+      runtime.updateSession({ [ROUTE_SESSION_KEY]: effectivePath }, { rerender: false });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectivePath]);
 
   const providerValue = { path: nav.path, params: {} as Record<string, string>, navigate };
 

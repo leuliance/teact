@@ -286,7 +286,9 @@ export class TelegramAdapter implements Adapter {
         const q = update.callback_query!;
         // Inline-mode buttons (inline_message_id) and game buttons have no chat to render into.
         if (!q.message || q.data == null) return null;
-        return { ...fromMessage(q.message, q.from), callbackData: q.data };
+        const tapped = (q.message.reply_markup?.inline_keyboard as { text: string; callback_data?: string }[][] | undefined)
+          ?.flat().find((b) => b.callback_data === q.data);
+        return { ...fromMessage(q.message, q.from), callbackData: q.data, callbackLabel: tapped?.text };
       }
       case 'poll_answer': {
         const user = update.poll_answer!.user;

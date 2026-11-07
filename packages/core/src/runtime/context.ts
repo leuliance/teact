@@ -6,7 +6,8 @@ import type { BotContext, SessionData } from '../renderer';
 export interface RuntimeContextValue {
   botCtx: BotContext;
   session: SessionData;
-  updateSession: (patch: Partial<SessionData>) => void;
+  /** Persist a session patch. `{ rerender: false }` saves without re-rendering readers. */
+  updateSession: (patch: Partial<SessionData>, opts?: { rerender?: boolean }) => void;
   command: { name: string; args: string[] } | null;
 }
 
