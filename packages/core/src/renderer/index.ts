@@ -32,3 +32,6 @@ export type {
   UseMutationOptions,
   UseMutationResult,
 } from './data-hooks';
+
+export { WorkTracker, WorkTrackerCtx, trackGlobalFetch } from './work-tracker';
+export type { SettleOptions } from './work-tracker';

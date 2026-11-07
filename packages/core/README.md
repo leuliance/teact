@@ -66,6 +66,29 @@ Write your own middleware: return `false` to stop an update (e.g. bans, maintena
 | `useStream()` | Stream LLM tokens into a message |
 | `useTelegram()` | Framework-agnostic Bot API: `api.sendDice({ chat_id })` |
 
+## Serverless & slow APIs
+
+On Workers/Vercel/Lambda the runtime freezes once the webhook response is returned. `bot.fetch`
+therefore keeps the request alive until the bot is idle — every data fetch started by the update
+(including third-party libraries like TanStack Query or supabase-js) has finished and re-rendered.
+
+```ts
+// Cloudflare: reply to Telegram immediately, finish the work in the background
+fetch: (req, env, ctx) => bot.fetch(req, { token: env.TELEGRAM_BOT_TOKEN, waitUntil: (p) => ctx.waitUntil(p) })
+
+// tune or disable
+bot.fetch(req, { settle: { idleMs: 300, maxMs: 25_000 } });  // defaults
+bot.fetch(req, { settle: false });                             // return after the first render
+```
+
+`useQuery` never hangs forever: it passes an `AbortSignal` and times out (default 15s).
+
+```ts
+useQuery({ key: 'profile', timeout: 5_000, fn: ({ signal }) => fetch(url, { signal }).then((r) => r.json()) });
+```
+
+The request is aborted on timeout, when the key changes, and when the component unmounts.
+
 ## Proactive messages
 
 ```ts

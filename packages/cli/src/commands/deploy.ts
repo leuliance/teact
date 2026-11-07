@@ -17,8 +17,14 @@ export interface Env {
 }
 
 export default {
-  fetch: (request: Request, env: Env) =>
-    bot.fetch(request, { token: env.TELEGRAM_BOT_TOKEN, secretToken: env.WEBHOOK_SECRET }),
+  fetch: (request: Request, env: Env, ctx?: { waitUntil(promise: Promise<unknown>): void }) =>
+    bot.fetch(request, {
+      token: env.TELEGRAM_BOT_TOKEN,
+      secretToken: env.WEBHOOK_SECRET,
+      // Reply to Telegram at once, but keep the Worker alive until the bot has finished
+      // reacting (data loading, follow-up edits) — otherwise screens stick on "Loading…".
+      waitUntil: ctx ? (p) => ctx.waitUntil(p) : undefined,
+    }),
 };
 `;
 

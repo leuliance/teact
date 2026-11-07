@@ -1,13 +1,23 @@
 import { useState, useEffect, useRef, useCallback, useContext } from 'react';
 import { RuntimeContext } from '../runtime/context';
+import { WorkTrackerCtx } from './work-tracker';
 
 // ---- useQuery: data fetching with caching, refetch, loading states ----
 
 export interface UseQueryOptions<T> {
   /** Unique cache key. Changing this re-fetches. */
   key: string;
-  /** Async function that returns data. */
-  fn: () => Promise<T>;
+  /**
+   * Async function that returns data. Pass the `signal` to `fetch` so a timed-out,
+   * superseded or unmounted request is actually cancelled:
+   * `fn: ({ signal }) => fetch(url, { signal }).then((r) => r.json())`
+   */
+  fn: (ctx: { signal: AbortSignal }) => Promise<T>;
+  /**
+   * Fail with a timeout error (and abort the request) after this many ms, so a hung API
+   * shows an error instead of "Loading…" forever. `0` disables it. @default 15_000
+   */
+  timeout?: number;
   /** Auto-fetch on mount (default: true). */
   enabled?: boolean;
   /** Stale time in ms before refetching (default: 30s). */
@@ -61,26 +71,56 @@ export function useQuery<T>(options: UseQueryOptions<T>): UseQueryResult<T> {
   const keyRef = useRef(key);
   keyRef.current = key;
 
+  const tracker = useContext(WorkTrackerCtx);
+  const timeout = options.timeout ?? 15_000;
+  const controllerRef = useRef<AbortController | null>(null);
+
   const refetch = useCallback(async () => {
     const requestKey = keyRef.current;
+    // Cancel a superseded request (key changed, manual refetch) — never let it land.
+    controllerRef.current?.abort();
+    const controller = new AbortController();
+    controllerRef.current = controller;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     setIsLoading(true);
     setError(undefined);
-    try {
-      const result = await fnRef.current();
-      cacheSet(requestKey, result);
-      // Ignore results for a key we've since moved away from.
-      if (mountedRef.current && keyRef.current === requestKey) setState({ key: requestKey, data: result });
-    } catch (err) {
-      if (mountedRef.current && keyRef.current === requestKey) setError(err instanceof Error ? err : new Error(String(err)));
-    } finally {
-      if (mountedRef.current && keyRef.current === requestKey) setIsLoading(false);
-    }
-  }, []);
+    const run = (async () => {
+      try {
+        const timedOut = new Promise<never>((_, reject) => {
+          if (timeout > 0) {
+            timer = setTimeout(() => {
+              const err = new Error(`Request timed out after ${Math.round(timeout / 100) / 10}s`);
+              err.name = 'TimeoutError';
+              controller.abort(err);
+              reject(err);
+            }, timeout);
+          }
+        });
+        const result = await Promise.race([fnRef.current({ signal: controller.signal }), timedOut]);
+        cacheSet(requestKey, result);
+        // Ignore results for a key we've since moved away from.
+        if (mountedRef.current && keyRef.current === requestKey) setState({ key: requestKey, data: result });
+      } catch (err) {
+        if (controller.signal.aborted && controller.signal.reason?.name !== 'TimeoutError') return; // superseded/unmounted
+        if (mountedRef.current && keyRef.current === requestKey) setError(err instanceof Error ? err : new Error(String(err)));
+      } finally {
+        if (timer) clearTimeout(timer);
+        if (controllerRef.current === controller) controllerRef.current = null;
+        if (mountedRef.current && keyRef.current === requestKey) setIsLoading(false);
+      }
+    })();
+    // On serverless, keep the request alive until the data has arrived and re-rendered.
+    tracker?.track(run);
+    await run;
+  }, [timeout, tracker]);
 
   useEffect(() => {
     mountedRef.current = true;
     if (enabled && !fresh(key, staleTime)) refetch();
-    return () => { mountedRef.current = false; };
+    return () => {
+      mountedRef.current = false;
+      controllerRef.current?.abort();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, enabled]);
 

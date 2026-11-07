@@ -1,7 +1,7 @@
 import React, { Suspense, useMemo, useReducer } from 'react';
 import type { FunctionComponent, ReactNode } from 'react';
 import { createRoot, type TeactRoot, type OutputNode, type BotContext, type SessionStore, type SessionData, type Middleware, type Adapter, type PlatformApi } from '../renderer';
-import { CallbackRegistryCtx, ErrorBoundary, type CallbackMap } from '../renderer';
+import { CallbackRegistryCtx, ErrorBoundary, type CallbackMap, WorkTracker, WorkTrackerCtx, trackGlobalFetch, type SettleOptions } from '../renderer';
 import { RuntimeContext, type RuntimeContextValue } from './context';
 import { ServicesCtx, type ServiceMap } from './services';
 import { MemorySessionStore } from './session';
@@ -410,6 +410,10 @@ export function createBot(options: CreateBotOptions) {
   }
 
   const chatRoots = new Map<string, ChatRoot>();
+  // In-flight async work (fetches, async handlers, sends) — lets serverless requests
+  // stay alive until the bot has finished reacting to an update (see fetch()).
+  const work = new WorkTracker();
+  let fetchTrackingInstalled = false;
   // Serializes updates per chat: a chat's next update waits for its previous one to
   // finish rendering + sending. Without this, two rapid messages/callbacks for the same
   // chat interleave and race on the shared ChatRoot (commitSignal, commitMode, handlers).
@@ -496,6 +500,7 @@ export function createBot(options: CreateBotOptions) {
 
   async function processUpdate(incoming: BotContext): Promise<void> {
     if (disposed) return;
+    work.touch();
     const updateStart = Date.now();
     const chatKey = chatKeyOf(incoming);
 
@@ -688,6 +693,8 @@ export function createBot(options: CreateBotOptions) {
           }
         });
 
+        work.touch();
+        work.track(cs.commitQueue);
         // Wake any renderForChat awaiting this commit: the send task is now queued.
         cs.commitSignal?.();
       });
@@ -771,6 +778,9 @@ export function createBot(options: CreateBotOptions) {
     );
 
     const element = React.createElement(
+      WorkTrackerCtx.Provider,
+      { value: work },
+      React.createElement(
       ServicesCtx.Provider,
       { value: mergedServices },
       React.createElement(
@@ -785,6 +795,7 @@ export function createBot(options: CreateBotOptions) {
             wrappedElement,
           ),
         ),
+      ),
       ),
     );
 
@@ -1048,7 +1059,25 @@ export function createBot(options: CreateBotOptions) {
      *     bot.fetch(request, { token: env.TELEGRAM_BOT_TOKEN, secretToken: env.WEBHOOK_SECRET }),
      * };
      */
-    async fetch(request: Request, opts?: { token?: string; secretToken?: string }): Promise<Response> {
+    async fetch(
+      request: Request,
+      opts?: {
+        token?: string;
+        secretToken?: string;
+        /**
+         * The platform's `waitUntil` (Cloudflare: `ctx.waitUntil`, Vercel: `waitUntil` from
+         * `@vercel/functions`). With it, the response returns immediately and the runtime
+         * is kept alive in the background until the bot finishes reacting (data loading,
+         * follow-up edits). Without it, the response itself waits for that work.
+         */
+        waitUntil?: (promise: Promise<unknown>) => void;
+        /**
+         * How long to wait for background work after an update — see {@link SettleOptions}.
+         * `false` returns as soon as the first render is sent (async work may be cut off).
+         */
+        settle?: SettleOptions | false;
+      },
+    ): Promise<Response> {
       if (opts?.token) resolvedToken = opts.token;
       try {
         await initialize({ registerCommands: false });
@@ -1074,7 +1103,25 @@ export function createBot(options: CreateBotOptions) {
         }
         webhookFn = adapter.webhookCallback({ secretToken: opts?.secretToken });
       }
-      return webhookFn(request);
+      const settleOpts = opts?.settle;
+      if (settleOpts !== false && !fetchTrackingInstalled) {
+        // Third-party data libraries (TanStack Query, supabase-js, SDKs) fetch on their own;
+        // counting outgoing fetches lets us wait for them too.
+        fetchTrackingInstalled = true;
+        trackGlobalFetch(work);
+      }
+      const response = await webhookFn(request);
+      if (settleOpts === false || response.status !== 200) return response;
+      // On serverless the runtime freezes once the response is returned, cutting off any
+      // async work the update started (a "Loading…" screen whose data never arrives).
+      // Keep going until the bot is idle.
+      const settled = work
+        .settle(settleOpts ?? {}, () => Promise.all([...chatRoots.values()].map((c) => c.commitQueue)))
+        .then((idle) => { if (!idle) debugLog('settle budget exhausted — some background work may be cut off'); })
+        .catch((err) => reportError(err, 'send'));
+      if (opts?.waitUntil) opts.waitUntil(settled);
+      else await settled;
+      return response;
     },
 
     /**
