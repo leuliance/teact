@@ -55,6 +55,26 @@ export function POST(request: Request): Promise<Response> {
 }
 `;
 
+// Without these, Vercel treats a bot project as a static site: it runs `npm run build`
+// (teact build — not needed for a function) and, with no public/ folder, serves the
+// project ROOT as static files — which can expose files like .env.
+const VERCEL_CONFIG = JSON.stringify(
+  {
+    $schema: 'https://openapi.vercel.sh/vercel.json',
+    framework: null,
+    buildCommand: "echo 'Teact: no static build needed — the bot runs in api/telegram.ts'",
+    outputDirectory: 'public',
+  },
+  null,
+  2,
+) + '\n';
+
+const VERCEL_PUBLIC_INDEX = `<!doctype html>
+<meta charset="utf-8" />
+<title>Teact bot</title>
+<p>This deployment hosts a Telegram bot. Its webhook endpoint is <code>/api/telegram</code>.</p>
+`;
+
 function warnIfBotNotExported(root: string): void {
   const entryFile = ['src/index.ts', 'src/index.tsx'].map((f) => resolve(root, f)).find(existsSync);
   if (!entryFile || !/export\s+(const|let|var)\s+bot\b/.test(readFileSync(entryFile, 'utf-8'))) {
@@ -74,6 +94,17 @@ async function deployVercel(root: string, opts: DeployOptions): Promise<void> {
     mkdirSync(resolve(root, 'api'), { recursive: true });
     writeFileSync(fn, VERCEL_ENTRY);
     success('created api/telegram.ts');
+  }
+
+  const config = resolve(root, 'vercel.json');
+  if (existsSync(config)) log('• vercel.json already exists — leaving it as is (make sure outputDirectory is not the project root)');
+  else { writeFileSync(config, VERCEL_CONFIG); success('created vercel.json'); }
+
+  const index = resolve(root, 'public/index.html');
+  if (!existsSync(index)) {
+    mkdirSync(resolve(root, 'public'), { recursive: true });
+    writeFileSync(index, VERCEL_PUBLIC_INDEX);
+    success('created public/index.html');
   }
 
   log('');

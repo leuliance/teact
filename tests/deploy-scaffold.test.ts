@@ -37,6 +37,10 @@ describe('teact deploy scaffolds working entries', () => {
     await deployCommand('vercel', {});
     const src = readFileSync(join(dir, 'api/telegram.ts'), 'utf-8');
     expect(src).toContain('export function POST(request: Request)');
+    // Never serve the project root (where .env lives) as a static site.
+    const vercelJson = JSON.parse(readFileSync(join(dir, 'vercel.json'), 'utf-8'));
+    expect(vercelJson.outputDirectory).toBe('public');
+    expect(existsSync(join(dir, 'public/index.html'))).toBe(true);
     process.env.TELEGRAM_BOT_TOKEN = 'test-token';
     const fn = await import(join(dir, 'api/telegram.ts'));
     const { adapter } = await import(join(dir, 'src/index.ts'));
