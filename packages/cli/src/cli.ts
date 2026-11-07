@@ -93,7 +93,7 @@ program
 
 program
   .command('deploy [target]')
-  .description('Scaffold & deploy to a serverless platform (default: cloudflare)')
+  .description('Scaffold & deploy to a serverless platform: cloudflare (default) or vercel')
   .option('--run', 'Run the platform deploy command (e.g. wrangler deploy)')
   .action(async (target: string | undefined, opts) => {
     await deployCommand(target, opts);

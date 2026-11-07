@@ -74,6 +74,29 @@ teact build --no-minify --no-sourcemap
 
 Output is written to `dist/`.
 
+### `teact start`
+
+Runs the production build (`dist/index.js`) created by `teact build`.
+
+### `teact deploy [cloudflare|vercel]`
+
+Scaffolds a serverless webhook entry and prints the remaining steps; `--run` also runs the
+platform's deploy command.
+
+| Target | Creates | Deploys with |
+|--------|---------|--------------|
+| `cloudflare` (default) | `src/worker.ts`, `wrangler.jsonc` | `wrangler deploy` |
+| `vercel` | `api/telegram.ts` (bundled Edge function), `vercel.json` | `vercel deploy --prod` |
+
+Your entry must `export const bot = createBot(...)` and start polling only with
+`if (import.meta.main) bot.start()`. Use a durable session store (e.g. `kvSessionStore`) —
+serverless instances don't share memory.
+
+### `teact webhook set <url> [--secret <s>]` / `teact webhook info` / `teact webhook delete`
+
+Points Telegram at your deployed URL (reads `TELEGRAM_BOT_TOKEN` and `WEBHOOK_SECRET` from
+the environment or `.env`).
+
 ### `teact generate <type> <name>` (alias: `teact g`)
 
 Generate boilerplate code.

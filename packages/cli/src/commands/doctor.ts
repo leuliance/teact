@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'fs';
 import { resolve } from 'path';
-import { heading, success, error, warn, log, findProjectRoot } from '../utils';
+import { heading, success, error, warn, log, findProjectRoot, readEnvVar } from '../utils';
 
 export async function doctorCommand(): Promise<void> {
   heading('Teact Doctor - Environment Check');
@@ -61,6 +61,8 @@ export async function doctorCommand(): Promise<void> {
 
       if (existsSync(resolve(root, path))) {
         success(label);
+      } else if (path === '.env' && process.env.TELEGRAM_BOT_TOKEN) {
+        log(`  ℹ ${label} not found (token comes from the environment)`);
       } else if (path === 'teact.config.ts') {
         // Optional, just inform
         log(`  ℹ ${label} not found (optional)`);
@@ -71,26 +73,20 @@ export async function doctorCommand(): Promise<void> {
       }
     }
 
-    // Check for bot token
-    if (existsSync(resolve(root, '.env'))) {
-      const envContent = readFileSync(resolve(root, '.env'), 'utf-8');
-      if (envContent.includes('TELEGRAM_BOT_TOKEN=') && !envContent.match(/TELEGRAM_BOT_TOKEN=\S+/)) {
-        warn('TELEGRAM_BOT_TOKEN is empty in .env');
-        log('  → Get a token from @BotFather on Telegram');
-        log('  → Then set it: TELEGRAM_BOT_TOKEN=123456:ABC-DEF...');
-        issues++;
-      } else if (envContent.match(/TELEGRAM_BOT_TOKEN=\S+/)) {
-        const m = envContent.match(/TELEGRAM_BOT_TOKEN=(\S+)/);
-        const token = m?.[1] ?? '';
-        // Telegram bot tokens look like: <digits>:<35-char base64-ish>
-        if (/^\d+:[A-Za-z0-9_-]{30,}$/.test(token)) {
-          success('TELEGRAM_BOT_TOKEN is set (valid format)');
-        } else {
-          warn('TELEGRAM_BOT_TOKEN is set but does not look like a valid Telegram token');
-          log('  → Expected format: 123456789:ABCdef... (from @BotFather)');
-          issues++;
-        }
-      }
+    // Check for bot token (process env or .env, quotes allowed)
+    const token = readEnvVar(root, 'TELEGRAM_BOT_TOKEN');
+    if (!token) {
+      warn('TELEGRAM_BOT_TOKEN is not set (checked the environment and .env)');
+      log('  → Get a token from @BotFather on Telegram');
+      log('  → Then set it in .env: TELEGRAM_BOT_TOKEN=123456:ABC-DEF...');
+      issues++;
+    } else if (/^\d+:[A-Za-z0-9_-]{30,}$/.test(token)) {
+      // Telegram bot tokens look like: <digits>:<35-char base64-ish>
+      success('TELEGRAM_BOT_TOKEN is set (valid format)');
+    } else {
+      warn('TELEGRAM_BOT_TOKEN is set but does not look like a valid Telegram token');
+      log('  → Expected format: 123456789:ABCdef... (from @BotFather)');
+      issues++;
     }
 
     // Check Teact dependencies

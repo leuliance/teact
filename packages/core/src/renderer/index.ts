@@ -14,6 +14,7 @@ export type {
   SessionStore,
   Middleware,
   Adapter,
+  PlatformApi,
   WebhookConfig,
   ListenOptions,
 } from './types';
@@ -31,3 +32,6 @@ export type {
   UseMutationOptions,
   UseMutationResult,
 } from './data-hooks';
+
+export { WorkTracker, WorkTrackerCtx, trackGlobalFetch } from './work-tracker';
+export type { SettleOptions } from './work-tracker';

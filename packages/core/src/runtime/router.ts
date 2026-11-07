@@ -1,4 +1,5 @@
-import React, { useState, useContext, useCallback, createContext } from 'react';
+import React, { useState, useContext, useCallback, useEffect } from 'react';
+import { sharedContext } from '../renderer/shared-context';
 import type { FunctionComponent, ReactElement } from 'react';
 import { RuntimeContext } from './context';
 
@@ -65,7 +66,12 @@ function createGuardReply(text: string, options?: GuardReplyOptions): GuardReply
 export interface BeforeLoadContext {
   path: string;
   params: Record<string, string>;
+  /** The requesting user's session (per user in groups). */
   session: Record<string, any>;
+  /** The user whose update is being handled — authorize against this, not the chat. */
+  user: { id: string; username?: string; firstName?: string } | null;
+  /** The chat the route is rendering in. */
+  chatId: string | null;
   /** Send a message (with optional buttons) instead of loading the route. */
   reply: (text: string, options?: GuardReplyOptions) => GuardReply;
 }
@@ -164,9 +170,12 @@ export interface CommitModeRef {
   current: NavigateMode;
 }
 
-export const RouterCtx = createContext<RouterContextValue | null>(null);
+/** Session key under which the router remembers the current path (restored on fresh roots). */
+export const ROUTE_SESSION_KEY = '__teact_route';
 
-export const CommitModeCtx = createContext<CommitModeRef>({ current: 'replace' });
+export const RouterCtx = sharedContext<RouterContextValue | null>('router', null);
+
+export const CommitModeCtx = sharedContext<CommitModeRef>('commit-mode', { current: 'replace' });
 
 /** Redirect helper for use inside `beforeLoad` guards. */
 export function redirect(path: string): string {
@@ -208,6 +217,14 @@ function parseRoute(path: string, component: FunctionComponent<any>, beforeLoad?
   };
 }
 
+function safeDecode(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value; // a hand-typed malformed escape (e.g. "100%") — keep it raw
+  }
+}
+
 function matchRoute(
   routes: RouteDefinition[],
   path: string,
@@ -220,7 +237,7 @@ function matchRoute(
     if (m) {
       const params: Record<string, string> = {};
       r.paramNames.forEach((name, i) => {
-        params[name] = m[i + 1];
+        params[name] = safeDecode(m[i + 1]);
       });
       return { route: r, params };
     }
@@ -251,6 +268,7 @@ function resolveRoute(
   config: RouterConfig,
   path: string,
   session: Record<string, any>,
+  who: { user: BeforeLoadContext['user']; chatId: string | null } = { user: null, chatId: null },
 ): ResolvedRoute | GuardOverride | null {
   const MAX_REDIRECTS = 5;
   let currentPath = path;
@@ -265,6 +283,8 @@ function resolveRoute(
           path: currentPath,
           params: match.params,
           session,
+          user: who.user,
+          chatId: who.chatId,
           reply: createGuardReply,
         });
       } catch (err) {
@@ -285,7 +305,7 @@ function resolveRoute(
         return { guardElement: result, params: p, path: cur };
       }
       if (result && typeof result === 'object') {
-        if ('redirect' in result) {
+        if ('redirect' in result && (result as GuardRedirect).redirect !== currentPath) {
           currentPath = (result as GuardRedirect).redirect;
           continue;
         }
@@ -379,7 +399,26 @@ export function RouterProvider({
     [commitMode],
   );
 
-  const resolved = resolveRoute(config, nav.path, runtime?.session ?? {});
+  const resolved = resolveRoute(config, nav.path, runtime?.session ?? {}, {
+    user: runtime?.botCtx.user ?? null,
+    chatId: runtime?.botCtx.chatId ?? null,
+  });
+  // A guard redirect REPLACES the navigation: remember where we actually are. Otherwise the
+  // denied path stays "pending" and a later state change (e.g. logging in) re-runs the
+  // guard and teleports the user there without them asking.
+  if (resolved && 'route' in resolved && resolved.path !== nav.path) {
+    setNav((prev) => (prev.path === nav.path ? { ...prev, path: resolved.path } : prev));
+  }
+
+  // Remember where the user is, so a fresh root (serverless instance, restart) reopens it.
+  const effectivePath = resolved && 'route' in resolved ? resolved.path : nav.path;
+  useEffect(() => {
+    if (runtime && runtime.session[ROUTE_SESSION_KEY] !== effectivePath) {
+      runtime.updateSession({ [ROUTE_SESSION_KEY]: effectivePath }, { rerender: false });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectivePath]);
+
   const providerValue = { path: nav.path, params: {} as Record<string, string>, navigate };
 
   if (!resolved) {
@@ -445,16 +484,20 @@ export function useNavigate(): (path: string, opts?: NavigateOptions) => void {
 /**
  * Read the current route's dynamic parameters.
  *
- * Pass the route template as a type argument to infer param names (no codegen):
+ * Pass the route template as a type argument to infer param names (no codegen), or an
+ * explicit params shape (React Router style):
  *
  * @example
  * // Route: '/pokemon/:id'
- * const { id } = useParams<'/pokemon/:id'>();   // id: string, type-checked
+ * const { id } = useParams<'/pokemon/:id'>();   // id: string, inferred from the template
+ * const { id } = useParams<{ id: string }>();   // explicit shape
  * const params = useParams();                    // Record<string, string> (loose)
  */
-export function useParams<P extends string = never>(): [P] extends [never]
+export function useParams<P extends string | Record<string, string> = never>(): [P] extends [never]
   ? Record<string, string>
-  : PathParams<P> {
+  : P extends string
+    ? PathParams<P>
+    : P {
   const ctx = useContext(RouterCtx);
   if (!ctx) throw new Error('useParams must be used inside a Router');
   return ctx.params as any;

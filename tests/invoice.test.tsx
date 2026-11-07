@@ -108,6 +108,7 @@ describe('InvoiceResult interface', () => {
   test('has send, status, receipt, error fields', () => {
     const result: InvoiceResult = {
       send: async () => {},
+      reset: () => {},
       status: 'idle',
       receipt: null,
       error: null,
@@ -122,6 +123,7 @@ describe('InvoiceResult interface', () => {
   test('status can be pending', () => {
     const result: InvoiceResult = {
       send: async () => {},
+      reset: () => {},
       status: 'pending',
       receipt: null,
       error: null,
@@ -139,6 +141,7 @@ describe('InvoiceResult interface', () => {
     };
     const result: InvoiceResult = {
       send: async () => {},
+      reset: () => {},
       status: 'success',
       receipt,
       error: null,
@@ -153,6 +156,7 @@ describe('InvoiceResult interface', () => {
   test('status can be failed with error', () => {
     const result: InvoiceResult = {
       send: async () => {},
+      reset: () => {},
       status: 'failed',
       receipt: null,
       error: 'Payment provider rejected',

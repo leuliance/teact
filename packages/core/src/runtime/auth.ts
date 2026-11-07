@@ -1,4 +1,5 @@
-import React, { useContext, createContext } from 'react';
+import React, { useContext } from 'react';
+import { sharedContext } from '../renderer/shared-context';
 import type { FunctionComponent, ReactNode } from 'react';
 import type { TeactPlugin } from './plugin';
 import { useBot } from './context';
@@ -21,7 +22,7 @@ export interface AuthState {
   hasAny(...roles: string[]): boolean;
 }
 
-const AuthCtx = createContext<AuthState | null>(null);
+const AuthCtx = sharedContext<AuthState | null>('auth', null);
 
 /**
  * Access the current user's auth state.

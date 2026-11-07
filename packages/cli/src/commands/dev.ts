@@ -64,7 +64,18 @@ export async function devCommand(opts: DevOptions): Promise<void> {
     getSourceMap: (source: string) => node.getSourceMap(source),
   });
 
-  const runner = new ViteNodeRunner({
+  // vite-node's import.meta has no `main`, but generated entries do
+  // `if (import.meta.main) bot.start()` (so serverless workers can import them without
+  // polling). Mark the entry module as main so `teact dev` actually starts the bot.
+  class EntryRunner extends ViteNodeRunner {
+    override prepareContext(context: Record<string, any>) {
+      const meta = context.__vite_ssr_import_meta__;
+      if (meta && resolve(meta.filename) === entryPath) meta.main = true;
+      return context;
+    }
+  }
+
+  const runner = new EntryRunner({
     root: server.config.root,
     base: server.config.base,
     fetchModule(id: string) {

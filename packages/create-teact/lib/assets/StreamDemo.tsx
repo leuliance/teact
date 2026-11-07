@@ -8,7 +8,7 @@ async function* generateBattleStrategy() {
   await delay(600);
   yield '...\n\n';
   await delay(400);
-  yield '⚔️ **Offensive Moves**\n';
+  yield '⚔️ Offensive Moves\n';
   await delay(500);
   yield '• Use Thunderbolt against Water types\n';
   await delay(400);
@@ -16,7 +16,7 @@ async function* generateBattleStrategy() {
   await delay(400);
   yield '• Earthquake covers Electric matchups\n\n';
   await delay(600);
-  yield '🛡️ **Defensive Tips**\n';
+  yield '🛡️ Defensive Tips\n';
   await delay(500);
   yield '• Switch to Ground type vs Electric\n';
   await delay(400);

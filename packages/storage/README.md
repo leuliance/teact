@@ -50,6 +50,43 @@ function Favorites() {
 }
 ```
 
+Use an updater function for changes based on the previous value — it always receives the
+freshest stored value, so rapid taps never lose updates:
+
+```tsx
+setFavorites((prev) => [...prev, "Pikachu"]);
+```
+
+### Scope
+
+```tsx
+useStorage("theme", "light");                       // per chat (default) — shared in groups
+useStorage("theme", "light", { scope: "user" });    // per user, even inside groups
+useStorage("visits", 0, { scope: "global" });       // one value for the whole bot
+```
+
+### Async drivers
+
+With an async driver (Redis, KV, a database) the default value shows while the stored one
+loads; the third tuple element tells you:
+
+```tsx
+const [cart, setCart, { loading }] = useStorage("cart", []);
+if (loading) return <Message text="⏳" />;
+```
+
+Writes are applied immediately (optimistic) and persisted in the background. On serverless,
+`bot.fetch` waits for pending reads and writes before the runtime freezes.
+
+Updater functions (`setCount((n) => n + 1)`) are applied to the freshest stored value, and
+writes to one key are queued within an instance. Across instances (serverless isolates,
+several servers) a read-modify-write can still race. Cloudflare KV is also eventually
+consistent, so for exact counters under concurrency use an atomic backend operation (Redis
+`INCR`, a Durable Object, a SQL `UPDATE … SET n = n + 1`).
+
+Values must be JSON-serializable. A `BigInt` or a circular object throws a clear error on
+`set`; `undefined` deletes the key.
+
 ## useGlobalStorage
 
 Access the raw storage interface for advanced operations:
@@ -70,11 +107,36 @@ await storage.clear();
 ### Built-in
 
 - **`"memory"`** -- in-memory store, cleared on restart. Good for testing.
-- **`"file"`** -- persists to disk as JSON files. Set `path` to control the directory.
+- **`"file"`** -- a JSON file (`path`, default `.teact/storage.json`). Writes are atomic, a
+  corrupt file is moved aside instead of overwritten, and several processes sharing the file
+  merge per key. Single-server use only — no filesystem on serverless. Every write rewrites
+  the file synchronously (~3 ms at 10k keys, measured), so for busy bots use Redis/KV.
+- **`kvStorageDriver(...)`** -- any async key-value store: Redis, Upstash, Cloudflare KV,
+  Deno KV, a SQL table.
+
+### Redis / KV
+
+```ts
+import { storagePlugin, kvStorageDriver } from "@teactjs/storage";
+
+// Redis (node-redis v4)
+storagePlugin({
+  driver: kvStorageDriver({
+    get: (k) => redis.get(k),
+    set: (k, v) => redis.set(k, v),
+    delete: (k) => redis.del(k),
+    keys: (prefix) => redis.keys(`${prefix}*`), // only needed for keys()/clear()
+  }),
+});
+
+// Cloudflare KV — bindings exist per request, so pass a getter
+let env: Env;
+storagePlugin({ driver: kvStorageDriver(() => env?.STORAGE) });
+```
 
 ### Custom Driver
 
-Implement the `StorageDriver` interface:
+Implement the `StorageDriver` interface — methods may be sync or async:
 
 ```ts
 import type { StorageDriver } from "@teactjs/storage";

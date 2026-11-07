@@ -9,7 +9,11 @@ import type { Adapter, Middleware, TeactPlugin } from '@teactjs/core';
 export interface PluginContext<C> {
   /** Resolved config (plugin `defaultConfig` merged with user-provided config). */
   config: C;
-  /** Register update middleware (runs on every incoming update). */
+  /**
+   * Register update middleware (runs on every incoming update). Same rules as core
+   * middleware: `next()` runs automatically if you don't call it; return `false` to stop
+   * the update.
+   */
   middleware(fn: Middleware): void;
   /** Wrap the app tree with a React provider. Multiple providers nest in order. */
   addProvider(provider: FunctionComponent<{ children: ReactNode }>): void;
@@ -26,6 +30,10 @@ export interface PluginDefinition<C> {
   name: string;
   /** Defaults merged under the user's config object. */
   defaultConfig?: C;
+  /**
+   * Register what the plugin contributes. Must be synchronous — do async work (connecting
+   * to a database, fetching config) inside `ctx.onStart(...)`.
+   */
   setup: (ctx: PluginContext<C>) => void;
 }
 
@@ -70,7 +78,13 @@ export function definePlugin<C = void>(def: PluginDefinition<C>): PluginFactory<
       onStop: (fn) => { stopHooks.push(fn); },
     };
 
-    def.setup(ctx);
+    const result = def.setup(ctx) as unknown;
+    if (result && typeof (result as Promise<void>).then === 'function') {
+      throw new Error(
+        `[teact] Plugin "${def.name}": setup() must be synchronous — registrations made after an ` +
+        '`await` would be lost. Move async work into ctx.onStart(async () => { ... }).',
+      );
+    }
 
     const plugin: TeactPlugin = { name: def.name };
     if (Object.keys(services).length) plugin.services = services;
@@ -93,12 +107,25 @@ function composeProviders(
     ) as React.ReactElement;
 }
 
+/**
+ * Chain a plugin's middleware with core semantics: `next()` is implied when a middleware
+ * doesn't call it, and `return false` stops the update — which must propagate out of the
+ * plugin so the engine stops too.
+ */
 function composeMiddleware(mws: Middleware[]): Middleware {
   return async (ctx, next) => {
-    const run = async (idx: number): Promise<void> => {
-      const fn = idx === mws.length ? next : mws[idx];
-      if (fn) await fn(ctx, () => run(idx + 1));
+    let reachedEnd = false;
+    const run = async (i: number): Promise<void> => {
+      if (i === mws.length) {
+        reachedEnd = true;
+        await next();
+        return;
+      }
+      let called = false;
+      const result = await mws[i](ctx, () => { called = true; return run(i + 1); });
+      if (!called && result !== false) await run(i + 1);
     };
     await run(0);
+    return reachedEnd ? undefined : false;
   };
 }

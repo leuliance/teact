@@ -94,10 +94,10 @@ describe('adapter — edit vs media guard', () => {
     const photo: OutputNode = { type: 'tg-photo', props: { src: 'p.jpg' }, children: [] };
     const msg: OutputNode = { type: 'tg-message', props: { text: 'hi' }, children: [] };
 
-    await adapter.send('1', photo);
-    expect(adapter.canEdit(msg, '1')).toBe(false); // last was a photo → must send, not edit
+    const photoId = await adapter.send('1', photo);
+    expect(adapter.canEdit(msg, '1', photoId)).toBe(false); // target is a photo → must send, not edit
 
-    await adapter.send('2', msg);
-    expect(adapter.canEdit(msg, '2')).toBe(true); // last was text → editable
+    const textId = await adapter.send('2', msg);
+    expect(adapter.canEdit(msg, '2', textId)).toBe(true); // target is text → editable
   });
 });

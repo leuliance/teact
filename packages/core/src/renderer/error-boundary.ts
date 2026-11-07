@@ -40,7 +40,9 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
       }
 
       return React.createElement('tg-message', {
-        text: `❌ Something went wrong:\n${this.state.error.message}\n\nUse /start to restart.`,
+        // Never show error.message to end users — it can carry connection strings, SQL or
+        // stack details. The error itself is reported to `onError` / the console.
+        text: '❌ Something went wrong.\n\nUse /start to restart.',
       });
     }
 

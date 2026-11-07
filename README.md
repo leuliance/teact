@@ -2,7 +2,7 @@
 
 **Build Telegram bots with React — components, hooks, state, and routing.**
 
-Teact lets you write Telegram bots the way you write React apps. Messages, keyboards, media, and screens are JSX components; state and side effects are hooks; navigation is a router. It compiles and runs on [Bun](https://bun.sh).
+Teact lets you write Telegram bots the way you write React apps. Messages, keyboards, media, and screens are JSX components; state and side effects are hooks; navigation is a router. It runs on [Bun](https://bun.sh), Node, and the edge — on top of **your choice of Telegram framework**: zero-dependency `fetch`, [grammY](https://grammy.dev), or [GramIO](https://gramio.dev).
 
 📖 **[Documentation →](https://teact-docs.vercel.app/)** · 🚀 [Quick start](#quick-start) · 🧩 [Packages](#packages)
 
@@ -138,6 +138,35 @@ const bot = createBot({
 bot.start();
 ```
 
+## Bring your own Telegram framework
+
+The Telegram adapter is framework-agnostic. Pick a driver — your components, hooks and tests
+don't change:
+
+```ts
+import { TelegramAdapter } from "@teactjs/telegram";
+import { grammyDriver } from "@teactjs/telegram/grammy";
+import { gramioDriver } from "@teactjs/telegram/gramio";
+
+new TelegramAdapter();                                // zero dependencies (fetch) — the default
+new TelegramAdapter({ driver: grammyDriver() });      // grammY — its plugins keep working
+new TelegramAdapter({ driver: gramioDriver(myBot) }); // GramIO — bring your configured bot
+```
+
+With grammY/GramIO, every update passes through that framework's middleware first, so you
+can adopt Teact screen by screen inside an existing bot.
+
+## Testing
+
+```tsx
+import { createTestBot } from "@teactjs/testing";
+
+const t = await createTestBot({ component: Counter });
+await t.send("/start");
+await t.click("+1");
+expect(t.lastMessage?.text).toBe("Count: 1");
+```
+
 ## Features
 
 - **Components for every Telegram message type** — text, photos, video, audio, documents, polls, contacts, locations, stickers, media groups
@@ -147,11 +176,16 @@ bot.start();
 - **Session management** with a built-in memory store or your own
 - **i18n** powered by i18next — `useLocale()` for multi-language bots
 - **Payments** via `useInvoice` for Telegram's native invoice API
-- **Streaming** for real-time text updates with `useStream`
+- **Streaming** for real-time text (e.g. LLM tokens) with `useStream` and `conversation.stream()`
 - **Auth & roles** via `authPlugin`, `useAuth`, and `useAuthSession`
 - **Persistent storage** with file or memory drivers through `@teactjs/storage`
 - **Events** — subscribe to any Telegram update with `useOn` and `useEventData`
-- **Testing utilities** — `MockAdapter` and `renderBot`
+- **Framework-agnostic Telegram layer** — zero-dep fetch, grammY or GramIO drivers
+- **Smart rendering** — edits in place (including photos/videos), skips no-op edits, answers every button tap, respects Telegram limits
+- **Proactive messages** — `bot.send(chatId, <Message …/>)` and flood-safe `bot.broadcast(ids, …)`
+- **Batteries-included plugins** — `rateLimitPlugin`, `loggerPlugin`, `authPlugin`, `inlineQueryPlugin`, `kvSessionStore` (Redis / Cloudflare KV), `storagePlugin`
+- **Rich formatting & widgets** — `<Spoiler>`, `<Link>`, `<Mention>`, `<Quote>`, `<Pagination>`, `<Confirm>`, plus `useChatAction`, `useInterval`, `useDeepLink`
+- **Testing utilities** — `createTestBot` (send/click like a user), `MockAdapter`, `renderBot`
 - **CLI** for scaffolding, a dev server with HMR, production builds, and code generation
 
 ## Packages
@@ -160,10 +194,10 @@ bot.start();
 |---------|-------------|
 | [`@teactjs/core`](./packages/core) | Engine — `createBot`, router, hooks, plugin host, the React reconciler, and re-exported React primitives |
 | [`@teactjs/ui`](./packages/ui) | UI components (`Message`, `Button`, `Photo`, `Poll`, …) — start here for imports |
-| [`@teactjs/telegram`](./packages/telegram) | Telegram adapter powered by grammY — polling and webhook support, plus `conversationsPlugin`/`streamPlugin` |
+| [`@teactjs/telegram`](./packages/telegram) | Framework-agnostic Telegram adapter (fetch / grammY / GramIO drivers) — polling, webhooks, edge, plus `conversationsPlugin` |
 | [`@teactjs/plugin-sdk`](./packages/plugin-sdk) | `definePlugin` — author your own plugins with services/DI, providers, and lifecycle |
 | [`@teactjs/storage`](./packages/storage) | Persistent storage plugin with file and memory drivers (bring your own for KV/Redis/DB) |
-| [`@teactjs/testing`](./packages/testing) | Test utilities — `MockAdapter`, `renderBot` |
+| [`@teactjs/testing`](./packages/testing) | Test utilities — `createTestBot`, `MockAdapter`, `renderBot` |
 | [`@teactjs/cli`](./packages/cli) | CLI (`teact`) — `dev`, `build`, `start`, `deploy`, `webhook`, `generate`, `doctor`, `routes`, `typecheck` |
 | [`create-teact`](./packages/create-teact) | Interactive project scaffolder (`bun create teact`) |
 
@@ -193,14 +227,13 @@ Create a `teact.config.ts` in your project root for plugins and run mode:
 ```ts
 import { defineConfig, authPlugin } from "@teactjs/core";
 import { storagePlugin } from "@teactjs/storage";
-import { conversationsPlugin, streamPlugin } from "@teactjs/telegram";
+import { conversationsPlugin } from "@teactjs/telegram";
 
 export default defineConfig({
   mode: "polling", // or "webhook"
   plugins: [
     storagePlugin({ driver: "file", path: ".teact/storage.json" }),
     conversationsPlugin(),
-    streamPlugin(),
     authPlugin({ admins: [] }),
   ],
 });

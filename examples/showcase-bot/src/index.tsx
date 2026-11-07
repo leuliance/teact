@@ -1,8 +1,8 @@
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createBot, createRouter, createI18n, redirect, authPlugin } from '@teactjs/core';
+import { createBot, createRouter, createI18n, redirect, authPlugin, rateLimitPlugin } from '@teactjs/core';
 import type { Middleware, CommandDef } from '@teactjs/core';
-import { TelegramAdapter, conversationsPlugin, streamPlugin } from '@teactjs/telegram';
+import { TelegramAdapter, conversationsPlugin } from '@teactjs/telegram';
 import { storagePlugin } from '@teactjs/storage';
 import { analyticsPlugin } from './plugins/analytics';
 
@@ -126,6 +126,10 @@ const commands: Record<string, CommandDef> = {
 };
 
 export const bot = createBot({
+  // Zero-dependency fetch driver by default. To run on grammY or GramIO instead (and use
+  // their plugins alongside Teact), pass a driver:
+  //   import { grammyDriver } from '@teactjs/telegram/grammy';  → new TelegramAdapter({ driver: grammyDriver() })
+  //   import { gramioDriver } from '@teactjs/telegram/gramio';  → new TelegramAdapter({ driver: gramioDriver() })
   adapter: new TelegramAdapter(),
   router,
   providers: ({ children }) => (
@@ -139,7 +143,7 @@ export const bot = createBot({
   plugins: [
     storagePlugin({ driver: 'file', path: '.teact/storage.json' }),
     conversationsPlugin(),
-    streamPlugin(),
+    rateLimitPlugin({ limit: 5, windowMs: 2000, onLimited: () => 'Easy there! ⏳' }),
     authPlugin({ admins: [] }),
     analyticsPlugin({ verbose: true }),
   ],

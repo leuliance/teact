@@ -1,9 +1,10 @@
-import { createContext, useContext } from 'react';
+import { useContext } from 'react';
+import { sharedContext } from '../renderer/shared-context';
 
 /** DI container: services contributed by plugins, keyed by name. */
 export type ServiceMap = Record<string, unknown>;
 
-export const ServicesCtx = createContext<ServiceMap>({});
+export const ServicesCtx = sharedContext<ServiceMap>('services', {});
 
 /**
  * Read a service registered by a plugin (via `ctx.provideService` in `definePlugin`).

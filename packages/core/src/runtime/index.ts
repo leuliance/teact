@@ -1,7 +1,14 @@
 export { createBot, ROUTE_PREFIX } from './bot';
-export type { CreateBotOptions, CommandContext, CommandDef, ReplyOptions, ReplyButton, ReplyKeyboardButton, WebhookConfig } from './bot';
+export type { CreateBotOptions, CommandContext, CommandDef, ReplyOptions, ReplyButton, ReplyKeyboardButton, WebhookConfig, TeactBot, BotErrorSource } from './bot';
 
-export { MemorySessionStore } from './session';
+export { MemorySessionStore, kvSessionStore } from './session';
+export type { KVSessionStoreOptions } from './session';
+
+export { rateLimitPlugin, loggerPlugin } from './plugins';
+export type { RateLimitOptions, LoggerOptions } from './plugins';
+
+export { useChatAction, useInterval, useDeepLink } from './utility-hooks';
+export type { ChatAction, DeepLink } from './utility-hooks';
 
 export { compose, commandMiddleware } from './middleware';
 
@@ -64,5 +71,5 @@ export type { TelegramEvent, EventContext } from './event-hooks';
 export { createI18n, useLocale } from './i18n';
 export type { I18nConfig } from './i18n';
 
-export { useInvoice } from './invoice';
+export { useInvoice, validateInvoice } from './invoice';
 export type { InvoiceConfig, InvoiceResult, LabeledPrice, SuccessfulPayment } from './invoice';

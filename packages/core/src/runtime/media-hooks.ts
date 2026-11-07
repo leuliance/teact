@@ -1,5 +1,6 @@
 import { useCallback, useMemo } from 'react';
-import { useBot, useChatId } from './context';
+import { useBot } from './context';
+import type { PlatformApi } from '../renderer';
 
 // ---- useChat ----
 
@@ -35,13 +36,48 @@ export function useChat(): ChatInfo {
 
 // ---- useTelegram ----
 
-/** Low-level access to the grammY API, context, chat, and sender objects. */
+/** Low-level, framework-agnostic access to the platform API and the raw update. */
 export interface TelegramAccess {
-  api: any;
-  ctx: any;
+  /**
+   * Bot API caller. Call any method with its native params:
+   * `api.sendMessage({ chat_id, text })` or `api.call('sendMessage', { chat_id, text })`.
+   * Works the same on every driver (fetch, grammY, GramIO).
+   */
+  api: PlatformApi;
+  /** The raw Telegram `Update` for this render. */
+  update: any;
+  /** The underlying framework's context (grammY `Context`, GramIO context), if any. */
+  native: unknown;
+  /** @deprecated Use `native` (framework context) or `update` (raw update). */
+  ctx: unknown;
+  /** The Telegram chat object of the current update, if any. */
   chat: any;
+  /** The Telegram user who triggered the current update, if any. */
   from: any;
   chatId: number;
+}
+
+const NO_API: PlatformApi = new Proxy({} as PlatformApi, {
+  get(_t, prop) {
+    if (prop === 'then') return undefined;
+    return () => Promise.reject(new Error(
+      `[teact] No platform API available (called "${String(prop)}"). The current adapter didn't provide one.`,
+    ));
+  },
+});
+
+/** Pull the chat / sender out of whatever kind of update this is. */
+function updateParts(update: any): { chat: any; from: any } {
+  if (!update || typeof update !== 'object') return { chat: undefined, from: undefined };
+  for (const value of Object.values(update)) {
+    if (value && typeof value === 'object') {
+      const v = value as any;
+      const chat = v.chat ?? v.message?.chat;
+      const from = v.from ?? v.user;
+      if (chat || from) return { chat, from };
+    }
+  }
+  return { chat: undefined, from: undefined };
 }
 
 /**
@@ -49,18 +85,34 @@ export interface TelegramAccess {
  *
  * @example
  * const { api, chatId } = useTelegram();
- * await api.sendMessage(chatId, 'Hello from raw API!');
+ * await api.sendMessage({ chat_id: chatId, text: 'Hello from the raw API!' });
+ * await api.call('setMessageReaction', { chat_id: chatId, message_id: 1, reaction: [{ type: 'emoji', emoji: '👍' }] });
  */
 export function useTelegram(): TelegramAccess {
   const bot = useBot();
-  const raw = bot.raw;
+  const { chat, from } = updateParts(bot.raw);
   return {
-    api: raw?.api,
-    ctx: raw,
-    chat: raw?.chat,
-    from: raw?.from,
+    api: bot.api ?? NO_API,
+    update: bot.raw,
+    native: bot.native,
+    ctx: bot.native ?? bot.raw,
+    chat,
+    from,
     chatId: Number(bot.chatId),
   };
+}
+
+/** Send `method` to the current chat (and forum topic). */
+function useSender() {
+  const bot = useBot();
+  const api = bot.api ?? NO_API;
+  const chatId = Number(bot.chatId);
+  const threadId = bot.threadId;
+  return useCallback(
+    (method: string, params: Record<string, unknown>) =>
+      api.call(method, { chat_id: chatId, ...(threadId != null ? { message_thread_id: threadId } : {}), ...params }),
+    [api, chatId, threadId],
+  );
 }
 
 // ---- useMedia (consolidated senders) ----
@@ -72,7 +124,7 @@ export interface MediaSenders {
   animation: (src: string, opts?: { caption?: string; parse_mode?: string; duration?: number; width?: number; height?: number }) => Promise<any>;
   audio: (src: string, opts?: { caption?: string; parse_mode?: string; performer?: string; title?: string; duration?: number }) => Promise<any>;
   voice: (src: string, opts?: { caption?: string; parse_mode?: string; duration?: number }) => Promise<any>;
-  document: (src: string, opts?: { caption?: string; filename?: string }) => Promise<any>;
+  document: (src: string, opts?: { caption?: string; parse_mode?: string }) => Promise<any>;
   sticker: (src: string, opts?: { emoji?: string }) => Promise<any>;
   location: (latitude: number, longitude: number, opts?: { live_period?: number; horizontal_accuracy?: number; heading?: number; proximity_alert_radius?: number }) => Promise<any>;
   contact: (phoneNumber: string, firstName: string, opts?: { last_name?: string; vcard?: string }) => Promise<any>;
@@ -90,20 +142,20 @@ export interface MediaSenders {
  * await media.poll('Favorite color?', ['Red', 'Blue']);
  */
 export function useMedia(): MediaSenders {
-  const { api, chatId } = useTelegram();
+  const send = useSender();
   return useMemo<MediaSenders>(() => ({
-    photo: (src, opts) => api?.sendPhoto(chatId, src, opts),
-    video: (src, opts) => api?.sendVideo(chatId, src, opts),
-    animation: (src, opts) => api?.sendAnimation(chatId, src, opts),
-    audio: (src, opts) => api?.sendAudio(chatId, src, opts),
-    voice: (src, opts) => api?.sendVoice(chatId, src, opts),
-    document: (src, opts) => api?.sendDocument(chatId, src, opts),
-    sticker: (src, opts) => api?.sendSticker(chatId, src, opts),
-    location: (lat, lng, opts) => api?.sendLocation(chatId, lat, lng, opts),
-    contact: (phone, first, opts) => api?.sendContact(chatId, phone, first, opts),
-    venue: (lat, lng, title, address, opts) => api?.sendVenue(chatId, lat, lng, title, address, opts),
-    poll: (question, options, opts) => api?.sendPoll(chatId, question, options.map((text) => ({ text })), opts),
-  }), [api, chatId]);
+    photo: (photo, opts) => send('sendPhoto', { photo, ...opts }),
+    video: (video, opts) => send('sendVideo', { video, ...opts }),
+    animation: (animation, opts) => send('sendAnimation', { animation, ...opts }),
+    audio: (audio, opts) => send('sendAudio', { audio, ...opts }),
+    voice: (voice, opts) => send('sendVoice', { voice, ...opts }),
+    document: (document, opts) => send('sendDocument', { document, ...opts }),
+    sticker: (sticker, opts) => send('sendSticker', { sticker, ...opts }),
+    location: (latitude, longitude, opts) => send('sendLocation', { latitude, longitude, ...opts }),
+    contact: (phone_number, first_name, opts) => send('sendContact', { phone_number, first_name, ...opts }),
+    venue: (latitude, longitude, title, address, opts) => send('sendVenue', { latitude, longitude, title, address, ...opts }),
+    poll: (question, options, opts) => send('sendPoll', { question, options: options.map((text) => ({ text })), ...opts }),
+  }), [send]);
 }
 
 // ---- Media send hooks (individual; or use useMedia() for all at once) ----
@@ -116,11 +168,11 @@ export function useMedia(): MediaSenders {
  * await sendPhoto('https://example.com/cat.jpg', { caption: 'A cute cat' });
  */
 export function usePhoto() {
-  const { api, chatId } = useTelegram();
+  const media = useMedia();
   return useCallback(
     (src: string, opts?: { caption?: string; parse_mode?: string; has_spoiler?: boolean }) =>
-      api?.sendPhoto(chatId, src, opts) as Promise<any>,
-    [api, chatId],
+      media.photo(src, opts),
+    [media],
   );
 }
 
@@ -132,11 +184,11 @@ export function usePhoto() {
  * await sendVideo('https://example.com/clip.mp4', { caption: 'Watch this' });
  */
 export function useVideo() {
-  const { api, chatId } = useTelegram();
+  const media = useMedia();
   return useCallback(
     (src: string, opts?: { caption?: string; parse_mode?: string; duration?: number; width?: number; height?: number; supports_streaming?: boolean }) =>
-      api?.sendVideo(chatId, src, opts) as Promise<any>,
-    [api, chatId],
+      media.video(src, opts),
+    [media],
   );
 }
 
@@ -148,11 +200,11 @@ export function useVideo() {
  * await sendGif('https://example.com/funny.gif');
  */
 export function useAnimation() {
-  const { api, chatId } = useTelegram();
+  const media = useMedia();
   return useCallback(
     (src: string, opts?: { caption?: string; parse_mode?: string; duration?: number; width?: number; height?: number }) =>
-      api?.sendAnimation(chatId, src, opts) as Promise<any>,
-    [api, chatId],
+      media.animation(src, opts),
+    [media],
   );
 }
 
@@ -164,11 +216,11 @@ export function useAnimation() {
  * await sendAudio('https://example.com/song.mp3', { title: 'My Song' });
  */
 export function useAudio() {
-  const { api, chatId } = useTelegram();
+  const media = useMedia();
   return useCallback(
     (src: string, opts?: { caption?: string; parse_mode?: string; performer?: string; title?: string; duration?: number }) =>
-      api?.sendAudio(chatId, src, opts) as Promise<any>,
-    [api, chatId],
+      media.audio(src, opts),
+    [media],
   );
 }
 
@@ -180,11 +232,11 @@ export function useAudio() {
  * await sendVoice('https://example.com/voice.ogg');
  */
 export function useVoice() {
-  const { api, chatId } = useTelegram();
+  const media = useMedia();
   return useCallback(
     (src: string, opts?: { caption?: string; parse_mode?: string; duration?: number }) =>
-      api?.sendVoice(chatId, src, opts) as Promise<any>,
-    [api, chatId],
+      media.voice(src, opts),
+    [media],
   );
 }
 
@@ -193,14 +245,14 @@ export function useVoice() {
  *
  * @example
  * const sendDoc = useDocument();
- * await sendDoc('https://example.com/report.pdf', { filename: 'report.pdf' });
+ * await sendDoc('https://example.com/report.pdf', { caption: 'Monthly report' });
  */
 export function useDocument() {
-  const { api, chatId } = useTelegram();
+  const media = useMedia();
   return useCallback(
-    (src: string, opts?: { caption?: string; filename?: string }) =>
-      api?.sendDocument(chatId, src, opts) as Promise<any>,
-    [api, chatId],
+    (src: string, opts?: { caption?: string; parse_mode?: string }) =>
+      media.document(src, opts),
+    [media],
   );
 }
 
@@ -212,11 +264,11 @@ export function useDocument() {
  * await sendSticker('CAACAgIAAxkB...');
  */
 export function useSticker() {
-  const { api, chatId } = useTelegram();
+  const media = useMedia();
   return useCallback(
     (src: string, opts?: { emoji?: string }) =>
-      api?.sendSticker(chatId, src, opts) as Promise<any>,
-    [api, chatId],
+      media.sticker(src, opts),
+    [media],
   );
 }
 
@@ -228,11 +280,11 @@ export function useSticker() {
  * await sendLocation(9.0192, 38.7525);
  */
 export function useLocation() {
-  const { api, chatId } = useTelegram();
+  const media = useMedia();
   return useCallback(
     (latitude: number, longitude: number, opts?: { live_period?: number; horizontal_accuracy?: number; heading?: number; proximity_alert_radius?: number }) =>
-      api?.sendLocation(chatId, latitude, longitude, opts) as Promise<any>,
-    [api, chatId],
+      media.location(latitude, longitude, opts),
+    [media],
   );
 }
 
@@ -244,11 +296,11 @@ export function useLocation() {
  * await sendContact('+1234567890', 'Jane');
  */
 export function useContact() {
-  const { api, chatId } = useTelegram();
+  const media = useMedia();
   return useCallback(
     (phoneNumber: string, firstName: string, opts?: { last_name?: string; vcard?: string }) =>
-      api?.sendContact(chatId, phoneNumber, firstName, opts) as Promise<any>,
-    [api, chatId],
+      media.contact(phoneNumber, firstName, opts),
+    [media],
   );
 }
 
@@ -260,11 +312,11 @@ export function useContact() {
  * await sendVenue(9.0192, 38.7525, 'Meskel Square', 'Addis Ababa');
  */
 export function useVenue() {
-  const { api, chatId } = useTelegram();
+  const media = useMedia();
   return useCallback(
     (latitude: number, longitude: number, title: string, address: string, opts?: { foursquare_id?: string; google_place_id?: string }) =>
-      api?.sendVenue(chatId, latitude, longitude, title, address, opts) as Promise<any>,
-    [api, chatId],
+      media.venue(latitude, longitude, title, address, opts),
+    [media],
   );
 }
 
@@ -276,12 +328,10 @@ export function useVenue() {
  * await sendPoll('Favorite color?', ['Red', 'Blue', 'Green']);
  */
 export function usePoll() {
-  const { api, chatId } = useTelegram();
+  const media = useMedia();
   return useCallback(
-    (question: string, options: string[], opts?: { is_anonymous?: boolean; type?: 'regular' | 'quiz'; allows_multiple_answers?: boolean; correct_option_id?: number; explanation?: string; open_period?: number }) => {
-      const pollOptions = options.map(text => ({ text }));
-      return api?.sendPoll(chatId, question, pollOptions, opts) as Promise<any>;
-    },
-    [api, chatId],
+    (question: string, options: string[], opts?: { is_anonymous?: boolean; type?: 'regular' | 'quiz'; allows_multiple_answers?: boolean; correct_option_id?: number; explanation?: string; open_period?: number }) =>
+      media.poll(question, options, opts),
+    [media],
   );
 }

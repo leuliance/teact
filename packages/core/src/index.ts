@@ -23,20 +23,30 @@ export {
 // ---- Engine (reconciler, node tree, platform-neutral types, context glue) ----
 
 export { TNode, TextNode, createRoot } from './renderer';
-export type { TeactRoot, OutputNode, User, BotContext, SessionData, SessionStore, Middleware, Adapter } from './renderer';
+export type { TeactRoot, OutputNode, User, BotContext, SessionData, SessionStore, Middleware, Adapter, PlatformApi, ListenOptions } from './renderer';
 
 // Context glue + data hooks that @teactjs/ui imports from here (single instance).
 export { ErrorBoundary, CallbackRegistryCtx } from './renderer';
 export type { ErrorBoundaryProps, CallbackHandler, CallbackMap } from './renderer';
 export { useQuery, useMutation } from './renderer';
+// Lets plugins register background work so serverless requests wait for it.
+export { WorkTrackerCtx, WorkTracker } from './renderer';
+export type { SettleOptions } from './renderer';
 export type { UseQueryOptions, UseQueryResult, UseMutationOptions, UseMutationResult } from './renderer';
 
 // ---- Runtime (bot engine, hooks, router, plugins) ----
 
 export { createBot, ROUTE_PREFIX } from './runtime';
-export type { CreateBotOptions, CommandContext, CommandDef, ReplyOptions, ReplyButton, ReplyKeyboardButton, WebhookConfig } from './runtime';
+export type { CreateBotOptions, CommandContext, CommandDef, ReplyOptions, ReplyButton, ReplyKeyboardButton, WebhookConfig, TeactBot, BotErrorSource } from './runtime';
 
-export { MemorySessionStore } from './runtime';
+export { MemorySessionStore, kvSessionStore } from './runtime';
+export type { KVSessionStoreOptions } from './runtime';
+
+export { rateLimitPlugin, loggerPlugin } from './runtime';
+export type { RateLimitOptions, LoggerOptions } from './runtime';
+
+export { useChatAction, useInterval, useDeepLink } from './runtime';
+export type { ChatAction, DeepLink } from './runtime';
 export { compose, commandMiddleware } from './runtime';
 
 export { createRouter, useNavigate, useParams, useRoute, redirect } from './runtime';
@@ -98,5 +108,5 @@ export type { TelegramEvent, EventContext } from './runtime';
 export { createI18n, useLocale } from './runtime';
 export type { I18nConfig } from './runtime';
 
-export { useInvoice } from './runtime';
+export { useInvoice, validateInvoice } from './runtime';
 export type { InvoiceConfig, InvoiceResult, LabeledPrice, SuccessfulPayment } from './runtime';

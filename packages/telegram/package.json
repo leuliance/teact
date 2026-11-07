@@ -1,14 +1,22 @@
 {
   "name": "@teactjs/telegram",
   "version": "0.2.0-alpha.1",
-  "description": "Telegram platform adapter for Teact, powered by grammY",
+  "description": "Telegram platform adapter for Teact \u2014 framework-agnostic (zero-dep fetch driver, plus grammY and GramIO drivers)",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/telegram/src/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/telegram/src/index.d.ts"
+      "types": "./dist/telegram/src/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./grammy": {
+      "types": "./dist/telegram/src/grammy.d.ts",
+      "import": "./dist/grammy.js"
+    },
+    "./gramio": {
+      "types": "./dist/telegram/src/gramio.d.ts",
+      "import": "./dist/gramio.js"
     }
   },
   "files": [
@@ -16,17 +24,33 @@
     "README.md"
   ],
   "scripts": {
-    "build": "bun build ./src/index.ts --outdir ./dist --format esm --target bun --external react --external react/jsx-runtime --external react/jsx-dev-runtime --external @teactjs/core --external grammy --external @grammyjs/auto-retry --external @grammyjs/conversations --external @grammyjs/stream && tsc --emitDeclarationOnly --outDir dist --declaration --project tsconfig.build.json"
-  },
-  "dependencies": {
-    "@grammyjs/auto-retry": "^2.0.2",
-    "@grammyjs/conversations": "^2.1.1",
-    "@grammyjs/stream": "^1.0.1",
-    "grammy": "^1.35.0"
+    "build": "bun build ./src/index.ts ./src/grammy.ts ./src/gramio.ts --outdir ./dist --format esm --target node --splitting --external react --external react/jsx-runtime --external react/jsx-dev-runtime --external @teactjs/core --external grammy --external gramio && tsc --emitDeclarationOnly --outDir dist --declaration --project tsconfig.build.json"
   },
   "peerDependencies": {
     "react": "^18.0.0 || ^19.0.0",
-    "@teactjs/core": "^0.2.0-alpha.1"
+    "@teactjs/core": "^0.2.0-alpha.1",
+    "grammy": "^1.30.0",
+    "gramio": ">=0.4.0"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "grammy": "^1.46.0",
+    "gramio": "^0.15.1"
+  },
+  "peerDependenciesMeta": {
+    "grammy": {
+      "optional": true
+    },
+    "gramio": {
+      "optional": true
+    }
+  },
+  "keywords": [
+    "telegram",
+    "bot",
+    "react",
+    "grammy",
+    "gramio",
+    "teact"
+  ]
 }

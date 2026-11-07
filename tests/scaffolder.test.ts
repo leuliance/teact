@@ -75,7 +75,7 @@ describe('scaffolder · generated files', () => {
     // plugins now load in both `bun dev` and on the edge via createBot({ plugins })
     expect(index).toContain('plugins: [');
     expect(index).toContain('storagePlugin(');
-    expect(index).toContain('streamPlugin()');
+    expect(index).not.toContain('streamPlugin'); // streaming is built in
     expect(index).toContain('conversationsPlugin()');
     expect(index).toContain('authPlugin(');
     // teact.config.ts must no longer carry a plugins array
@@ -94,5 +94,18 @@ describe('scaffolder · generated files', () => {
     expect(all).not.toContain('@teactjs/renderer');
     expect(all).not.toContain('@teactjs/runtime');
     expect(all).not.toContain("from '@teactjs/react'");
+  });
+});
+
+describe('generated JSX', () => {
+  test('no string attribute relies on a "\\n" escape (JSX attribute strings do not process escapes)', () => {
+    for (const template of ['starter', 'counter', 'showcase', 'empty'] as const) {
+      const files = getTemplateFiles(template, ['storage', 'conversations', 'streaming', 'auth', 'payments']);
+      for (const [path, src] of Object.entries(files)) {
+        if (!/\.tsx$/.test(path)) continue;
+        const bad = src.match(/\b[a-zA-Z]+="[^"]*\\n[^"]*"/);
+        expect(bad ? `${template}:${path}: ${bad[0]}` : null).toBeNull();
+      }
+    }
   });
 });
