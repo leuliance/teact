@@ -71,8 +71,10 @@ export interface KVSessionStoreOptions {
  * Upstash, Deno KV, a SQL table… Sessions are stored as JSON. Required on serverless,
  * where the default in-memory store doesn't survive between requests.
  *
- * @example Cloudflare Workers KV (pass the namespace directly)
- * createBot({ session: { store: kvSessionStore(env.SESSIONS, { ttlSeconds: 86400 }) } });
+ * @example Cloudflare Workers KV — bindings exist per request, so pass a getter
+ * let env: Env;
+ * export const bot = createBot({ session: { store: kvSessionStore(() => env?.SESSIONS, { ttlSeconds: 86400 }) } });
+ * export default { fetch: (req: Request, e: Env, ctx) => { env = e; return bot.fetch(req, { token: e.TELEGRAM_BOT_TOKEN }); } };
  *
  * @example Redis (node-redis v4)
  * kvSessionStore({
@@ -82,18 +84,29 @@ export interface KVSessionStoreOptions {
  * });
  */
 export function kvSessionStore(kv: KVSessionStoreOptions): SessionStore;
-export function kvSessionStore(kv: KVNamespaceLike, opts?: { prefix?: string; ttlSeconds?: number }): SessionStore;
 export function kvSessionStore(
-  kv: KVSessionStoreOptions | KVNamespaceLike,
+  kv: KVNamespaceLike | (() => KVNamespaceLike | undefined),
+  opts?: { prefix?: string; ttlSeconds?: number },
+): SessionStore;
+export function kvSessionStore(
+  kv: KVSessionStoreOptions | KVNamespaceLike | (() => KVNamespaceLike | undefined),
   opts: { prefix?: string; ttlSeconds?: number } = {},
 ): SessionStore {
-  const isCloudflare = typeof (kv as KVNamespaceLike).put === 'function';
+  // A getter lets Workers pass a binding that only exists per request:
+  //   let env: Env; createBot({ session: { store: kvSessionStore(() => env?.SESSIONS) } });
+  //   export default { fetch(req, e, ctx) { env = e; return bot.fetch(req, …); } };
+  const ns = (): KVNamespaceLike => {
+    const value = typeof kv === 'function' ? kv() : (kv as KVNamespaceLike);
+    if (!value) throw new Error('[teact] kvSessionStore: the KV namespace is not available yet (is the binding configured?)');
+    return value;
+  };
+  const isCloudflare = typeof kv === 'function' || typeof (kv as KVNamespaceLike).put === 'function';
   const o: KVSessionStoreOptions = isCloudflare
     ? {
-        get: (k) => (kv as KVNamespaceLike).get(k),
+        get: (k) => ns().get(k),
         // Cloudflare KV requires expirationTtl >= 60.
-        set: (k, v, ttl) => (kv as KVNamespaceLike).put(k, v, ttl ? { expirationTtl: Math.max(60, ttl) } : undefined),
-        delete: (k) => (kv as KVNamespaceLike).delete(k),
+        set: (k, v, ttl) => ns().put(k, v, ttl ? { expirationTtl: Math.max(60, ttl) } : undefined),
+        delete: (k) => ns().delete(k),
         ...opts,
       }
     : { ...(kv as KVSessionStoreOptions), ...opts };

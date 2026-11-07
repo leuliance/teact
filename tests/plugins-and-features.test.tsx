@@ -278,3 +278,15 @@ describe('inlineQueryPlugin with inline mode disabled', () => {
     expect(hints).toHaveLength(1); // once, not per query
   });
 });
+
+describe('kvSessionStore with a per-request binding getter', () => {
+  test('resolves the namespace lazily (Cloudflare bindings exist only inside fetch)', async () => {
+    const data = new Map<string, string>();
+    let binding: { get(k: string): Promise<string | null>; put(k: string, v: string): Promise<void>; delete(k: string): Promise<void> } | undefined;
+    const store = kvSessionStore(() => binding);
+    await expect(store.get('x')).rejects.toThrow(/not available yet/);
+    binding = { get: async (k) => data.get(k) ?? null, put: async (k, v) => { data.set(k, v); }, delete: async (k) => { data.delete(k); } };
+    await store.set('chat', { n: 1 });
+    expect(await store.get('chat')).toEqual({ n: 1 });
+  });
+});

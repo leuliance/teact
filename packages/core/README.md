@@ -47,7 +47,7 @@ createBot({
     authPlugin({ admins: [123456789] }),
   ],
   // Durable sessions on any async KV — Cloudflare KV, Redis, Upstash, Deno KV…
-  session: { store: kvSessionStore(env.SESSIONS, { ttlSeconds: 86_400 }) },
+  session: { store: kvSessionStore(() => env?.SESSIONS, { ttlSeconds: 86_400 }) }, // getter: Workers bindings exist per request
   onError: (err, { source, ctx }) => Sentry.captureException(err, { extra: { source, chat: ctx?.chatId } }),
 });
 ```
