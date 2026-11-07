@@ -317,3 +317,35 @@ describe('fetchDriver network errors', () => {
     await expect(driver.init(TOKEN)).rejects.toThrow(/Network error calling Telegram getMe: ECONNREFUSED connect ECONNREFUSED/);
   });
 });
+
+describe('polling delivers updates on every driver', () => {
+  for (const d of DRIVERS) {
+    test(`${d.name}: a getUpdates result is dispatched and answered`, async () => {
+      const tg = fakeTelegram();
+      let served = false;
+      const withUpdates = (async (input: any, init?: any) => {
+        const url = typeof input === 'string' ? input : input.url;
+        if (url.endsWith('/getUpdates')) {
+          if (!served) {
+            served = true;
+            return new Response(JSON.stringify({ ok: true, result: [textUpdate('/start')] }));
+          }
+          await new Promise<void>((r) => {
+            const t = setTimeout(r, 30_000);
+            init?.signal?.addEventListener('abort', () => { clearTimeout(t); r(); });
+          });
+          if (init?.signal?.aborted) throw new DOMException('aborted', 'AbortError');
+          return new Response(JSON.stringify({ ok: true, result: [] }));
+        }
+        return tg.fetch(input, init);
+      }) as typeof fetch;
+      const driver = d.make({ ...tg, fetch: withUpdates });
+      if (d.name === 'gramio') globalThis.fetch = withUpdates;
+      const bot = createBot({ adapter: new TelegramAdapter({ driver }), component: Counter, token: TOKEN });
+      await bot.start();
+      for (let i = 0; i < 40 && tg.of('sendMessage').length === 0; i++) await new Promise((r) => setTimeout(r, 25));
+      expect(tg.of('sendMessage')[0]?.params.text).toBe('Count: 0');
+      await bot.stop();
+    });
+  }
+});

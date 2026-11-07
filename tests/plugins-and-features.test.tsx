@@ -250,3 +250,31 @@ describe('block layout', () => {
     expect(serializeOutput(tree).text).toBe('intro\n───\nℹ️ Note\nbody\n• a\nend');
   });
 });
+
+describe('inlineQueryPlugin with inline mode disabled', () => {
+  test('explains how to enable it instead of a cryptic USER_BOT_INVALID', async () => {
+    const fakeFetch = (async (url: string) => {
+      const method = url.split('/').pop()!;
+      if (method === 'answerInlineQuery') return new Response(JSON.stringify({ ok: false, error_code: 400, description: 'Bad Request: USER_BOT_INVALID' }));
+      return new Response(JSON.stringify({ ok: true, result: method === 'getMe' ? { id: 1, is_bot: true, first_name: 'B', username: 'b' } : true }));
+    }) as unknown as typeof fetch;
+    const errors: string[] = [];
+    const orig = console.error;
+    console.error = (...a: unknown[]) => { errors.push(a.map(String).join(' ')); };
+    try {
+      const bot = createBot({
+        adapter: new TelegramAdapter({ driver: fetchDriver({ fetch: fakeFetch }) }),
+        component: () => <Message text="x" />,
+        plugins: [inlineQueryPlugin(() => [inlineArticle({ id: '1', title: 't', text: 't' })])],
+      });
+      const iq = () => new Request('https://x/', { method: 'POST', body: JSON.stringify({ update_id: Math.random(), inline_query: { id: 'q', from: { id: 5, is_bot: false, first_name: 'A' }, query: '', offset: '' } }) });
+      await bot.fetch(iq(), { token: '1:T' });
+      await bot.fetch(iq());
+      await bot.stop();
+    } finally {
+      console.error = orig;
+    }
+    const hints = errors.filter((e) => e.includes('/setinline'));
+    expect(hints).toHaveLength(1); // once, not per query
+  });
+});

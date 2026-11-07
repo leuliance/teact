@@ -100,6 +100,7 @@ export function inlineQueryPlugin(
   handler: (query: InlineQuery) => InlineResult[] | InlineAnswer | Promise<InlineResult[] | InlineAnswer>,
   options: InlineQueryPluginOptions = {},
 ): TeactPlugin {
+  let warnedInlineDisabled = false;
   return {
     name: 'inline-query',
     onStart(adapter) {
@@ -126,6 +127,17 @@ export function inlineQueryPlugin(
             button: a.button,
           }));
         } catch (err) {
+          const desc = String((err as any)?.description ?? (err as any)?.message ?? '');
+          if (/USER_BOT_INVALID|BOT_INLINE_DISABLED/.test(desc)) {
+            if (!warnedInlineDisabled) {
+              warnedInlineDisabled = true;
+              console.error(
+                '[teact] Inline mode is disabled for this bot, so Telegram refused the answer.\n' +
+                '  → In @BotFather: /setinline → pick your bot → enter a placeholder (e.g. "Search…").',
+              );
+            }
+            return;
+          }
           console.error('[teact] inline query handler failed:', err);
         }
       }) as any);
